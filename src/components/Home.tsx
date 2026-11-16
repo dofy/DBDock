@@ -374,9 +374,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                       e.dataTransfer.effectAllowed = "move";
                     }}
                     onDragEnd={() => { draggedIds.current = null; setDragging(false); setDropTarget(null); }}
-                    onClick={(e) => {
-                      if (e.metaKey || e.ctrlKey || e.shiftKey || picked.size) togglePick(c.id);
-                    }}
+                    onClick={() => togglePick(c.id)}
                     onDoubleClick={() => !picked.size && onConnect(c)}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -393,6 +391,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                         e.stopPropagation();
                         togglePick(c.id);
                       }}
+                      onDoubleClick={(e) => e.stopPropagation()}
                     >
                       <Check size={12} strokeWidth={3} />
                     </button>
@@ -422,7 +421,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                         </div>
                       ); })()}
                     </div>
-                    <div className={`btn-group card-actions ${connecting === c.id ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()}>
+                    <div className={`btn-group card-actions ${connecting === c.id ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                       <button title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(c)}>
                         <Pencil size={13} />
                       </button>

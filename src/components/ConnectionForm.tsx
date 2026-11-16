@@ -125,9 +125,10 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal connection-form" onMouseDown={(e) => e.stopPropagation()}>
         <h2>{editing ? t("Edit connection") : t("New connection")}</h2>
 
+        <div className="connection-form-body">
         <div className="kind-picker">
           {KINDS.map((k) => (
             <button key={k} className={`kind-btn ${c.kind === k ? "active" : ""}`} onClick={() => changeKind(k)}>
@@ -327,9 +328,9 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
             )}
           </section>
         )}
+        </div>
 
-
-        <div className="actions">
+        <div className="actions connection-form-actions">
           <button onClick={test} disabled={busy}>
             <Zap size={14} />{t("Test")} </button>
           <span className="spacer" />

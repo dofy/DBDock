@@ -15,7 +15,7 @@ Copyright © 2026 phpz.org · MIT License · <https://github.com/dofy/DBDock>
 
 - Card grid with a **group tree** (nested paths like `Acme / AI`): create, rename / move,
   delete (pick where the connections inside go), hover a card and drag its handle onto a group, multi-select
-  (checkbox or ⌘-click) for bulk move / export / delete.
+  (click a card or its selection badge) for bulk move / export / delete.
 - **Environment tags** (local / dev / test / staging / production) as badges in the list
   and on session tabs, with filter chips; production connections are outlined in red.
 - **Batch health checks** for the current list or selected connections: find missing settings
