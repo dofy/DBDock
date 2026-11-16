@@ -1,0 +1,57 @@
+[package]
+name = "dbdock"
+version = "1.0.0"
+description = "DBDock: database client for MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1"
+authors = ["phpz.org"]
+license = "MIT"
+repository = "https://github.com/dofy/DBDock"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "dbdock_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.54.1", features = ["full"] }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-ring-webpki", "mysql", "postgres", "sqlite", "chrono", "json", "rust_decimal", "uuid"] }
+redis = { version = "1.8.2", features = ["tokio-comp", "aio"] }
+russh = "0.65.1"
+keyring = "4.2.0"
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", features = ["serde"] }
+uuid = { version = "1.29.2", features = ["v4"] }
+rust_decimal = "1.43.0"
+futures = "0.3.34"
+shell-words = "1.1.1"
+tauri-plugin-dialog = "2"
+plist = "1.10.3"
+aes-gcm = "0.11.1"
+argon2 = "0.6.0"
+base64 = "0.23.1"
+rand = "0.8"
+mongodb = "3.10.1"
+reqwest = { version = "0.13.5", features = ["json"] }
+json5 = "1.3.7"
+regex-lite = "0.1.9"
+url = "2.5.8"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DBDock",
+  "version": "1.0.0",
+  "identifier": "xyz.phpz.app.dbdock",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DBDock",
+        "minWidth": 760,
+        "minHeight": 480,
+        "width": 1280,
+        "height": 820
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "Copyright © 2026 phpz.org · MIT License",
+    "category": "DeveloperTool",
+    "shortDescription": "Database client for MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1"
+  }
+}

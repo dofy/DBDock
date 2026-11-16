@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DBDock app icon, in the shared phpz.xyz look (Cruft, LinguaDock, WordClip):
+  flat #FF674D tile inset 62/1024, 225 corner radius, one solid white glyph,
+  rounded strokes, no gradients or shadows.
+
+  Glyph = "DB" + "Dock": a two-disc database cylinder resting on a dock bar.
+  The cylinder is 0.50 of the tile wide; the bar is 0.62 wide with round ends,
+  drawn at the same weight as the sibling icons' strokes.
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect x="62" y="62" width="900" height="900" rx="225" ry="225" fill="#FF674D"/>
+  <!-- cylinder -->
+  <path d="M287 312 A225 70 0 0 1 737 312 V566 A225 70 0 0 1 287 566 Z" fill="#FFFFFF"/>
+  <g fill="none" stroke="#FF674D" stroke-width="42">
+    <path d="M287 312 A225 70 0 0 0 737 312"/>
+    <path d="M287 440 A225 70 0 0 0 737 440"/>
+  </g>
+  <!-- dock bar -->
+  <line x1="262" y1="742" x2="762" y2="742" stroke="#FFFFFF" stroke-width="78" stroke-linecap="round"/>
+</svg>

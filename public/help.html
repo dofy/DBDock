@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DBDock Help</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #f6f7f9; --line: #e3e5ea; --fg: #1d2129; --muted: #6f7682;
+    --accent: #ff674d; --accent-soft: #fff0ed; --code: #f1f3f6; --link: #d9462c;
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, "PingFang SC", monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1b1d21; --bg2: #22252a; --line: #343840; --fg: #e5e7eb; --muted: #969ca8;
+      --accent-soft: #3a2420; --code: #2a2d33; --link: #ff8a73;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13.5px/1.7 var(--mono); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, kbd { font-family: var(--mono); font-size: 12.5px; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  kbd { display: inline-block; min-width: 22px; padding: 0 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--bg2); text-align: center; line-height: 1.6; }
+  pre { background: var(--code); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; }
+  pre code { background: none; padding: 0; }
+
+  .layout { display: flex; min-height: 100vh; }
+  nav { width: 250px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 22px 16px; background: var(--bg2); border-right: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .brand img { width: 36px; height: 36px; }
+  .brand b { font-size: 16px; display: block; }
+  .brand span { font-size: 11px; color: var(--muted); }
+  #q { width: 100%; padding: 6px 9px; margin-bottom: 14px; font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  #q:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -1px; }
+  nav ol { list-style: none; margin: 0; padding: 0; }
+  nav li a { display: block; padding: 3px 8px; border-radius: 5px; color: var(--fg); font-size: 12.5px; }
+  nav li a:hover { background: var(--line); text-decoration: none; }
+  nav li a.on { background: var(--accent-soft); color: var(--link); }
+
+  main { flex: 1; min-width: 0; max-width: 860px; padding: 34px 44px 80px; }
+  header.hero { display: flex; gap: 20px; align-items: center; padding-bottom: 22px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+  header.hero img { width: 76px; height: 76px; filter: drop-shadow(0 8px 16px rgb(255 103 77 / 0.3)); }
+  header.hero h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+  header.hero p { margin: 4px 0 0; color: var(--muted); }
+  section { padding-top: 18px; }
+  section.hidden { display: none; }
+  h2 { font-size: 18px; margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--accent-soft); }
+  h3 { font-size: 14px; margin: 18px 0 4px; }
+  p, li { max-width: 74ch; }
+  ul { padding-left: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .note { padding: 10px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; margin: 12px 0; }
+  .tags span { display: inline-block; padding: 0 6px; margin-right: 4px; border-radius: 4px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+  .empty { color: var(--muted); padding: 30px 0; display: none; }
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; }
+  @media (max-width: 720px) { nav { display: none; } main { padding: 22px 16px 60px; } }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <div class="brand"><img src="dbdock-icon.svg" alt=""><div><b>DBDock</b><span>Help · 1.0.0</span></div></div>
+  <input id="q" type="search" placeholder="Search help" autocomplete="off">
+  <ol id="toc"></ol>
+</nav>
+<main>
+  <header class="hero">
+    <img src="dbdock-icon.svg" alt="">
+    <div>
+      <h1>DBDock Help</h1>
+      <p>MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1, with SSH built in.</p>
+    </div>
+  </header>
+
+  <section id="start" data-title="Getting started">
+    <h2>Getting started</h2>
+    <ol>
+      <li><b>Add a connection</b>: <kbd>⌘</kbd><kbd>N</kbd>, or <b>+ New connection</b>. Pick the database type, fill host, user and password, and press <b>Test</b>.</li>
+      <li><b>Or import</b> the ones you already have: <kbd>⌘</kbd><kbd>O</kbd> (TablePlus, DBeaver, connection URLs, a DBDock export).</li>
+      <li><b>Connect</b>: double-click a card, or hover it and press <b>Connect</b>. Each connection opens as a tab at the top; <kbd>⌘</kbd><kbd>1</kbd> goes back to the list.</li>
+    </ol>
+    <p>Passwords never go into a file: they are stored in the macOS Keychain, and the form shows <i>unchanged (saved in Keychain)</i> instead of the value.</p>
+  </section>
+
+  <section id="connections" data-title="Connections and groups">
+    <h2>Connections and groups</h2>
+    <h3>Groups</h3>
+    <p>Groups are folders, and they can be nested with <code> / </code>, e.g. <code>Acme / AI</code>. Manage them in the sidebar:</p>
+    <ul>
+      <li><b>New group</b>: the folder button next to <i>Groups</i>, <kbd>⇧</kbd><kbd>⌘</kbd><kbd>N</kbd>, or right-click a group → <i>New subgroup…</i>.</li>
+      <li><b>Rename or move</b>: right-click → <i>Rename / move…</i>. Type a parent in front to nest it; subgroups and connections move along.</li>
+      <li><b>Delete</b>: right-click → <i>Delete group…</i>, then choose where its connections go (empty = Ungrouped). Connections are never deleted with a group.</li>
+      <li><b>Move connections</b>: drag cards onto a group, or <i>Move to group…</i> from the card menu or the selection bar. Typing a new name creates the group.</li>
+    </ul>
+    <h3>Selecting several</h3>
+    <p>Tick the checkbox in a card's corner, or <kbd>⌘</kbd>-click cards. The bar above the grid then moves, exports or deletes them together. <kbd>Esc</kbd> clears the selection.</p>
+    <h3>Environment tags</h3>
+    <p class="tags"><span style="background:#3fb68b">LOCAL</span><span style="background:#4b6ef5">DEV</span><span style="background:#b07cf7">TEST</span><span style="background:#e08a00">STAGING</span><span style="background:#e5484d">PROD</span></p>
+    <p>Set the tag in the connection form. It shows on the card and on the session tab, and the chips above the grid filter by it. Production connections get a red outline and a red line on their tab, so you know where you are before you run an UPDATE.</p>
+  </section>
+
+  <section id="import" data-title="Import and export">
+    <h2>Import and export</h2>
+    <p><b>File → Import…</b> (<kbd>⌘</kbd><kbd>O</kbd>) works out the format by itself:</p>
+    <table>
+      <tr><th>Source</th><th>What comes along</th></tr>
+      <tr><td>DBDock export (<code>.json</code>)</td><td>Everything, including passwords if they were exported. Encrypted files ask for the passphrase.</td></tr>
+      <tr><td>TablePlus <code>Connections.plist</code></td><td>Connections, groups, tags, SSH settings. Offered directly when TablePlus is installed. <b>Passwords stay in TablePlus</b>: it keeps them where other apps cannot read them, so enter each one once.</td></tr>
+      <tr><td>DBeaver <code>data-sources.json</code></td><td>Connections, folders, connection types, SSH tunnels. Passwords stay in DBeaver.</td></tr>
+      <tr><td>Connection URLs, <code>.env</code>, text</td><td>Every URL found, including its password. Also <b>File → Paste Connection URLs…</b> (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>I</kbd>).</td></tr>
+    </table>
+    <pre><code>DATABASE_URL=postgres://user:pass@db.example.com:5432/app
+REDIS_URL=redis://:secret@127.0.0.1:6379/0
+mongodb+srv://me:pw@cluster0.example.mongodb.net/shop
+mysql://root@127.0.0.1:3306/shop
+sqlite:///Users/me/data/app.db
+jdbc:postgresql://localhost/app</code></pre>
+    <p>Importing the same source again updates the existing connections instead of adding copies. <code>.env</code> keys become the connection names.</p>
+    <h3>Export</h3>
+    <p><b>File → Export…</b> (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>E</kbd>) writes all connections, or the selected ones. With <i>Include passwords</i> on, set a passphrase: the file is then encrypted (AES-256-GCM, key from Argon2id). Without a passphrase the passwords are in plain text; the file is written readable only by you, but delete it once it has been imported.</p>
+  </section>
+
+  <section id="ssh" data-title="SSH tunnels">
+    <h2>SSH tunnels</h2>
+    <p>Turn on <b>Over SSH</b> in the connection form to reach a database through a bastion. The database host and port are then resolved <i>on the SSH server</i>: use <code>127.0.0.1</code> for a database on that machine, or the private address of an RDS instance.</p>
+    <ul>
+      <li><b>Agent / ~/.ssh</b> (default): tries ssh-agent, then <code>IdentityFile</code> from <code>~/.ssh/config</code>, then <code>~/.ssh/id_ed25519</code>, <code>id_ecdsa</code>, <code>id_rsa</code>.</li>
+      <li><b>Key file</b>: a specific private key; fill <i>Passphrase</i> if it is encrypted.</li>
+      <li><b>Password</b>: SSH password login.</li>
+    </ul>
+    <p>The <b>Server</b> field accepts a Host alias from <code>~/.ssh/config</code>; the <b>Hosts</b> button lists them, and the line below shows what the alias resolves to. When a typed host and user match an existing alias, the form offers to use the alias, so later edits to the config apply here too.</p>
+    <p>Host keys are checked against <code>~/.ssh/known_hosts</code>: a new host is remembered on first use, a changed key is refused.</p>
+    <div class="note">ProxyJump is not followed by DBDock tunnels yet. Point the connection at the last hop directly.</div>
+  </section>
+
+  <section id="ssh-hosts" data-title="SSH Hosts (~/.ssh/config)">
+    <h2>SSH Hosts</h2>
+    <p>Open it with <b>File → SSH Hosts…</b> (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd>). It edits <code>~/.ssh/config</code>, the same file <code>ssh</code> uses.</p>
+    <ul>
+      <li>Pick a host to edit <b>HostName, User, Port, IdentityFile, ProxyJump</b>; <b>New host</b> adds one; <b>Test login</b> signs in with the agent or keys.</li>
+      <li>Only those lines of that block change. Comments, other directives (<code>ForwardAgent</code>, <code>ServerAliveInterval</code>, …) and indentation are kept and listed under <i>Kept as is</i>.</li>
+      <li><b>Raw file</b> edits the whole file, for <code>Host *</code>, multi-alias blocks, <code>Match</code> and anything else.</li>
+      <li>Every save first writes <code>~/.ssh/config.dbdock-&lt;date&gt;.bak</code>.</li>
+      <li>The number next to a host counts the DBDock connections that use it.</li>
+    </ul>
+  </section>
+
+  <section id="sql" data-title="SQL databases">
+    <h2>MySQL, PostgreSQL, SQLite, D1</h2>
+    <h3>Browsing</h3>
+    <p>Pick a database / schema in the sidebar, then a table. The <b>Data</b> view pages through rows; type a <code>WHERE</code> condition (column names complete, <kbd>Enter</kbd> applies) and click a column header to sort. <b>Structure</b> lists columns, types, defaults and keys.</p>
+    <h3>SQL editor</h3>
+    <ul>
+      <li><kbd>⌘</kbd><kbd>↵</kbd> runs the selection, or everything. Several statements give several result tabs.</li>
+      <li>Completion knows tables, and the columns of the tables in the statement; <kbd>Tab</kbd> or <kbd>Enter</kbd> accepts.</li>
+      <li><b>Cancel</b> stops a running MySQL or PostgreSQL query. SQLite and D1 cannot be cancelled.</li>
+      <li>One session is one connection, so <code>USE</code>, <code>SET</code> and transactions behave like an interactive console.</li>
+    </ul>
+    <h3>Editing rows</h3>
+    <p>Tables with a primary key can be edited in the grid: double-click a cell (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels), <b>+ Row</b>, <b>− Row</b>, <b>NULL</b>. Changes stay pending (yellow, struck-through, green) until you <b>Commit</b> (<kbd>⌘</kbd><kbd>S</kbd>). <b>Preview SQL</b> shows exactly what will run.</p>
+    <div class="note">A commit runs in one transaction. If any UPDATE or DELETE does not hit exactly one row (someone changed it, or the key is not unique), nothing is changed.</div>
+    <h3>Cloudflare D1</h3>
+    <p>Fill the <b>Account ID</b>, <b>Database ID</b> (see <code>wrangler d1 list</code>) and an <b>API token</b> with the D1 Edit permission. Queries go through the Cloudflare REST API. D1 has no <code>BEGIN</code>; DBDock still commits grid edits atomically by sending them as one request.</p>
+    <h3>StarRocks, Doris and other MySQL-compatible servers</h3>
+    <p>Use the MySQL type. DBDock only sends <code>SET NAMES</code> when it connects, which these servers accept.</p>
+  </section>
+
+  <section id="redis" data-title="Redis">
+    <h2>Redis</h2>
+    <ul>
+      <li>The key list uses <code>SCAN</code> with a pattern (<code>user:*</code>); <b>Load more…</b> continues the scan.</li>
+      <li>Selecting a key shows its value by type (string, hash, list, set, sorted set, stream) with TTL and size; JSON strings are pretty-printed.</li>
+      <li>Switch databases with the <code>db0</code>–<code>db15</code> menu or <code>SELECT n</code>.</li>
+      <li>The console at the bottom runs any command; <kbd>↑</kbd> / <kbd>↓</kbd> walk the history.</li>
+    </ul>
+  </section>
+
+  <section id="mongodb" data-title="MongoDB">
+    <h2>MongoDB</h2>
+    <p>Connect with host and port, or paste a <code>mongodb://</code> / <code>mongodb+srv://</code> URI into Host. <i>Options</i> takes a query string such as <code>authSource=admin&amp;tls=true</code>. Over SSH, use host and port rather than a URI.</p>
+    <h3>Collections</h3>
+    <p>Open a collection from the sidebar. <b>filter</b>, <b>sort</b> and <b>projection</b> accept the shell's relaxed syntax:</p>
+    <pre><code>{ age: { $gt: 18 }, name: /^a/ }        filter
+{ _id: -1 }                              sort
+{ name: 1, email: 1 }                    projection
+{ _id: ObjectId("65a1b2c3d4e5f60718293a4b") }
+{ at: { $gte: ISODate("2026-01-01T00:00:00Z") } }</code></pre>
+    <p>Switch between <b>Table</b> and <b>JSON</b>, double-click a document to edit it as Extended JSON (<code>{"$oid": …}</code>, <code>{"$date": …}</code>), <b>+ Insert</b> adds one. The <code>_id</code> of an existing document cannot be changed.</p>
+    <h3>Shell</h3>
+    <p><kbd>⌘</kbd><kbd>↵</kbd> runs the current line or the selection:</p>
+    <pre><code>db.users.find({ age: { $gt: 18 } }, { name: 1 }).sort({ age: -1 }).limit(20)
+db.users.findOne({ name: "alice" })
+db.orders.aggregate([{ $group: { _id: "$city", n: { $sum: 1 } } }])
+db.users.countDocuments({})        db.users.distinct("city")
+db.users.insertOne({ name: "dave" })
+db.users.updateMany({ active: false }, { $set: { archived: true } })
+db.users.deleteOne({ _id: ObjectId("…") })
+db.runCommand({ dbStats: 1 })
+show dbs        show collections        use otherdb</code></pre>
+  </section>
+
+  <section id="vim" data-title="Vim mode">
+    <h2>Vim mode</h2>
+    <p>Turn it on in <b>DBDock → Settings…</b> (<kbd>⌘</kbd><kbd>,</kbd>). It applies to the SQL editor, the Mongo shell, the document editor and the raw SSH config editor; a <code>VIM</code> badge shows where it is active.</p>
+    <ul>
+      <li><kbd>Esc</kbd> leaves insert mode, and closes an open completion list at the same time.</li>
+      <li><code>:w</code> saves in the document and config editors, and runs in the SQL editor and shell.</li>
+      <li><kbd>Esc</kbd> inside an editor never closes the dialog around it.</li>
+    </ul>
+  </section>
+
+  <section id="shortcuts" data-title="Keyboard shortcuts">
+    <h2>Keyboard shortcuts</h2>
+    <table>
+      <tr><th>Keys</th><th>Action</th></tr>
+      <tr><td><kbd>⌘</kbd><kbd>N</kbd></td><td>New connection</td></tr>
+      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>N</kbd></td><td>New group</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>O</kbd></td><td>Import…</td></tr>
+      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>I</kbd></td><td>Paste connection URLs…</td></tr>
+      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>E</kbd></td><td>Export…</td></tr>
+      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd></td><td>SSH Hosts</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>,</kbd></td><td>Settings</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>?</kbd></td><td>This help</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>1</kbd></td><td>Connections list</td></tr>
+      <tr><td><kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd> / <kbd>→</kbd></td><td>Previous / next session</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>W</kbd></td><td>Close the current session</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>F</kbd></td><td>Search connections</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>R</kbd></td><td>Reload the connection list</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>↵</kbd></td><td>Run (SQL editor, Mongo shell)</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>S</kbd></td><td>Commit grid edits · save document / config</td></tr>
+      <tr><td><kbd>Tab</kbd></td><td>Accept a completion</td></tr>
+      <tr><td>Double-click</td><td>Connect (card) · edit (cell, document)</td></tr>
+    </table>
+  </section>
+
+  <section id="data" data-title="Where your data lives">
+    <h2>Where your data lives</h2>
+    <table>
+      <tr><th>What</th><th>Where</th></tr>
+      <tr><td>Connections, groups</td><td><code>~/Library/Application Support/xyz.phpz.app.dbdock/</code></td></tr>
+      <tr><td>Passwords, API tokens, SSH passphrases</td><td>macOS Keychain, service <code>xyz.phpz.app.dbdock</code></td></tr>
+      <tr><td>SSH hosts</td><td><code>~/.ssh/config</code> (shared with <code>ssh</code>)</td></tr>
+      <tr><td>Settings</td><td>inside the app</td></tr>
+    </table>
+    <p>DBDock does not send anything anywhere except to the databases and SSH servers you connect to (and the Cloudflare API for D1).</p>
+  </section>
+
+  <section id="trouble" data-title="Troubleshooting">
+    <h2>Troubleshooting</h2>
+    <h3>macOS keeps asking for Keychain access</h3>
+    <p>Keychain entries trust the signature of the app that saved them. A differently signed build (for example a development build) asks on every read, and <i>Always Allow</i> does not stick. Use the installed app; if entries were written by another build, export your connections with passwords from the build that can read them and import them again.</p>
+    <h3>"password authentication failed" after an import</h3>
+    <p>TablePlus and DBeaver do not share their passwords. Open <b>Edit</b> on the connection and type the password once.</p>
+    <h3>SSH: "host key rejected"</h3>
+    <p>The server's key differs from the one in <code>~/.ssh/known_hosts</code>. If the change is expected (the server was rebuilt), remove the old line with <code>ssh-keygen -R host</code> and connect again.</p>
+    <h3>MySQL-compatible server refuses the connection</h3>
+    <p>Check the port (StarRocks and Doris usually listen on 9030) and that the user may connect from your address, or through the tunnel's server.</p>
+    <h3>A table is read-only</h3>
+    <p>Grid editing needs a primary key, so rows can be targeted safely. Views are always read-only. Use the SQL editor instead.</p>
+  </section>
+
+  <p class="empty" id="empty">Nothing matches.</p>
+
+  <footer>
+    DBDock 1.0.0 · Copyright © 2026 phpz.org · MIT License ·
+    <a href="https://github.com/dofy/DBDock" target="_blank" rel="noopener">github.com/dofy/DBDock</a>
+  </footer>
+</main>
+</div>
+<script>
+  const sections = [...document.querySelectorAll("main section")];
+  const toc = document.getElementById("toc");
+  for (const s of sections) {
+    const li = document.createElement("li");
+    li.innerHTML = `<a href="#${s.id}">${s.dataset.title}</a>`;
+    toc.appendChild(li);
+  }
+  const links = [...toc.querySelectorAll("a")];
+  const mark = () => {
+    let cur = sections[0];
+    for (const s of sections) if (!s.classList.contains("hidden") && s.getBoundingClientRect().top < 120) cur = s;
+    links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === `#${cur.id}`));
+  };
+  addEventListener("scroll", mark, { passive: true });
+  // Opened as help.html#section: jump there once the TOC exists.
+  const jump = () => { const el = location.hash && document.getElementById(location.hash.slice(1)); if (el) el.scrollIntoView(); mark(); };
+  addEventListener("hashchange", jump);
+  requestAnimationFrame(jump);
+  const q = document.getElementById("q");
+  q.addEventListener("input", () => {
+    const t = q.value.trim().toLowerCase();
+    let shown = 0;
+    sections.forEach((s, i) => {
+      const hit = !t || s.textContent.toLowerCase().includes(t);
+      s.classList.toggle("hidden", !hit);
+      links[i].parentElement.style.display = hit ? "" : "none";
+      shown += hit;
+    });
+    document.getElementById("empty").style.display = shown ? "none" : "block";
+  });
+  addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "f") { e.preventDefault(); q.focus(); }
+    if (e.key === "Escape" && document.activeElement === q) { q.value = ""; q.dispatchEvent(new Event("input")); }
+  });
+</script>
+</body>
+</html>
