@@ -283,7 +283,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           <h1 title={title}>{title}</h1>
           <span className="muted">{shown.length}</span>
           <span className="spacer" />
-          <button disabled={!shown.length} onClick={() => setDialog({ kind: "health", connections: [...shown] })}><Activity size={14} />{t("Check health")}</button>
+          <button disabled={!shown.length} onClick={() => setDialog({ kind: "health", connections: [...shown] })}><Activity size={14} />{tf("Batch check shown ({count})", { count: shown.length })}</button>
           <button className="primary" onClick={() => onEdit({ newInGroup: sel ?? "" })}>
             <Plus size={14} />{t("New connection")} </button>
         </div>
@@ -315,7 +315,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                  {t("Select none")} </button>
             )}
             <span className="spacer" />
-            <button onClick={() => setDialog({ kind: "health", connections: conns.filter((c) => picked.has(c.id)) })}><Activity size={14} />{t("Check health")}</button>
+            <button onClick={() => setDialog({ kind: "health", connections: conns.filter((c) => picked.has(c.id)) })}><Activity size={14} />{tf("Check selected ({count})", { count: picked.size })}</button>
             <button onClick={() => setDialog({ kind: "move", ids: pickedIds })}><FolderInput size={14} />{t("Move to group…")}</button>
             <button onClick={() => setDialog({ kind: "export", ids: pickedIds })}><FileUp size={14} />{t("Export…")}</button>
             <button className="danger" onClick={() => void deleteConnections(pickedIds)}>

@@ -1,6 +1,9 @@
 /** Additional UI messages. Placeholders are interpolated only after translation. */
 export const extraMessages: Record<string, readonly [string, string, string]> = {
   'Check health': ['健康检查', '健康檢查', 'ヘルスチェック'],
+  'Batch check shown ({count})': ['批量检查当前列表（{count}）', '批次檢查目前清單（{count}）', '表示中を一括チェック（{count}）'],
+  'Check selected ({count})': ['检查已选（{count}）', '檢查已選（{count}）', '選択した {count} 件をチェック'],
+  'Batch test {count} connection(s)': ['批量测试 {count} 个连接', '批次測試 {count} 個連線', '{count} 件の接続を一括テスト'],
   'Connection health': ['连接健康检查', '連線健康檢查', '接続のヘルスチェック'],
   'Checking {count} connection(s)': ['检查 {count} 个连接', '檢查 {count} 個連線', '{count} 件の接続をチェック'],
   'Required fields are checked locally; credentials are checked only during a connection test. Tests run one at a time and may request Keychain access. Stopping waits for the current check to finish.': ['必填项在本地检查；凭据仅在测试连接时验证。测试逐个进行，可能请求钥匙串授权。停止时会等待当前检查结束。', '必填項目在本機檢查；憑證僅在測試連線時驗證。測試逐一進行，可能要求鑰匙圈授權。停止時會等待目前的檢查完成。', '必須項目はローカルで確認し、認証情報は接続テスト時に検証します。テストは一件ずつ実行し、キーチェーンへのアクセスを求める場合があります。停止時は実行中のテストを待ちます。'],
@@ -122,6 +125,7 @@ export const backendMessages: Record<string, readonly [string, string, string]> 
   'keychain unavailable': ['钥匙串不可用', '鑰匙圈無法使用', 'キーチェーンを利用できません'],
   'keychain read failed': ['读取钥匙串失败', '讀取鑰匙圈失敗', 'キーチェーンの読み取りに失敗しました'],
   'connection check timed out': ['连接检查超时', '連線檢查逾時', '接続チェックがタイムアウトしました'],
+  'SQLite database file does not exist': ['SQLite 数据库文件不存在，请检查文件路径', 'SQLite 資料庫檔案不存在，請檢查檔案路徑', 'SQLite データベースファイルが存在しません。ファイルのパスを確認してください'],
   'could not read credentials for export': ['无法读取导出所需的凭据', '無法讀取匯出所需的憑證', 'エクスポートに必要な認証情報を読み取れません'],
   'invalid credential vault': ['凭据库格式无效', '憑證庫格式無效', '認証情報保管庫の形式が無効です'],
   'unsupported credential vault version': ['不支持此凭据库版本', '不支援此憑證庫版本', 'この認証情報保管庫のバージョンには対応していません'],

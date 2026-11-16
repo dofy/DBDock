@@ -78,7 +78,7 @@ export function HealthDialog({ connections, onClose, onEdit }: { connections: Co
           </div>;
         })}
       </div>
-      <div className="actions"><span className="spacer" /><button onClick={onClose}>{t("Close")}</button>{running ? <button onClick={stop} disabled={stopping}>{t(stopping ? "Stopping…" : "Stop")}</button> : <button className="primary" disabled={!testable.length} onClick={() => void run()}>{t("Test connections")}</button>}</div>
+      <div className="actions"><span className="spacer" /><button onClick={onClose}>{t("Close")}</button>{running ? <button onClick={stop} disabled={stopping}>{t(stopping ? "Stopping…" : "Stop")}</button> : <button className="primary" disabled={!testable.length} onClick={() => void run()}>{tf("Batch test {count} connection(s)", { count: testable.length })}</button>}</div>
     </div>
   </div>;
 }

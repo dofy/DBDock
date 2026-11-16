@@ -178,8 +178,19 @@ pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Op
 
 /// Check a SQLite file without creating or modifying it.
 pub async fn check_sqlite_readonly(path: &str) -> Result<()> {
-    let options = SqliteConnectOptions::new().filename(expand_tilde(path)).read_only(true).create_if_missing(false);
-    let mut conn = SqliteConnection::connect_with(&options).await?;
+    let file = expand_tilde(path);
+    let options = SqliteConnectOptions::new().filename(&file).read_only(true).create_if_missing(false);
+    let mut conn = match SqliteConnection::connect_with(&options).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            // SQLite reports the same generic error for missing files and other
+            // open failures. Only classify it as missing when metadata confirms it.
+            if matches!(tokio::fs::metadata(&file).await, Err(e) if e.kind() == std::io::ErrorKind::NotFound) {
+                anyhow::bail!("SQLite database file does not exist");
+            }
+            return Err(error.into());
+        }
+    };
     sqlx::query_scalar::<_, i64>("PRAGMA schema_version").fetch_one(&mut conn).await?;
     conn.close().await?;
     Ok(())
@@ -764,7 +775,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("dbdock-health-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let missing = dir.join("missing.sqlite");
-        assert!(check_sqlite_readonly(missing.to_str().unwrap()).await.is_err());
+        let error = check_sqlite_readonly(missing.to_str().unwrap()).await.unwrap_err();
+        assert_eq!(error.to_string(), "SQLite database file does not exist");
         assert!(!missing.exists());
         let db = dir.join("valid.sqlite");
         let options = SqliteConnectOptions::new().filename(&db).create_if_missing(true);
@@ -776,7 +788,8 @@ mod tests {
         assert_eq!(std::fs::read(&db).unwrap(), before);
         let invalid = dir.join("invalid.sqlite");
         std::fs::write(&invalid, b"not a sqlite database").unwrap();
-        assert!(check_sqlite_readonly(invalid.to_str().unwrap()).await.is_err());
+        let error = check_sqlite_readonly(invalid.to_str().unwrap()).await.unwrap_err();
+        assert_ne!(error.to_string(), "SQLite database file does not exist");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -30,3 +30,17 @@ test('backend error gets a localized explanation while original diagnostics stay
   updateSettings({ language: 'en' });
   assert.equal(localizeError(raw), raw);
 });
+
+test('missing SQLite file and batch actions are localized for every supported language', () => {
+  const cases = [
+    ['en', 'SQLite database file does not exist', 'Batch test 3 connection(s)'],
+    ['zh-CN', 'SQLite 数据库文件不存在', '批量测试 3 个连接'],
+    ['zh-TW', 'SQLite 資料庫檔案不存在', '批次測試 3 個連線'],
+    ['ja', 'SQLite データベースファイルが存在しません', '3 件の接続を一括テスト'],
+  ];
+  for (const [language, expectedError, expectedButton] of cases) {
+    updateSettings({ language });
+    assert.ok(localizeError('SQLite database file does not exist').includes(expectedError));
+    assert.equal(tf('Batch test {count} connection(s)', { count: 3 }), expectedButton);
+  }
+});
