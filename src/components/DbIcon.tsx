@@ -10,13 +10,13 @@ const ICONS: Record<Kind, { path: string; hex: string; title: string }> = {
   mongodb: siMongodb,
 };
 
-/** Product logo (Simple Icons, CC0) on a light tile, so dark brand colors stay visible in dark mode. */
+/** Product logo (Simple Icons, CC0) on a theme-aware tile. */
 export function DbIcon({ kind, size = 32 }: { kind: Kind; size?: number }) {
   const i = ICONS[kind];
   return (
-    <span className="db-icon" style={{ width: size, height: size }} title={i.title}>
+    <span className="db-icon" data-kind={kind} style={{ width: size, height: size, color: `#${i.hex}` }} title={i.title}>
       <svg viewBox="0 0 24 24" width={size * 0.66} height={size * 0.66} aria-hidden="true">
-        <path d={i.path} fill={`#${i.hex}`} />
+        <path d={i.path} fill="currentColor" />
       </svg>
     </span>
   );

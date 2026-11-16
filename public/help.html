@@ -36,9 +36,11 @@
   #q { width: 100%; padding: 6px 9px; margin-bottom: 14px; font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
   #q:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -1px; }
   nav ol { list-style: none; margin: 0; padding: 0; }
-  nav li a { display: block; padding: 3px 8px; border-radius: 5px; color: var(--fg); font-size: 12.5px; }
+  nav li a { display: flex; align-items: center; gap: 8px; padding: 3px 8px; border-radius: 5px; color: var(--fg); font-size: 12.5px; }
+  nav li a svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
   nav li a:hover { background: var(--line); text-decoration: none; }
   nav li a.on { background: var(--accent-soft); color: var(--link); }
+  nav li a.on svg { color: inherit; }
 
   main { flex: 1; min-width: 0; max-width: 860px; padding: 34px 44px 80px; }
   header.hero { display: flex; gap: 20px; align-items: center; padding-bottom: 22px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
@@ -49,6 +51,8 @@
   section { padding-top: 18px; }
   section.hidden { display: none; }
   h2 { font-size: 18px; margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--accent-soft); }
+  section > h2 { display: flex; align-items: center; gap: 8px; }
+  section > h2 svg { width: 20px; height: 20px; flex: none; color: var(--link); }
   h3 { font-size: 14px; margin: 18px 0 4px; }
   p, li { max-width: 74ch; }
   ul { padding-left: 20px; }
@@ -81,6 +85,7 @@
 
   <section id="start" data-title="Getting started">
     <h2>Getting started</h2>
+    <p>DBDock is a macOS desktop client for MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1. It brings connections, SSH tunnels and database tools together in one place, with support for Vim, light and dark themes, and multiple languages.</p>
     <ol>
       <li><b>Add a connection</b>: <kbd>⌘</kbd><kbd>N</kbd>, or <b>+ New connection</b>. Pick the database type, fill host, user and password, and press <b>Test</b>.</li>
       <li><b>Or import</b> the ones you already have: <kbd>⌘</kbd><kbd>O</kbd> (TablePlus, DBeaver, connection URLs, a DBDock export).</li>
@@ -275,7 +280,8 @@ show dbs        show collections        use otherdb</code></pre>
   </footer>
 </main>
 </div>
-<script type="module">
+<script src="help.translations.js"></script>
+<script>
   // In the desktop app, use the same system-browser command as the native menu.
   // Ordinary browser/file previews keep the normal anchor behavior.
   for (const link of document.querySelectorAll('.github-link')) {
@@ -298,11 +304,37 @@ show dbs        show collections        use otherdb</code></pre>
   const sections = [...document.querySelectorAll("main section")];
   const toc = document.getElementById("toc");
   const q = document.getElementById("q");
+  // Icons use the same 24px outline style as the app and are bundled for offline use.
+  const navIcons = {
+    start: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>',
+    connections: '<path d="M3 5h6l2 2h10v12H3z"/><path d="M7 12h10M7 16h7"/>',
+    import: '<path d="M12 3v12m-4-4 4 4 4-4"/><path d="M4 17v3h16v-3"/>',
+    ssh: '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/>',
+    'ssh-hosts': '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/>',
+    sql: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/>',
+    redis: '<circle cx="8" cy="15" r="4"/><path d="m11 12 7-7 2 2-2 2 2 2-2 2-2-2-3 3"/>',
+    mongodb: '<path d="M12 22v-8M12 3c4 3 6 6 6 9a6 6 0 0 1-12 0c0-3 2-6 6-9Z"/>',
+    vim: '<path d="m4 5 4 14 4-14m1 14h7M13 5h7m-3.5 0v14"/>',
+    shortcuts: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 16h8"/>',
+    data: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M7 15h.01M11 15h6"/>',
+    trouble: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4m0 3.5h.01"/>',
+  };
+  function sectionIcon(id) {
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("fill", "none");
+    icon.setAttribute("stroke", "currentColor");
+    icon.setAttribute("stroke-width", "1.8");
+    icon.setAttribute("stroke-linecap", "round");
+    icon.setAttribute("stroke-linejoin", "round");
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = navIcons[id] || navIcons.start;
+    return icon;
+  }
   const originals = new Map(sections.map(s => [s.id, { title: s.dataset.title, html: s.innerHTML }]));
   const examples = new Map(sections.map(s => [s.id, [...s.querySelectorAll("pre")].map(p => p.outerHTML).join("")]));
   const originalLabels = [document.querySelector(".hero h1").textContent, q.placeholder, document.getElementById("empty").textContent, document.querySelector(".hero p").textContent];
   let links = [];
-  let generation = 0;
   function locale() {
     let choice = "system";
     try { choice = JSON.parse(localStorage.getItem("dbdock.settings") || "{}").language || "system"; } catch {}
@@ -331,15 +363,9 @@ show dbs        show collections        use otherdb</code></pre>
     for (const s of sections) if (!s.classList.contains("hidden") && s.getBoundingClientRect().top < 120) cur = s;
     links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === `#${cur.id}`));
   };
-  async function updateLanguage() {
-    const request = ++generation;
+  function updateLanguage() {
     const lang = locale();
-    let data = null;
-    if (lang !== "en") {
-      try { const response = await fetch(`help.${lang}.json`); if (!response.ok) throw new Error("help translation unavailable"); data = await response.json(); }
-      catch (error) { console.error(error); }
-    }
-    if (request !== generation) return;
+    const data = lang === "en" ? null : window.DBDOCK_HELP_TRANSLATIONS?.[lang];
     document.documentElement.lang = data ? lang : "en";
     const labels = data?.labels || originalLabels;
     document.title = labels[0];
@@ -354,13 +380,14 @@ show dbs        show collections        use otherdb</code></pre>
       if (translated) s.innerHTML = `<h2></h2>${entry.html}${examples.get(s.id) || ""}`;
       else s.innerHTML = entry.html;
       if (translated) s.querySelector("h2").textContent = entry.title;
+      s.querySelector("h2")?.prepend(sectionIcon(s.id));
     });
     toc.replaceChildren();
     for (const s of sections) {
       const li = document.createElement("li");
       const a = document.createElement("a");
       a.href = `#${s.id}`;
-      a.textContent = s.dataset.title;
+      a.append(sectionIcon(s.id), document.createTextNode(s.dataset.title));
       li.appendChild(a);
       toc.appendChild(li);
     }

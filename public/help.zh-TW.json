@@ -8,7 +8,7 @@
   "sections": {
     "start": {
       "title": "入門",
-      "html": "<p>按 ⌘N 新增連線，選擇資料庫類型，填寫主機、使用者名稱與密碼後按「測試」。也可按 ⌘O 匯入 TablePlus、DBeaver、URL 或 DBDock 匯出檔。</p><p>按兩下連線卡片或按「連線」開啟工作階段；⌘1 返回連線清單。密碼儲存在 macOS 鑰匙圈中，表單不會顯示已儲存的密碼。</p>"
+      "html": "<p>DBDock 是一款 macOS 桌面資料庫用戶端，支援 MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1。它整合連線管理、SSH 通道及資料庫工具，並支援 Vim、淺色與深色主題和多種語言。</p><p>按 ⌘N 新增連線，選擇資料庫類型，填寫主機、使用者名稱與密碼後按「測試」。也可按 ⌘O 匯入 TablePlus、DBeaver、URL 或 DBDock 匯出檔。</p><p>按兩下連線卡片或按「連線」開啟工作階段；⌘1 返回連線清單。密碼儲存在 macOS 鑰匙圈中，表單不會顯示已儲存的密碼。</p>"
     },
     "connections": {
       "title": "連線與群組",

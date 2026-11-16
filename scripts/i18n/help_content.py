@@ -4,7 +4,7 @@ from pathlib import Path
 # Each entry mirrors one section in public/help.html; technical examples remain in the original HTML.
 content = {
 'zh-CN': [
-('入门', '''<p>按 ⌘N 新建连接，选择数据库类型，填写主机、用户名和密码后点击“测试”。也可以按 ⌘O 导入 TablePlus、DBeaver、URL 或 DBDock 导出文件。</p><p>双击连接卡片或点击“连接”打开会话；⌘1 返回连接列表。密码保存在 macOS 钥匙串中，表单不会显示已保存的密码。</p>'''),
+('入门', '''<p>DBDock 是一款 macOS 桌面数据库客户端，支持 MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1。它将连接管理、SSH 隧道和数据库工具集中在一起，并支持 Vim、浅色与深色主题及多种语言。</p><p>按 ⌘N 新建连接，选择数据库类型，填写主机、用户名和密码后点击“测试”。也可以按 ⌘O 导入 TablePlus、DBeaver、URL 或 DBDock 导出文件。</p><p>双击连接卡片或点击“连接”打开会话；⌘1 返回连接列表。密码保存在 macOS 钥匙串中，表单不会显示已保存的密码。</p>'''),
 ('连接与分组', '''<h3>分组和多选</h3><p>使用侧边栏创建、重命名、移动或删除分组。路径中的 <code> / </code> 表示嵌套；删除分组时选择连接的新位置，数据库内容不会删除。可将卡片拖到分组，或使用“移动到分组”。</p><p>点击卡片右上角选择标记或按住 ⌘ 点击可多选。选择栏支持批量移动、导出和删除；Esc 或“清除选择”取消选择。</p><h3>环境标签</h3><p>连接可标记为本地、开发、测试、预发布或生产，并按标签筛选。生产连接和会话标签有红色标识。</p>'''),
 ('导入与导出', '''<p>“文件 → 导入”（⌘O）自动识别 DBDock JSON、TablePlus Connections.plist、DBeaver data-sources.json 和含 URL 的文本或 .env。TablePlus 和 DBeaver 的密码不能读取，请导入后填写；URL 中的密码保存到钥匙串。同一来源再次导入会更新已有连接。⇧⌘I 可粘贴 URL。<code>rediss://</code> 暂不支持。</p><h3>导出</h3><p>“文件 → 导出”（⇧⌘E）可导出全部或所选连接。包含密码时，设置口令可使用 AES-256-GCM 加密，密钥由 Argon2id 派生。不设置口令时密码为明文，请妥善保管。</p>'''),
 ('SSH 隧道', '''<p>在连接表单启用“通过 SSH”。数据库主机和端口从 SSH 服务器访问：同机数据库可用 127.0.0.1，也可填写私有 RDS 地址。</p><p>支持 ssh-agent、~/.ssh/config 中的 IdentityFile、默认密钥、指定密钥文件和密码。主机密钥必须已在 ~/.ssh/known_hosts 中验证；请先通过 OpenSSH 确认新主机。未知、已更改、不可读取的密钥和主机证书会被拒绝。</p><p>Server 可填写 SSH 配置别名。DBDock 隧道暂不支持 ProxyJump，请直接连接最后一跳。</p>'''),
@@ -17,7 +17,7 @@ content = {
 ('数据保存位置', '''<p>连接和分组：<code>~/Library/Application Support/xyz.phpz.app.dbdock/</code>。密码、API 令牌及 SSH 口令：macOS 钥匙串服务 <code>xyz.phpz.app.dbdock</code>。SSH 主机：<code>~/.ssh/config</code>。界面设置保存在应用中。</p><p>应用只连接用户指定的数据库和 SSH 服务器；D1 还会访问 Cloudflare API。</p>'''),
 ('故障排查', '''<h3>钥匙串反复请求授权</h3><p>钥匙串条目与写入它们的应用签名绑定。日常使用已安装的应用；如果条目由其他构建写入，可从能读取它的构建导出并重新导入。</p><h3>导入后密码认证失败</h3><p>TablePlus 和 DBeaver 不提供密码，请编辑连接并输入密码。</p><h3>SSH 主机密钥被拒绝</h3><p>确认主机密钥是否可信；首次连接先使用 OpenSSH 验证。如果服务器重建导致密钥变化，核实后用 ssh-keygen -R host 移除旧记录，再使用 OpenSSH 验证新密钥。</p><h3>MySQL 兼容服务无法连接</h3><p>检查端口和用户来源权限。StarRocks / Doris 通常使用 9030。</p><h3>表只读</h3><p>网格编辑需要主键，视图始终只读；可使用 SQL 编辑器。</p>''')],
 'zh-TW': [
-('入門', '''<p>按 ⌘N 新增連線，選擇資料庫類型，填寫主機、使用者名稱與密碼後按「測試」。也可按 ⌘O 匯入 TablePlus、DBeaver、URL 或 DBDock 匯出檔。</p><p>按兩下連線卡片或按「連線」開啟工作階段；⌘1 返回連線清單。密碼儲存在 macOS 鑰匙圈中，表單不會顯示已儲存的密碼。</p>'''),
+('入門', '''<p>DBDock 是一款 macOS 桌面資料庫用戶端，支援 MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1。它整合連線管理、SSH 通道及資料庫工具，並支援 Vim、淺色與深色主題和多種語言。</p><p>按 ⌘N 新增連線，選擇資料庫類型，填寫主機、使用者名稱與密碼後按「測試」。也可按 ⌘O 匯入 TablePlus、DBeaver、URL 或 DBDock 匯出檔。</p><p>按兩下連線卡片或按「連線」開啟工作階段；⌘1 返回連線清單。密碼儲存在 macOS 鑰匙圈中，表單不會顯示已儲存的密碼。</p>'''),
 ('連線與群組', '''<h3>群組與多選</h3><p>在側邊欄建立、重新命名、移動或刪除群組。路徑中的 <code> / </code> 表示巢狀結構；刪除時選擇連線的新位置，不會刪除資料庫內容。可拖曳卡片或使用「移至群組」。</p><p>點擊卡片右上角標記或按住 ⌘ 點擊可多選。選取列支援批次移動、匯出及刪除；Esc 或「清除選取」取消選取。</p><h3>環境標籤</h3><p>可標記本機、開發、測試、預發布或正式環境，並依標籤篩選。正式環境連線及工作階段有紅色標示。</p>'''),
 ('匯入與匯出', '''<p>「檔案 → 匯入」（⌘O）自動辨識 DBDock JSON、TablePlus Connections.plist、DBeaver data-sources.json 及含 URL 的文字或 .env。TablePlus 和 DBeaver 的密碼無法讀取，請匯入後填寫；URL 密碼儲存至鑰匙圈。再次匯入同一來源會更新現有連線。⇧⌘I 可貼上 URL。<code>rediss://</code> 暫不支援。</p><h3>匯出</h3><p>「檔案 → 匯出」（⇧⌘E）可匯出全部或選取的連線。包含密碼時，設定密語可使用 AES-256-GCM 加密，金鑰由 Argon2id 衍生。不設定密語時密碼為明文，請妥善保管。</p>'''),
 ('SSH 通道', '''<p>在連線表單啟用「透過 SSH」。資料庫主機和連接埠從 SSH 伺服器存取：同一台主機上的資料庫可用 127.0.0.1，也可填寫私有 RDS 位址。</p><p>支援 ssh-agent、~/.ssh/config 的 IdentityFile、預設金鑰、指定金鑰檔及密碼。主機金鑰必須已在 ~/.ssh/known_hosts 中驗證；請先透過 OpenSSH 確認新主機。未知、已變更、無法讀取的金鑰及主機憑證會被拒絕。</p><p>Server 可填入 SSH 設定別名。DBDock 通道尚不支援 ProxyJump，請直接連接最後一跳。</p>'''),
@@ -30,7 +30,7 @@ content = {
 ('資料儲存位置', '''<p>連線與群組：<code>~/Library/Application Support/xyz.phpz.app.dbdock/</code>。密碼、API 權杖與 SSH 密語：macOS 鑰匙圈服務 <code>xyz.phpz.app.dbdock</code>。SSH 主機：<code>~/.ssh/config</code>。介面設定儲存於應用程式中。</p><p>應用程式只連線至使用者指定的資料庫和 SSH 伺服器；D1 亦會存取 Cloudflare API。</p>'''),
 ('疑難排解', '''<h3>鑰匙圈反覆要求授權</h3><p>鑰匙圈項目與寫入它們的應用程式簽章綁定。日常使用已安裝的應用程式；若項目由其他建置寫入，可從能讀取的建置匯出再重新匯入。</p><h3>匯入後密碼驗證失敗</h3><p>TablePlus 和 DBeaver 不提供密碼，請編輯連線並輸入密碼。</p><h3>SSH 主機金鑰被拒絕</h3><p>確認主機金鑰是否可信；首次連線先透過 OpenSSH 驗證。若伺服器重建導致金鑰變更，確認後用 ssh-keygen -R host 移除舊紀錄，再以 OpenSSH 驗證新金鑰。</p><h3>MySQL 相容服務無法連線</h3><p>檢查連接埠和使用者來源權限。StarRocks / Doris 通常使用 9030。</p><h3>資料表唯讀</h3><p>表格編輯需要主鍵，檢視表一律唯讀；可使用 SQL 編輯器。</p>''')],
 'ja': [
-('はじめに', '''<p>⌘N で接続を作成し、データベースの種類、ホスト、ユーザー名、パスワードを入力して「テスト」を押します。⌘O で TablePlus、DBeaver、URL、DBDock のエクスポートもインポートできます。</p><p>接続カードをダブルクリックするか「接続」を押してセッションを開きます。⌘1 で接続一覧に戻ります。パスワードは macOS キーチェーンに保存され、入力欄には表示されません。</p>'''),
+('はじめに', '''<p>DBDock は MySQL、PostgreSQL、SQLite、Redis、MongoDB、Cloudflare D1 に対応した macOS デスクトップクライアントです。接続管理、SSH トンネル、データベースツールをひとつにまとめ、Vim、ライト・ダークテーマ、複数言語に対応しています。</p><p>⌘N で接続を作成し、データベースの種類、ホスト、ユーザー名、パスワードを入力して「テスト」を押します。⌘O で TablePlus、DBeaver、URL、DBDock のエクスポートもインポートできます。</p><p>接続カードをダブルクリックするか「接続」を押してセッションを開きます。⌘1 で接続一覧に戻ります。パスワードは macOS キーチェーンに保存され、入力欄には表示されません。</p>'''),
 ('接続とグループ', '''<h3>グループと複数選択</h3><p>サイドバーでグループの作成、名前変更、移動、削除ができます。パスの <code> / </code> で階層化します。削除時には接続の移動先を選択し、データベースの内容は削除されません。カードをドラッグするか「グループに移動」を使います。</p><p>カード右上のマークか ⌘ を押しながらのクリックで複数選択できます。選択バーから一括移動、エクスポート、削除ができます。Esc または「選択を解除」で解除します。</p><h3>環境タグ</h3><p>ローカル、開発、テスト、ステージング、本番のタグを付けて絞り込めます。本番の接続とセッションは赤く表示されます。</p>'''),
 ('インポートとエクスポート', '''<p>「ファイル → インポート」（⌘O）は DBDock JSON、TablePlus Connections.plist、DBeaver data-sources.json、URL を含むテキストや .env を自動判別します。TablePlus と DBeaver のパスワードは読み取れないため、インポート後に入力してください。URL のパスワードはキーチェーンに保存され、同じ接続の再インポートは既存の接続を更新します。⇧⌘I で URL を貼り付けられます。<code>rediss://</code> は未対応です。</p><h3>エクスポート</h3><p>「ファイル → エクスポート」（⇧⌘E）で全件または選択した接続を書き出します。パスワードを含める場合、パスフレーズを設定すると AES-256-GCM で暗号化し、Argon2id で鍵を導出します。パスフレーズがない場合は平文のため、安全に保管してください。</p>'''),
 ('SSH トンネル', '''<p>接続フォームで「SSH 経由」を有効にします。データベースのホストとポートは SSH サーバー側から接続します。同じマシンのデータベースには 127.0.0.1、RDS にはプライベートアドレスを指定できます。</p><p>ssh-agent、~/.ssh/config の IdentityFile、既定の鍵、指定した鍵ファイル、パスワードに対応します。ホスト鍵は事前に ~/.ssh/known_hosts で信頼されている必要があります。新しいホストは OpenSSH で確認してください。未知、変更済み、読み取れない鍵とホスト証明書は拒否されます。</p><p>Server には SSH 設定の別名を指定できます。DBDock のトンネルは ProxyJump に未対応のため、最後のホストに直接接続してください。</p>'''),
@@ -45,6 +45,10 @@ content = {
 }
 keys = ['start','connections','import','ssh','ssh-hosts','sql','redis','mongodb','vim','shortcuts','data','trouble']
 labels = {'zh-CN': ['DBDock 帮助','搜索帮助','没有匹配内容。','MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1，内置 SSH。'], 'zh-TW':['DBDock 說明','搜尋說明','沒有符合的內容。','MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1，內建 SSH。'], 'ja':['DBDock ヘルプ','ヘルプを検索','一致する内容はありません。','MySQL、PostgreSQL、SQLite、Redis、MongoDB、Cloudflare D1 に対応。SSH を内蔵。']}
+translations = {}
 for lang, sections in content.items():
  assert len(sections)==len(keys)
- Path(f'public/help.{lang}.json').write_text(json.dumps({'labels':labels[lang], 'sections':dict(zip(keys, ({'title':title,'html':body} for title,body in sections)))}, ensure_ascii=False, indent=2)+'\n')
+ translations[lang] = {'labels':labels[lang], 'sections':dict(zip(keys, ({'title':title,'html':body} for title,body in sections)))}
+ Path(f'public/help.{lang}.json').write_text(json.dumps(translations[lang], ensure_ascii=False, indent=2)+'\n')
+# A classic script also works when help.html is opened directly with file://.
+Path('public/help.translations.js').write_text('window.DBDOCK_HELP_TRANSLATIONS = '+json.dumps(translations, ensure_ascii=False, indent=2)+';\n')
