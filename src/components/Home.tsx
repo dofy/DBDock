@@ -10,7 +10,7 @@ import { ImportDialog, type ImportReport } from "./ImportDialog";
 import { SshHostsDialog } from "./SshHostsDialog";
 import { HealthDialog } from "./HealthDialog";
 import { clearAllHealth, clearHealth, healthSnapshot, latestHealth, subscribeHealth } from "../healthHistory";
-import { Activity, AlertCircle, Check, CheckCircle2, Database, FileUp, Folder, FolderInput, FolderPlus, Inbox, ListChecks, MoreHorizontal, PenLine, Pencil, Plug, Plus, SquareCheck, SquareMinus, Trash2, X } from "lucide-react";
+import { Activity, AlertCircle, Check, CheckCircle2, Database, FileUp, Folder, FolderInput, FolderPlus, GripVertical, Inbox, ListChecks, MoreHorizontal, PenLine, Pencil, Plug, Plus, SquareCheck, SquareMinus, Trash2, X } from "lucide-react";
 
 const SEP = " / ";
 /** null = all connections, "" = ungrouped, otherwise a group path (includes subgroups). */
@@ -69,6 +69,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | { group: string; x: number; y: number } | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const draggedIds = useRef<string[] | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const healthSequence = useRef(0);
@@ -187,6 +188,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
       e.preventDefault();
       e.stopPropagation();
       draggedIds.current = null;
+      setDragging(false);
       setDropTarget(null);
       void (async () => {
         try {
@@ -217,7 +219,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
   const pickedIds = [...picked];
 
   return (
-    <div className="home-view">
+    <div className={`home-view ${dragging ? "drag-active" : ""}`}>
       <aside className="home-side">
         <div className="search-box">
           <input ref={searchRef} className="search" placeholder={t("Search  ⌘F")} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
@@ -242,7 +244,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           {treeRows.map((g) => (
             <li
               key={g}
-              className={`tree-row ${sel === g ? "on" : ""} ${dropTarget === g ? "drop" : ""}`}
+              className={`tree-row drop-zone ${sel === g ? "on" : ""} ${dropTarget === g ? "drop" : ""}`}
               style={{ paddingLeft: 8 + depth(g) * 14 }}
               onClick={() => setSel(g)}
               onContextMenu={(e) => {
@@ -283,7 +285,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
               </button>
             </li>
           ))}
-          <li className={`tree-row ${sel === "" ? "on" : ""} ${dropTarget === "" ? "drop" : ""}`} onClick={() => setSel("")} {...dropProps("")}>
+          <li className={`tree-row drop-zone ${sel === "" ? "on" : ""} ${dropTarget === "" ? "drop" : ""}`} onClick={() => setSel("")} {...dropProps("")}>
             <span className="caret none" />
             <span className="tree-icon"><Inbox size={14} aria-hidden="true" /></span>
             <span className="tree-name muted">{t("Ungrouped")}</span>
@@ -303,6 +305,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           <button className="primary" onClick={() => onEdit({ newInGroup: sel ?? "" })}>
             <Plus size={14} />{t("New connection")} </button>
         </div>
+        {shown.length > 0 && <p className="drag-instruction"><GripVertical size={14} aria-hidden="true" />{t("Drag the handle on a connection card to a group on the left.")}</p>}
         <div className="env-filter">
           <button className={`chip ${envFilter === null ? "on" : ""}`} onClick={() => setEnvFilter(null)}>
              {t("All")} {inGroup.length}
@@ -365,11 +368,12 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                     onDragStart={(e) => {
                       const ids = picked.has(c.id) ? pickedIds : [c.id];
                       draggedIds.current = ids;
+                      setDragging(true);
                       // WebKit accepts text/plain reliably; IDs remain in memory only.
                       e.dataTransfer.setData("text/plain", "DBDock connections");
                       e.dataTransfer.effectAllowed = "move";
                     }}
-                    onDragEnd={() => { draggedIds.current = null; setDropTarget(null); }}
+                    onDragEnd={() => { draggedIds.current = null; setDragging(false); setDropTarget(null); }}
                     onClick={(e) => {
                       if (e.metaKey || e.ctrlKey || e.shiftKey || picked.size) togglePick(c.id);
                     }}
@@ -380,6 +384,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                     }}
                   >
                     <span className="card-color" style={{ background: c.color }} title={t("Custom connection color")} />
+                    <span className="card-drag-handle" title={t("Drag this connection to a group")} aria-label={t("Drag this connection to a group")} role="img"><GripVertical size={16} aria-hidden="true" /></span>
                     <button
                       className="pick"
                       role="checkbox"

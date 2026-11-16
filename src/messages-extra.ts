@@ -10,6 +10,8 @@ export const extraMessages: Record<string, readonly [string, string, string]> = 
   'Release to move to {group}': ['松开后移动到 {group}', '放開後移動至 {group}', '離すと {group} に移動します'],
   'Custom connection color': ['自定义连接颜色', '自訂連線顏色', '接続のカスタムカラー'],
   'Connection color': ['连接颜色', '連線顏色', '接続の色'],
+  'Drag the handle on a connection card to a group on the left.': ['拖动连接卡片上的手柄到左侧分组。', '拖曳連線卡片上的把手到左側群組。', '接続カードのハンドルを左側のグループへドラッグします。'],
+  'Drag this connection to a group': ['拖动此连接到分组', '拖曳此連線至群組', 'この接続をグループへドラッグ'],
   'Delete connection "{name}"? The database is not deleted. Legacy Keychain copies may remain.': ['删除连接“{name}”？数据库本身不会被删除，旧版钥匙串副本可能仍会保留。', '刪除連線「{name}」？資料庫本身不會被刪除，舊版鑰匙圈副本可能仍會保留。', '接続「{name}」を削除しますか？データベース自体は削除されません。旧キーチェーンのコピーは残る場合があります。'],
   'Last checked: {time}': ['上次检查：{time}', '上次檢查：{time}', '最終チェック：{time}'],
   'Checking {count} connection(s)': ['检查 {count} 个连接', '檢查 {count} 個連線', '{count} 件の接続をチェック'],

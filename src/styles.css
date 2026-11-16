@@ -591,3 +591,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 .tree-row.drop .tree-name, .tree-row.drop .tree-icon, .tree-row.drop .caret { color: var(--accent-fg); }
 .tree-row.drop .count, .tree-row.drop .more { display: none; }
 .tree-row.drop .drop-mark { display: inline; }
+
+/* Visible drag affordance for moving connections into the sidebar. */
+.drag-instruction { display: flex; align-items: center; gap: 4px; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.drag-instruction svg { flex: none; }
+.card-drag-handle { display: inline-grid; place-items: center; width: 16px; min-height: 36px; flex: none; color: var(--muted); cursor: grab; }
+.card-drag-handle:active { cursor: grabbing; }
+.card:hover .card-drag-handle { color: var(--fg); }
+.drag-active .drop-zone:not(.drop) { background: color-mix(in srgb, var(--accent) 10%, var(--bg2)); outline: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line)); outline-offset: -1px; }
