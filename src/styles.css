@@ -96,7 +96,6 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .conn-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .conn-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg2); position: relative; overflow: hidden; }
 .conn-list li.empty { color: var(--muted); justify-content: center; padding: 30px; }
-.color-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
 .conn-text { display: flex; flex-direction: column; min-width: 0; }
 .conn-text .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
 .ssh-tag { font-family: inherit; font-size: 10px; border: 1px solid var(--muted); border-radius: 3px; padding: 0 3px; margin-right: 6px; }
@@ -118,9 +117,6 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .form { display: grid; grid-template-columns: 110px 1fr; gap: 8px 10px; align-items: center; }
 .form > label { color: var(--muted); text-align: right; }
 .form .port { width: 80px; flex: none; }
-.colors { display: flex; gap: 4px; }
-.swatch { width: 16px; height: 16px; border-radius: 50%; padding: 0; border: 2px solid transparent; }
-.swatch.on { border-color: var(--fg); }
 fieldset.ssh { border: 1px solid var(--line); border-radius: 8px; margin: 14px 0 0; padding: 8px 12px 12px; }
 fieldset.ssh.off { padding-bottom: 0; }
 .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -258,6 +254,7 @@ pre.value { margin: 0; padding: 10px 12px; flex: 1; overflow: auto; font-family:
 .env-chip:not(.on) { box-shadow: inset 3px 0 0 var(--env); }
 .env-picker { display: flex; flex-wrap: wrap; gap: 4px; }
 .env-opt { font-size: 11px; font-weight: 600; padding: 3px 8px; }
+.env-opt:not(.on) { border-color: var(--env); color: color-mix(in srgb, var(--env) 60%, var(--fg)); }
 .env-opt.on { background: var(--env, var(--accent)); border-color: var(--env, var(--accent)); color: #fff; }
 .top-tab .env-badge { margin-left: 0; }
 
@@ -315,7 +312,6 @@ pre.value { margin: 0; padding: 10px 12px; flex: 1; overflow: auto; font-family:
 .card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); box-shadow: 0 2px 10px rgb(0 0 0 / 0.06); }
 .card.is-prod { border-color: color-mix(in srgb, #e5484d 50%, var(--line)); background: color-mix(in srgb, #e5484d 5%, var(--bg2)); }
 .card.picked { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg2)); }
-.card-color { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
 .card .pick { position: absolute; top: 6px; left: 8px; margin: 0; opacity: 0; z-index: 1; }
 .card:hover .pick, .card.picking .pick, .card.picked .pick { opacity: 1; }
 .card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -563,7 +559,7 @@ button.link { display: inline-flex; }
 .card.picked { background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
 .card-title b { font-weight: 600; }
 .card-sub { font-family: var(--mono); }
-button:not(.icon-btn):not(.link):not(.caret):not(.x):not(.pick):not(.swatch):not(.top-tab):not(.chip) { box-shadow: 0 1px 2px rgb(0 0 0 / 0.09); }
+button:not(.icon-btn):not(.link):not(.caret):not(.x):not(.pick):not(.top-tab):not(.chip) { box-shadow: 0 1px 2px rgb(0 0 0 / 0.09); }
 button.primary { font-weight: 600; }
 .menu button, .host-menu button, .btn-group > button { box-shadow: none !important; }
 .btn-group { gap: 0; }
@@ -595,7 +591,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 /* Visible drag affordance for moving connections into the sidebar. */
 .drag-instruction { display: flex; align-items: center; gap: 4px; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
 .drag-instruction svg { flex: none; }
-.card-drag-handle { display: inline-grid; place-items: center; width: 16px; min-height: 36px; flex: none; color: var(--muted); cursor: grab; }
+.card-icon-slot { position: relative; display: inline-grid; flex: none; width: 36px; height: 36px; }
+.card-drag-handle { position: absolute; inset: 0; display: none; place-items: center; color: var(--fg); cursor: grab; }
 .card-drag-handle:active { cursor: grabbing; }
-.card:hover .card-drag-handle { color: var(--fg); }
+.card:hover .card-icon-slot .db-icon { visibility: hidden; }
+.card:hover .card-drag-handle { display: grid; }
 .drag-active .drop-zone:not(.drop) { background: color-mix(in srgb, var(--accent) 10%, var(--bg2)); outline: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line)); outline-offset: -1px; }

@@ -27,7 +27,6 @@ interface Props {
 }
 
 const KINDS: Kind[] = ["mysql", "postgres", "sqlite", "redis", "mongodb", "d1"];
-const COLORS = ["#6b8afd", "#3fb68b", "#f5a524", "#ef5d5d", "#b07cf7", "#8a8f98"];
 
 export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved }: Props) {
   const editing = !!initial?.id;
@@ -140,21 +139,14 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
 
         <div className="form">
           <label>{t("Name")}</label>
-          <div className="row">
-            <input value={c.name} onChange={(e) => set("name", e.target.value)} placeholder={t("optional")} />
-            <div className="colors" role="group" aria-label={t("Connection color")}>
-              {COLORS.map((col) => (
-                <button key={col} className={`swatch ${c.color === col ? "on" : ""}`} style={{ background: col }} title={`${t("Connection color")} ${col}`} aria-label={`${t("Connection color")} ${col}`} onClick={() => set("color", col)} />
-              ))}
-            </div>
-          </div>
+          <input value={c.name} onChange={(e) => set("name", e.target.value)} placeholder={t("optional")} />
 
           <label>{t("Environment")}</label>
           <div className="env-picker">
-            <button className={`env-opt ${!c.env ? "on" : ""}`} onClick={() => set("env", "")}>
+            <button className={`env-opt env-none ${!c.env ? "on" : ""}`} aria-pressed={!c.env} onClick={() => set("env", "")}>
                {t("none")} </button>
             {ENVS.map((e) => (
-              <button key={e} className={`env-opt env-${e} ${c.env === e ? "on" : ""}`} onClick={() => set("env", e)}>
+              <button key={e} className={`env-opt env-${e} ${c.env === e ? "on" : ""}`} aria-pressed={c.env === e} onClick={() => set("env", e)}>
                 {t(ENV_LABEL[e])}
               </button>
             ))}

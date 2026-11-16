@@ -305,7 +305,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           <button className="primary" onClick={() => onEdit({ newInGroup: sel ?? "" })}>
             <Plus size={14} />{t("New connection")} </button>
         </div>
-        {shown.length > 0 && <p className="drag-instruction"><GripVertical size={14} aria-hidden="true" />{t("Drag the handle on a connection card to a group on the left.")}</p>}
+        {shown.length > 0 && <p className="drag-instruction"><GripVertical size={14} aria-hidden="true" />{t("Hover over a connection card, then drag its handle to a group on the left.")}</p>}
         <div className="env-filter">
           <button className={`chip ${envFilter === null ? "on" : ""}`} onClick={() => setEnvFilter(null)}>
              {t("All")} {inGroup.length}
@@ -383,8 +383,6 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                       setMenu({ id: c.id, x: e.clientX, y: e.clientY });
                     }}
                   >
-                    <span className="card-color" style={{ background: c.color }} title={t("Custom connection color")} />
-                    <span className="card-drag-handle" title={t("Drag this connection to a group")} aria-label={t("Drag this connection to a group")} role="img"><GripVertical size={16} aria-hidden="true" /></span>
                     <button
                       className="pick"
                       role="checkbox"
@@ -398,7 +396,10 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                     >
                       <Check size={12} strokeWidth={3} />
                     </button>
-                    <DbIcon kind={c.kind} size={36} />
+                    <span className="card-icon-slot">
+                      <DbIcon kind={c.kind} size={36} />
+                      <span className="card-drag-handle" title={t("Drag this connection to a group")} aria-label={t("Drag this connection to a group")} role="img"><GripVertical size={16} aria-hidden="true" /></span>
+                    </span>
                     <div className="card-text">
                       <div className="card-title">
                         <b title={c.name}>{c.name}</b>
