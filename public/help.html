@@ -110,14 +110,16 @@
       <li><b>Move connections</b>: hover over a card and drag the handle that replaces its database icon onto a sidebar group. The target highlights before you release. You can also use <i>Move to group…</i> from the card menu or selection bar; typing a new name creates the group.</li>
     </ul>
     <h3>Selecting several</h3>
-    <p>Click a card or its round badge to select or deselect it. The selection bar moves, exports or deletes selected cards together. To clear the selection: <b>Clear selection</b> or <b>×</b> in that bar, <kbd>Esc</kbd>, or a click on empty space between the cards.</p>
+    <p>Click a card or its round badge to select or deselect it. The selection bar at the bottom moves, exports or deletes selected cards together; scroll the bar horizontally if necessary. To clear the selection: <b>Clear selection</b> or <b>×</b> in that bar, <kbd>Esc</kbd>, or a click on empty space between the cards.</p>
     <p>Hover a card for <b>Edit</b>, <b>⋯</b> (more actions) and <b>Connect</b> at its bottom-right; double-click connects too.</p>
+    <p>In the connection editor, scroll the form to see additional fields; <b>Test</b>, <b>Cancel</b> and <b>Save</b> remain at the bottom.</p>
     <h3>Environment tags</h3>
     <p class="tags"><span style="background:#3fb68b">LOCAL</span><span style="background:#4b6ef5">DEV</span><span style="background:#b07cf7">TEST</span><span style="background:#e08a00">STAGING</span><span style="background:#e5484d">PROD</span></p>
     <p>Set the tag in the connection form. Each option uses its environment color for its border and text; the selected option has a solid background. The tag shows on the card and on the session tab, and the chips above the grid filter by it. Production connections get a red outline and a red line on their tab, so you know where you are before you run an UPDATE.</p>
     <h3>Connection health</h3>
     <p>Choose <b>Batch check shown</b> to check the current list, or select cards and choose <b>Check selected</b>. The dialog identifies missing required settings; choose <b>Batch test</b> to test connections with complete settings. It runs up to four tests at once and may request Keychain access.</p>
-    <p>Stopping cancels waiting tests and lets running tests finish. Results show success or an error, and the latest result appears on the connection card. Edit or delete a connection from the dialog when testing is not running. A missing SQLite file is reported without creating it.</p>
+    <p>Stopping cancels waiting tests and lets running tests finish. Results show success or an error. On the connection card, a green check or red alert and a short timestamp show the latest result; hover for the full status and time.</p>
+    <p>When testing is not running, edit or delete a connection from the dialog. Canceling an edit preserves the results; saving clears only that connection's result so it can be tested again. A missing SQLite file is reported without creating it.</p>
   </section>
 
   <section id="import" data-title="Import and export">

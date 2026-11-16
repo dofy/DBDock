@@ -20,7 +20,8 @@ Copyright © 2026 phpz.org · MIT License · <https://github.com/dofy/DBDock>
   and on session tabs, with filter chips; production connections are outlined in red.
 - **Batch health checks** for the current list or selected connections: find missing settings
   and test up to four connections at once. Stop cancels waiting checks while running checks
-  finish; the latest result appears on each card. SQLite checks do not create missing files.
+  finish; the latest result appears on each card. Editing returns to the results; saving clears
+  only the edited connection's result. SQLite checks do not create missing files.
 - **Import…** (⌘O) detects the format:
   - a DBDock export (`dbdock.connections` JSON, plain or passphrase-encrypted),
   - TablePlus `Connections.plist` (offered directly when TablePlus is installed; groups
