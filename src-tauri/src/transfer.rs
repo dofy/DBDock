@@ -215,16 +215,18 @@ fn write_private(path: &Path, text: &str) -> Result<()> {
     #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
     let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     opts.mode(0o600);
-    let mut f = opts.open(path).with_context(|| format!("write {}", path.display()))?;
+    let tmp = path.with_extension(format!("dbdock-{}.tmp", uuid::Uuid::new_v4()));
+    let mut f = opts.open(&tmp).with_context(|| format!("write {}", tmp.display()))?;
     f.write_all(text.as_bytes())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
     }
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
@@ -232,12 +234,11 @@ pub fn import(store: &Store, path: &Path, passphrase: Option<String>) -> Result<
     let items = decrypt(read_envelope(path)?, passphrase.as_deref())?;
     let mut with_secrets = 0;
     let mut configs = Vec::with_capacity(items.len());
-    let mut secrets = Vec::new();
     for mut it in items {
         if it.config.id.is_empty() {
             it.config.id = uuid::Uuid::new_v4().to_string();
         }
-        if let Some(s) = it.secrets {
+        let input = if let Some(s) = it.secrets {
             // Only set what the file carries; absent fields keep the stored value.
             let input = SecretsInput {
                 password: nonempty(s.password),
@@ -246,15 +247,12 @@ pub fn import(store: &Store, path: &Path, passphrase: Option<String>) -> Result<
             };
             if input.password.is_some() || input.ssh_password.is_some() || input.ssh_passphrase.is_some() {
                 with_secrets += 1;
-                secrets.push((it.config.id.clone(), input));
             }
-        }
-        configs.push(it.config);
+            input
+        } else { SecretsInput::default() };
+        configs.push((it.config, input));
     }
-    let (added, updated) = store.upsert_many(configs)?;
-    for (id, input) in secrets {
-        store.set_secrets(&id, &input)?;
-    }
+    let (added, updated) = store.upsert_with_secrets(configs)?;
     Ok(TransferReport { added, updated, with_secrets })
 }
 

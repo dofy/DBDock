@@ -1,3 +1,4 @@
+import { localizeError } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
 
 export type Kind = "mysql" | "postgres" | "sqlite" | "redis" | "d1" | "mongodb";
@@ -85,6 +86,7 @@ export type Change =
 
 export interface KeyInfo {
   key: string;
+  id: string;
   type: string;
   ttl: number;
 }
@@ -207,7 +209,7 @@ export const api = {
 };
 
 export function errText(e: unknown): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
+  return localizeError(typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e));
 }
 
 export function fmtTtl(ms: number): string {

@@ -1,3 +1,4 @@
+import { t as translate } from "../i18n";
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { Copy, X } from "lucide-react";
 
@@ -37,11 +38,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <span className="toast-icon">{t.kind === "ok" ? "✓" : t.kind === "error" ? "!" : "i"}</span>
             <span className="toast-text">{t.text}</span>
             {t.kind === "error" && (
-              <button className="link" onClick={() => navigator.clipboard.writeText(t.text)} title="Copy">
-                <Copy size={14} />Copy
-              </button>
+              <button className="link" onClick={() => navigator.clipboard.writeText(t.text)} title={translate("Copy")}>
+                <Copy size={14} />{translate("Copy")} </button>
             )}
-            <button className="x" onClick={() => dismiss(t.id)} aria-label="Dismiss">
+            <button className="x" onClick={() => dismiss(t.id)} aria-label={translate("Dismiss")}>
               <X size={12} />
             </button>
           </div>

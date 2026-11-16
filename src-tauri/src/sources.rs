@@ -126,7 +126,8 @@ pub fn from_url(raw: &str, name_hint: Option<&str>) -> Result<(ConnectionConfig,
     let kind = match scheme.as_str() {
         "mysql" | "mariadb" | "mysql2" => Kind::Mysql,
         "postgres" | "postgresql" | "pg" => Kind::Postgres,
-        "redis" | "rediss" => Kind::Redis,
+        "redis" => Kind::Redis,
+        "rediss" => bail!("TLS Redis URLs are not supported; refusing to connect without TLS"),
         "mongodb" | "mongodb+srv" => Kind::Mongodb,
         "sqlite" | "sqlite3" | "file" => Kind::Sqlite,
         other => bail!("unsupported scheme {other:?}"),
@@ -260,11 +261,7 @@ fn read_dbeaver(v: &Value) -> (Vec<ConnectionConfig>, Vec<String>) {
 
 fn upsert(store: &Store, items: Vec<(ConnectionConfig, Option<String>)>, source: String, skipped: Vec<String>, passwords_not_imported: bool) -> Result<Report> {
     let with_secrets = items.iter().filter(|(_, p)| p.is_some()).count();
-    let secrets: Vec<(String, String)> = items.iter().filter_map(|(c, p)| p.clone().map(|p| (c.id.clone(), p))).collect();
-    let (added, updated) = store.upsert_many(items.into_iter().map(|(c, _)| c).collect())?;
-    for (id, p) in secrets {
-        store.set_secrets(&id, &SecretsInput { password: Some(p), ..Default::default() })?;
-    }
+    let (added, updated) = store.upsert_with_secrets(items.into_iter().map(|(c, password)| (c, SecretsInput { password, ..Default::default() })).collect())?;
     Ok(Report { source, added, updated, with_secrets, skipped, passwords_not_imported })
 }
 
@@ -323,8 +320,7 @@ mod tests {
         assert_eq!(p.as_deref(), Some("p/w"));
         let (c, _) = from_url("jdbc:mysql://root@127.0.0.1/shop", None).unwrap();
         assert_eq!((c.kind, c.port), (Kind::Mysql, 3306));
-        let (c, p) = from_url("rediss://default:secret@cache:6380/2", None).unwrap();
-        assert_eq!((c.kind, c.redis_db, p.as_deref()), (Kind::Redis, 2, Some("secret")));
+        assert!(from_url("rediss://default:secret@cache:6380/2", None).is_err());
         let (c, p) = from_url("mongodb+srv://me:pw@cluster0.abc.mongodb.net/shop?retryWrites=true", None).unwrap();
         assert!(c.host.starts_with("mongodb+srv://me@cluster0") && !c.host.contains("pw"));
         assert_eq!(p.as_deref(), Some("pw"));

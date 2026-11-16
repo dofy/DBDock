@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import type { Cell, QueryResult } from "../api";
 import { Copy } from "lucide-react";
@@ -100,7 +101,7 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
   if (!columns.length) {
     return (
       <div className="grid-empty">
-        {result.rowsAffected != null ? `OK, ${result.rowsAffected} row(s) affected` : "No columns"}
+        {result.rowsAffected != null ? tf("OK, {count} row(s) affected", { count: result.rowsAffected }) : t("No columns")}
         <span className="muted"> · {result.elapsedMs} ms</span>
       </div>
     );
@@ -184,15 +185,14 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
             })}
           </tbody>
         </table>
-        {!result.rows.length && <div className="grid-empty">0 rows</div>}
+        {!result.rows.length && <div className="grid-empty">{t("0 rows")}</div>}
       </div>
       {hasSel && sel && (
         <div className="cell-detail">
           <div className="cell-detail-head">
             <b>{columns[sel.c]}</b>
             <button className="link" onClick={() => navigator.clipboard.writeText(show(selected))}>
-              <Copy size={14} />Copy
-            </button>
+              <Copy size={14} />{t("Copy")} </button>
             <button className="link" onClick={() => setSel(null)}>
               ✕
             </button>

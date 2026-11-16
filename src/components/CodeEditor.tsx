@@ -5,7 +5,7 @@ import { closeCompletion, completionStatus } from "@codemirror/autocomplete";
 import { Prec, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { json } from "@codemirror/lang-json";
-import { useSettings } from "../settings";
+import { useDarkMode, useSettings } from "../settings";
 
 // Ex commands are global in the Vim plugin: `:w` saves whichever editor last had focus.
 let writeHandler: (() => void) | undefined;
@@ -56,7 +56,8 @@ interface Props {
 /** Multi-line editor for raw files and documents; honours the Vim setting. */
 export function CodeEditor({ value, onChange, language = "plain", onSave, dark, autoFocus, placeholder }: Props) {
   const { vim: vimOn } = useSettings();
-  const isDark = dark ?? window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const selectedDark = useDarkMode();
+  const isDark = dark ?? selectedDark;
   const save = useRef(onSave);
   save.current = onSave;
   const extensions = useMemo(() => {

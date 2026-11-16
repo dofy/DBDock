@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, errText, type Cell, type Change, type Kind, type QueryResult, type TableData } from "../api";
@@ -12,12 +13,13 @@ interface Props {
   table: string;
   isView: boolean;
   dark: boolean;
+  onDirtyChange: (dirty: boolean, busy: boolean) => void;
 }
 
 const PAGE_SIZES = [100, 300, 1000];
 const BINARY = /blob|binary|bytea|bit\b|geometry|point|polygon/i;
 
-export function TableView({ sessionId, kind, schema, table, isView, dark }: Props) {
+export function TableView({ sessionId, kind, schema, table, isView, dark, onDirtyChange }: Props) {
   const [mode, setMode] = useState<"data" | "structure">("data");
   const [data, setData] = useState<TableData | null>(null);
   const [structure, setStructure] = useState<QueryResult | null>(null);
@@ -38,6 +40,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
   const [preview, setPreview] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const request = useRef(0);
 
   const clearPending = () => {
     setEdits({});
@@ -46,6 +49,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
   };
 
   const load = useCallback(async () => {
+    const current = ++request.current;
     setLoading(true);
     setError(null);
     try {
@@ -53,13 +57,14 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
         api.tableData({ sessionId, schema, table, limit, offset: page * limit, orderBy, orderDesc, filter: filter || undefined }),
         structure ? Promise.resolve(structure) : api.structure(sessionId, schema, table),
       ]);
+      if (current !== request.current) return;
       setData(d);
       setStructure(s);
       clearPending();
     } catch (e) {
-      setError(errText(e));
+      if (current === request.current) setError(errText(e));
     } finally {
-      setLoading(false);
+      if (current === request.current) setLoading(false);
     }
     // structure is cached once loaded
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,6 +72,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
 
   useEffect(() => {
     void load();
+    return () => { request.current++; };
   }, [load]);
 
   const colNames = useMemo(() => structure?.rows.map((r) => String(r[0])) ?? [], [structure]);
@@ -82,6 +88,10 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
   const editable = !isView && pk.length > 0 && pk.every((k) => columns.includes(k));
   const baseRows = data?.result.rows.length ?? 0;
   const pendingCount = Object.keys(edits).filter((r) => !deleted.has(Number(r))).length + deleted.size + inserted.length;
+  useEffect(() => {
+    onDirtyChange(pendingCount > 0, busy);
+    return () => onDirtyChange(false, false);
+  }, [pendingCount, busy, onDirtyChange]);
 
   const display = useMemo<QueryResult | null>(() => {
     if (!data) return null;
@@ -89,7 +99,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
     return { ...data.result, columns, rows: [...data.result.rows, ...inserted.map(() => columns.map(() => undefined as unknown as Cell))] };
   }, [data, inserted, columns]);
 
-  const editing: GridEditing | undefined = editable
+  const editing: GridEditing | undefined = editable && !loading && !busy
     ? {
         canEdit: (c) => !BINARY.test(colTypes.get(columns[c]) ?? ""),
         // Untouched cells of inserted rows stay undefined and render as DEFAULT.
@@ -135,11 +145,12 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
   };
 
   const commit = async () => {
-    if (!pendingCount || busy) return;
+    if (!pendingCount || busy || loading) return;
     setBusy(true);
     setError(null);
     try {
       await api.applyChanges(sessionId, schema, table, buildChanges());
+      clearPending();
       setPreview(null);
       await load();
     } catch (e) {
@@ -164,7 +175,8 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
   }, []);
 
   const guard = async (fn: () => void) => {
-    if (pendingCount && !(await ask(`Discard ${pendingCount} uncommitted change(s)?`, { title: "Discard changes", kind: "warning" }))) return;
+    if (busy || loading) return;
+    if (pendingCount && !(await ask(tf("Discard {count} uncommitted change(s)?", { count: pendingCount }), { title: t("Discard changes"), kind: "warning" }))) return;
     fn();
   };
 
@@ -201,11 +213,9 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
       <div className="toolbar">
         <div className="seg">
           <button className={mode === "data" ? "on" : ""} onClick={() => setMode("data")}>
-            Data
-          </button>
+             {t("Data")} </button>
           <button className={mode === "structure" ? "on" : ""} onClick={() => setMode("structure")}>
-            Structure
-          </button>
+             {t("Structure")} </button>
         </div>
         {mode === "data" && (
           <div className="filter">
@@ -222,7 +232,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
                   setFilter(filterDraft.trim());
                 })
               }
-              placeholder="id > 10 AND name LIKE 'a%'   (Enter to apply)"
+              placeholder={t("id > 10 AND name LIKE 'a%'   (Enter to apply)")}
               dark={dark}
             />
           </div>
@@ -230,23 +240,21 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
         <span className="spacer" />
         {mode === "data" && editable && (
           <>
-            <button onClick={() => setInserted((rows) => [...rows, columns.map(() => undefined)])} title="Add a row">
-              <Plus size={14} />Row
-            </button>
-            <button onClick={toggleDelete} disabled={!sel} title="Delete or restore the selected row">
-              <Minus size={14} />Row
-            </button>
-            <button onClick={setNull} disabled={!sel} title="Set the selected cell to NULL">
+            <button disabled={loading || busy} onClick={() => setInserted((rows) => [...rows, columns.map(() => undefined)])} title={t("Add a row")}>
+              <Plus size={14} />{t("Row")} </button>
+            <button onClick={toggleDelete} disabled={!sel || loading || busy} title={t("Delete or restore the selected row")}>
+              <Minus size={14} />{t("Row")} </button>
+            <button onClick={setNull} disabled={!sel || loading || busy} title={t("Set the selected cell to NULL")}>
               <CircleSlash size={14} />NULL
             </button>
           </>
         )}
         {mode === "data" && !editable && data && (
-          <span className="muted small" title="Editing needs a primary key">
-            {isView ? "view · read-only" : "no primary key · read-only"}
+          <span className="muted small" title={t("Editing needs a primary key")}>
+            {isView ? t("view · read-only") : t("no primary key · read-only")}
           </span>
         )}
-        <button onClick={() => void guard(() => void load())} disabled={loading} title="Refresh">
+        <button onClick={() => void guard(() => void load())} disabled={loading || busy} title={t("Refresh")}>
           <RefreshCw size={14} />
         </button>
       </div>
@@ -254,14 +262,14 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
       {pendingCount > 0 && (
         <div className="pending-bar">
           <span>
-            {pendingCount} pending change{pendingCount > 1 ? "s" : ""}
+            {pendingCount}  {t("pending change")}{pendingCount > 1 && t("pending change") === "pending change" ? "s" : ""}
           </span>
           <span className="spacer" />
-          <button onClick={showPreview}><Eye size={14} />Preview SQL</button>
-          <button onClick={clearPending}><Undo2 size={14} />Discard</button>
+          <button onClick={showPreview}><Eye size={14} />{t("Preview SQL")}</button>
+          <button onClick={clearPending} disabled={busy || loading}><Undo2 size={14} />{t("Discard")}</button>
           <button className="primary" onClick={() => void commit()} disabled={busy}>
             <Check size={14} />
-            {busy ? "Committing…" : "Commit ⌘S"}
+            {busy ? t("Committing…") : t("Commit ⌘S")}
           </button>
         </div>
       )}
@@ -286,7 +294,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
               ‹
             </button>
             <span>
-              rows {baseRows ? page * limit + 1 : 0}–{page * limit + baseRows}
+               {t("rows")} {baseRows ? page * limit + 1 : 0}–{page * limit + baseRows}
             </span>
             <button disabled={!data?.hasMore || loading} onClick={() => void guard(() => setPage((p) => p + 1))}>
               ›
@@ -303,11 +311,10 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
             >
               {PAGE_SIZES.map((n) => (
                 <option key={n} value={n}>
-                  {n} / page
-                </option>
+                  {n}  {t("/ page")} </option>
               ))}
             </select>
-            {editable && <span className="muted">double-click to edit · Enter saves · Esc cancels</span>}
+            {editable && <span className="muted">{t("double-click to edit · Enter saves · Esc cancels")}</span>}
             <span className="spacer" />
             <code className="muted sql-line">{data?.sql}</code>
             <span className="muted">{data?.result.elapsedMs} ms</span>
@@ -320,16 +327,15 @@ export function TableView({ sessionId, kind, schema, table, isView, dark }: Prop
       {preview && (
         <div className="modal-backdrop" onMouseDown={() => setPreview(null)}>
           <div className="modal wide" onMouseDown={(e) => e.stopPropagation()}>
-            <h2>Pending SQL</h2>
+            <h2>{t("Pending SQL")}</h2>
             <pre className="sql-preview">{preview.map((s) => `${s};`).join("\n")}</pre>
-            <p className="muted small">Runs in one transaction. Each UPDATE / DELETE must match exactly one row, or everything is rolled back.</p>
+            <p className="muted small">{t("Runs in one transaction. Each UPDATE / DELETE must match exactly one row, or everything is rolled back.")}</p>
             <div className="actions">
-              <button onClick={() => navigator.clipboard.writeText(preview.map((s) => `${s};`).join("\n"))}><Copy size={14} />Copy</button>
+              <button onClick={() => navigator.clipboard.writeText(preview.map((s) => `${s};`).join("\n"))}><Copy size={14} />{t("Copy")}</button>
               <span className="spacer" />
-              <button onClick={() => setPreview(null)}><X size={14} />Close</button>
+              <button onClick={() => setPreview(null)}><X size={14} />{t("Close")}</button>
               <button className="primary" onClick={() => void commit()} disabled={busy}>
-                <Check size={14} />Commit
-              </button>
+                <Check size={14} />{t("Commit")} </button>
             </div>
           </div>
         </div>

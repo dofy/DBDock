@@ -1,0 +1,58 @@
+{
+  "labels": [
+    "DBDock 說明",
+    "搜尋說明",
+    "沒有符合的內容。",
+    "MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1，內建 SSH。"
+  ],
+  "sections": {
+    "start": {
+      "title": "入門",
+      "html": "<p>按 ⌘N 新增連線，選擇資料庫類型，填寫主機、使用者名稱與密碼後按「測試」。也可按 ⌘O 匯入 TablePlus、DBeaver、URL 或 DBDock 匯出檔。</p><p>按兩下連線卡片或按「連線」開啟工作階段；⌘1 返回連線清單。密碼儲存在 macOS 鑰匙圈中，表單不會顯示已儲存的密碼。</p>"
+    },
+    "connections": {
+      "title": "連線與群組",
+      "html": "<h3>群組與多選</h3><p>在側邊欄建立、重新命名、移動或刪除群組。路徑中的 <code> / </code> 表示巢狀結構；刪除時選擇連線的新位置，不會刪除資料庫內容。可拖曳卡片或使用「移至群組」。</p><p>點擊卡片右上角標記或按住 ⌘ 點擊可多選。選取列支援批次移動、匯出及刪除；Esc 或「清除選取」取消選取。</p><h3>環境標籤</h3><p>可標記本機、開發、測試、預發布或正式環境，並依標籤篩選。正式環境連線及工作階段有紅色標示。</p>"
+    },
+    "import": {
+      "title": "匯入與匯出",
+      "html": "<p>「檔案 → 匯入」（⌘O）自動辨識 DBDock JSON、TablePlus Connections.plist、DBeaver data-sources.json 及含 URL 的文字或 .env。TablePlus 和 DBeaver 的密碼無法讀取，請匯入後填寫；URL 密碼儲存至鑰匙圈。再次匯入同一來源會更新現有連線。⇧⌘I 可貼上 URL。<code>rediss://</code> 暫不支援。</p><h3>匯出</h3><p>「檔案 → 匯出」（⇧⌘E）可匯出全部或選取的連線。包含密碼時，設定密語可使用 AES-256-GCM 加密，金鑰由 Argon2id 衍生。不設定密語時密碼為明文，請妥善保管。</p>"
+    },
+    "ssh": {
+      "title": "SSH 通道",
+      "html": "<p>在連線表單啟用「透過 SSH」。資料庫主機和連接埠從 SSH 伺服器存取：同一台主機上的資料庫可用 127.0.0.1，也可填寫私有 RDS 位址。</p><p>支援 ssh-agent、~/.ssh/config 的 IdentityFile、預設金鑰、指定金鑰檔及密碼。主機金鑰必須已在 ~/.ssh/known_hosts 中驗證；請先透過 OpenSSH 確認新主機。未知、已變更、無法讀取的金鑰及主機憑證會被拒絕。</p><p>Server 可填入 SSH 設定別名。DBDock 通道尚不支援 ProxyJump，請直接連接最後一跳。</p>"
+    },
+    "ssh-hosts": {
+      "title": "SSH 主機設定",
+      "html": "<p>「檔案 → SSH 主機」（⇧⌘H）管理 ~/.ssh/config。可新增或刪除主機，編輯 HostName、User、Port、IdentityFile、ProxyJump，並以代理程式或金鑰測試登入。</p><p>其他設定、註解及縮排會保留；原始檔案編輯器支援 Host *、Match 等設定。每次儲存前會建立帶時間戳記的 config.dbdock-*.bak。主機旁的數字代表使用它的 DBDock 連線數量。</p>"
+    },
+    "sql": {
+      "title": "SQL 資料庫",
+      "html": "<h3>瀏覽與查詢</h3><p>選擇資料庫或 schema，再開啟資料表。資料檢視支援分頁、WHERE 篩選、欄位補全及排序；結構檢視列出欄位、類型、預設值與主鍵。</p><p>SQL 編輯器按 ⌘↵ 執行選取內容或全部內容；支援多個敘述及資料表、欄位補全。MySQL 和 PostgreSQL 可取消查詢，SQLite 和 D1 不支援。一個工作階段使用一個連線，USE、SET 和交易皆在同一工作階段生效。</p><h3>編輯資料</h3><p>有主鍵的資料表支援按兩下編輯、新增或刪除列、設定 NULL。⌘S 提交；預覽 SQL 可查看將執行的敘述。所有操作在單一交易中提交；任何 UPDATE 或 DELETE 未恰好符合一列時全部回滾。</p><h3>D1 與相容服務</h3><p>D1 需要帳戶 ID、資料庫 ID 和具有 D1 Edit 權限的 API 權杖，透過 Cloudflare REST API 存取；表格編輯以單次原子請求提交。StarRocks 和 Doris 可使用 MySQL 類型。</p>"
+    },
+    "redis": {
+      "title": "Redis",
+      "html": "<p>使用 SCAN 和比對模式瀏覽鍵，按「載入更多」繼續。選取鍵可檢視 string、hash、list、set、zset 或 stream 的預覽、TTL 和大小；JSON 字串會格式化顯示。</p><p>透過資料庫下拉選單或 SELECT 切換資料庫；底部主控台執行命令，↑ / ↓ 瀏覽歷史。刪除鍵前會要求確認。</p>"
+    },
+    "mongodb": {
+      "title": "MongoDB",
+      "html": "<p>使用主機與連接埠，或在主機中輸入 mongodb:// / mongodb+srv:// URI。選項支援 authSource、tls 等；SSH 連線需要分別填寫主機和連接埠。</p><h3>集合</h3><p>選擇集合後可使用寬鬆語法填寫 filter、sort 和 projection，支援 ObjectId 和 ISODate。切換表格或 JSON，按兩下文件編輯 Extended JSON，或新增和刪除；現有文件的 _id 不可更改。可查看索引。</p><h3>Shell</h3><p>⌘↵ 執行目前行或選取內容。支援 find、aggregate、countDocuments、distinct、插入、更新、刪除、db.runCommand、show dbs、show collections 和 use。</p>"
+    },
+    "vim": {
+      "title": "Vim 模式與外觀",
+      "html": "<p>在「設定」（⌘,）中選擇淺色、深色或跟隨系統；語言可選跟隨系統、英文、簡體中文、繁體中文和日文。Vim 模式適用於 SQL 編輯器、Mongo Shell、文件與 SSH 設定編輯器。</p><p>Esc 離開插入模式並關閉補全；:w 在文件和設定編輯器中儲存，在 SQL 編輯器和 Shell 中執行。編輯器中的 Esc 不會關閉對話框。</p>"
+    },
+    "shortcuts": {
+      "title": "鍵盤快捷鍵",
+      "html": "<p>⌘N 新增連線；⇧⌘N 新增群組；⌘O 匯入；⇧⌘I 貼上 URL；⇧⌘E 匯出；⇧⌘H 開啟 SSH 主機；⌘, 開啟設定；⌘? 開啟說明。</p><p>⌘1 返回連線清單；⌥⌘← / → 切換工作階段；⌘W 關閉工作階段；⌘F 搜尋；⌘R 重新整理；⌘↵ 執行查詢；⌘S 提交或儲存；Tab 接受補全。按兩下連線卡片連線，按兩下儲存格或文件編輯。</p>"
+    },
+    "data": {
+      "title": "資料儲存位置",
+      "html": "<p>連線與群組：<code>~/Library/Application Support/xyz.phpz.app.dbdock/</code>。密碼、API 權杖與 SSH 密語：macOS 鑰匙圈服務 <code>xyz.phpz.app.dbdock</code>。SSH 主機：<code>~/.ssh/config</code>。介面設定儲存於應用程式中。</p><p>應用程式只連線至使用者指定的資料庫和 SSH 伺服器；D1 亦會存取 Cloudflare API。</p>"
+    },
+    "trouble": {
+      "title": "疑難排解",
+      "html": "<h3>鑰匙圈反覆要求授權</h3><p>鑰匙圈項目與寫入它們的應用程式簽章綁定。日常使用已安裝的應用程式；若項目由其他建置寫入，可從能讀取的建置匯出再重新匯入。</p><h3>匯入後密碼驗證失敗</h3><p>TablePlus 和 DBeaver 不提供密碼，請編輯連線並輸入密碼。</p><h3>SSH 主機金鑰被拒絕</h3><p>確認主機金鑰是否可信；首次連線先透過 OpenSSH 驗證。若伺服器重建導致金鑰變更，確認後用 ssh-keygen -R host 移除舊紀錄，再以 OpenSSH 驗證新金鑰。</p><h3>MySQL 相容服務無法連線</h3><p>檢查連接埠和使用者來源權限。StarRocks / Doris 通常使用 9030。</p><h3>資料表唯讀</h3><p>表格編輯需要主鍵，檢視表一律唯讀；可使用 SQL 編輯器。</p>"
+    }
+  }
+}

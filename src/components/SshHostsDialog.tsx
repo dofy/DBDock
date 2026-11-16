@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ask, open } from "@tauri-apps/plugin-dialog";
@@ -85,7 +86,7 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
     setBusy(true);
     try {
       await invoke("ssh_host_save", { original: sel || null, form });
-      toast("ok", `Saved ${form.alias} to ~/.ssh/config (backup kept next to it)`);
+      toast("ok", tf("Saved {name} to ~/.ssh/config (backup kept next to it)", { name: form.alias }));
       const h = await load();
       const now = h.find((x) => x.alias === form.alias);
       if (now) pick(now);
@@ -100,11 +101,11 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
   const del = async () => {
     if (!current) return;
     const users = usedBy.get(current.alias)?.length ?? 0;
-    const msg = `Delete Host ${current.alias} from ~/.ssh/config?` + (users ? `\n\n${users} dbdock connection(s) use it and will stop resolving.` : "") + "\n\nA backup of the file is kept.";
-    if (!(await ask(msg, { title: "Delete SSH host", kind: "warning" }))) return;
+    const msg = tf("Delete Host {name} from ~/.ssh/config?", { name: current.alias }) + (users ? `\n\n${tf("{count} DBDock connections use it and will stop resolving.", { count: users })}` : "") + `\n\n${t("A backup of the file is kept.")}`;
+    if (!(await ask(msg, { title: t("Delete SSH host"), kind: "warning" }))) return;
     try {
       await invoke("ssh_host_delete", { alias: current.alias });
-      toast("ok", `Deleted ${current.alias}`);
+      toast("ok", tf("Deleted {name}", { name: current.alias }));
       const h = await load();
       const first = h.find((x) => !x.pattern);
       if (first) pick(first);
@@ -122,7 +123,7 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
     if (!sel) return;
     setBusy(true);
     try {
-      toast("ok", `${sel}: ${await invoke<string>("ssh_host_test", { alias: sel })}`);
+      toast("ok", `${sel}: ${t(await invoke<string>("ssh_host_test", { alias: sel }))}`);
     } catch (e) {
       toast("error", `${sel}: ${errText(e)}`);
     } finally {
@@ -144,7 +145,7 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
     setBusy(true);
     try {
       await invoke("ssh_config_write", { text: raw });
-      toast("ok", "Saved ~/.ssh/config (backup kept next to it)");
+      toast("ok", t("Saved ~/.ssh/config (backup kept next to it)"));
       await load();
       onChanged?.();
     } catch (e) {
@@ -167,13 +168,13 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
       <div className="modal ssh-hosts" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>
-            <Server size={16} /> SSH Hosts <span className="muted small">~/.ssh/config</span>
+            <Server size={16} />  {t("SSH Hosts")} <span className="muted small">~/.ssh/config</span>
           </h2>
           <div className="row">
-            <button className="icon-btn" onClick={() => void load()} title="Reload">
+            <button className="icon-btn" onClick={() => void load()} title={t("Reload")}>
               <RefreshCw size={14} />
             </button>
-            <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <button className="icon-btn" onClick={onClose} aria-label={t("Close")}>
               <X size={14} />
             </button>
           </div>
@@ -181,21 +182,21 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
 
         <div className="ssh-hosts-body">
           <aside className="ssh-hosts-list">
-            <input className="search" placeholder="Filter hosts" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input className="search" placeholder={t("Filter hosts")} value={query} onChange={(e) => setQuery(e.target.value)} />
             <ul className="list">
               {shown.map((h) => (
-                <li key={h.alias} className={sel === h.alias ? "on" : ""} onClick={() => (h.pattern ? void editRaw() : pick(h))} title={h.pattern ? "Pattern block — edit in the raw file" : undefined}>
+                <li key={h.alias} className={sel === h.alias ? "on" : ""} onClick={() => (h.pattern ? void editRaw() : pick(h))} title={h.pattern ? t("Pattern block — edit in the raw file") : undefined}>
                   <Server size={14} className="icon" />
                   <div className="host-text">
                     <b>{h.alias}</b>
                     <span className="muted small">
-                      {h.pattern ? "pattern · raw only" : `${h.user ? `${h.user}@` : ""}${h.hostName || h.alias}${h.port ? `:${h.port}` : ""}`}
+                      {h.pattern ? t("pattern · raw only") : `${h.user ? `${h.user}@` : ""}${h.hostName || h.alias}${h.port ? `:${h.port}` : ""}`}
                     </span>
                   </div>
-                  {!!usedBy.get(h.alias)?.length && <span className="count" title="dbdock connections using this host">{usedBy.get(h.alias)!.length}</span>}
+                  {!!usedBy.get(h.alias)?.length && <span className="count" title={t("dbdock connections using this host")}>{usedBy.get(h.alias)!.length}</span>}
                 </li>
               ))}
-              {!shown.length && <li className="muted">No hosts</li>}
+              {!shown.length && <li className="muted">{t("No hosts")}</li>}
             </ul>
             <div className="row">
               <button
@@ -205,11 +206,9 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
                   setForm(EMPTY);
                 }}
               >
-                <Plus size={14} /> New host
-              </button>
+                <Plus size={14} />  {t("New host")} </button>
               <button onClick={() => void editRaw()} className={raw !== null ? "on-btn" : ""}>
-                <FileCode size={14} /> Raw file
-              </button>
+                <FileCode size={14} />  {t("Raw file")} </button>
             </div>
           </aside>
 
@@ -220,62 +219,59 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
                   <CodeEditor value={raw} onChange={setRaw} onSave={() => void saveRaw()} autoFocus />
                 </div>
                 <div className="actions">
-                  <span className="muted small">The whole file, saved as is. A timestamped backup is written first.</span>
+                  <span className="muted small">{t("The whole file, saved as is. A timestamped backup is written first.")}</span>
                   <span className="spacer" />
                   <button className="primary" disabled={busy} onClick={() => void saveRaw()}>
-                    <Save size={14} /> Save file
-                  </button>
+                    <Save size={14} />  {t("Save file")} </button>
                 </div>
               </>
             ) : sel !== null ? (
               <>
                 <div className="form">
-                  <label>Host</label>
-                  <input value={form.alias} onChange={(e) => set("alias", e.target.value)} placeholder="alias, e.g. bastion" spellCheck={false} autoFocus={sel === ""} />
+                  <label>{t("Host")}</label>
+                  <input value={form.alias} onChange={(e) => set("alias", e.target.value)} placeholder={t("alias, e.g. bastion")} spellCheck={false} autoFocus={sel === ""} />
                   <label>HostName</label>
-                  <input value={form.hostName} onChange={(e) => set("hostName", e.target.value)} placeholder="IP or DNS name (empty = the alias)" spellCheck={false} />
-                  <label>User</label>
-                  <input value={form.user} onChange={(e) => set("user", e.target.value)} placeholder="login user" spellCheck={false} />
-                  <label>Port</label>
+                  <input value={form.hostName} onChange={(e) => set("hostName", e.target.value)} placeholder={t("IP or DNS name (empty = the alias)")} spellCheck={false} />
+                  <label>{t("User")}</label>
+                  <input value={form.user} onChange={(e) => set("user", e.target.value)} placeholder={t("login user")} spellCheck={false} />
+                  <label>{t("Port")}</label>
                   <input className="port" value={form.port} onChange={(e) => set("port", e.target.value)} placeholder="22" spellCheck={false} />
                   <label>IdentityFile</label>
                   <div className="row">
-                    <input value={form.identityFile} onChange={(e) => set("identityFile", e.target.value)} placeholder="~/.ssh/id_ed25519 (empty = agent / defaults)" spellCheck={false} />
+                    <input value={form.identityFile} onChange={(e) => set("identityFile", e.target.value)} placeholder={t("~/.ssh/id_ed25519 (empty = agent / defaults)")} spellCheck={false} />
                     <button onClick={() => void pickKey()}>
                       <FolderOpen size={14} />
                     </button>
                   </div>
                   <label>ProxyJump</label>
-                  <input value={form.proxyJump} onChange={(e) => set("proxyJump", e.target.value)} placeholder="jump host alias (used by ssh; dbdock tunnels do not follow it yet)" spellCheck={false} />
+                  <input value={form.proxyJump} onChange={(e) => set("proxyJump", e.target.value)} placeholder={t("jump host alias (used by ssh; dbdock tunnels do not follow it yet)")} spellCheck={false} />
                 </div>
                 {current && (current.other.length > 0 || current.comments.length > 0) && (
                   <div className="kept-lines">
-                    <span className="muted small">Kept as is</span>
+                    <span className="muted small">{t("Kept as is")}</span>
                     <pre>{[...current.other, ...current.comments].join("\n")}</pre>
                   </div>
                 )}
                 {current && !!usedBy.get(current.alias)?.length && (
-                  <p className="hint">Used by: {usedBy.get(current.alias)!.map((c) => c.name).join(", ")}</p>
+                  <p className="hint">{t("Used by:")} {usedBy.get(current.alias)!.map((c) => c.name).join(", ")}</p>
                 )}
                 <div className="actions">
                   {current && (
                     <button className="danger" onClick={() => void del()}>
-                      <Trash2 size={14} /> Delete
-                    </button>
+                      <Trash2 size={14} />  {t("Delete")} </button>
                   )}
                   {current && (
-                    <button onClick={() => void test()} disabled={busy || dirty} title={dirty ? "Save first" : "Log in with agent / key"}>
-                      <Zap size={14} /> Test login
-                    </button>
+                    <button onClick={() => void test()} disabled={busy || dirty} title={dirty ? t("Save first") : t("Log in with agent / key")}>
+                      <Zap size={14} />  {t("Test login")} </button>
                   )}
                   <span className="spacer" />
                   <button className="primary" disabled={busy || !dirty || !form.alias.trim()} onClick={() => void save()}>
-                    <Save size={14} /> {sel === "" ? "Add host" : "Save"}
+                    <Save size={14} /> {sel === "" ? t("Add host") : t("Save")}
                   </button>
                 </div>
               </>
             ) : (
-              <div className="grid-empty muted">Pick a host, or add one.</div>
+              <div className="grid-empty muted">{t("Pick a host, or add one.")}</div>
             )}
           </section>
         </div>

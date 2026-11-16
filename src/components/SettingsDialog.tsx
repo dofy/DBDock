@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -23,33 +24,52 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       <div className="modal small" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>
-            <SettingsIcon size={16} /> Settings
-          </h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <SettingsIcon size={16} />  {t("Settings")} </h2>
+          <button className="icon-btn" onClick={onClose} aria-label={t("Close")}>
             <X size={14} />
           </button>
         </div>
 
         <section className="settings-section">
+          <h3>{t("Appearance")}</h3>
+          <label className="setting-choice">
+            <span>{t("Theme")}</span>
+            <select value={s.theme} onChange={(e) => updateSettings({ theme: e.target.value as typeof s.theme })}>
+              <option value="system">{t("System")}</option>
+              <option value="light">{t("Light")}</option>
+              <option value="dark">{t("Dark")}</option>
+            </select>
+          </label>
+          <label className="setting-choice">
+            <span>{t("Language")}</span>
+            <select value={s.language} onChange={(e) => updateSettings({ language: e.target.value as typeof s.language })}>
+              <option value="system">{t("System")}</option>
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+              <option value="zh-TW">繁體中文</option>
+              <option value="ja">日本語</option>
+            </select>
+          </label>
+        </section>
+
+        <section className="settings-section">
           <h3>
-            <Keyboard size={14} /> Editor
-          </h3>
+            <Keyboard size={14} />  {t("Editor")} </h3>
           <label className="setting-row">
             <span className="switch">
               <input type="checkbox" checked={s.vim} onChange={(e) => updateSettings({ vim: e.target.checked })} />
               <span />
             </span>
             <div>
-              <b>Vim mode</b>
-              <p className="muted small">SQL editor, Mongo shell, document editor and the SSH config editor. Esc, hjkl, :w saves (in the SQL editor and shell, :w runs).</p>
+              <b>{t("Vim mode")}</b>
+              <p className="muted small">{t("SQL editor, Mongo shell, document editor and the SSH config editor. Esc, hjkl, :w saves (in the SQL editor and shell, :w runs).")}</p>
             </div>
           </label>
         </section>
 
         <section className="settings-section">
           <h3>
-            <Info size={14} /> About
-          </h3>
+            <Info size={14} />  {t("About")} </h3>
           <div className="settings-about">
             <img src="/dbdock-icon.svg" alt="" width={40} height={40} />
             <div>
@@ -59,8 +79,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div className="row settings-links">
             <button onClick={() => void invoke("open_help")}>
-              <BookOpen size={14} /> Help
-            </button>
+              <BookOpen size={14} />  {t("Help")} </button>
             <button onClick={() => void invoke("open_github")} title="https://github.com/dofy/DBDock">
               <svg viewBox="0 0 24 24" width={14} height={14} aria-hidden="true">
                 <path d={siGithub.path} fill="currentColor" />

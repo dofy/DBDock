@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, ENV_LABEL, ENVS, errText, type ConnectionConfig } from "../api";
@@ -19,7 +20,7 @@ const depth = (g: string) => g.split(SEP).length - 1;
 
 export function EnvBadge({ env }: { env: string }) {
   if (!env) return null;
-  return <span className={`env-badge env-${env}`}>{ENV_LABEL[env] ?? env.toUpperCase()}</span>;
+  return <span className={`env-badge env-${env}`}>{t(ENV_LABEL[env] ?? env.toUpperCase())}</span>;
 }
 
 function target(c: ConnectionConfig) {
@@ -155,9 +156,9 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
 
   const deleteConnections = async (ids: string[]) => {
     const names = conns.filter((c) => ids.includes(c.id)).map((c) => c.name);
-    const msg = ids.length === 1 ? `Delete connection "${names[0]}" and its saved passwords?` : `Delete ${ids.length} connections and their saved passwords?\n\n${names.join(", ")}`;
-    if (!(await ask(msg, { title: "Delete", kind: "warning" }))) return;
-    await run(() => api.deleteConnections(ids), ids.length === 1 ? `Deleted ${names[0]}` : `Deleted ${ids.length} connections`);
+    const msg = ids.length === 1 ? tf('Delete connection "{name}" and its saved passwords?', { name: names[0] }) : `${tf("Delete {count} connections and their saved passwords?", { count: ids.length })}\n\n${names.join(", ")}`;
+    if (!(await ask(msg, { title: t("Delete"), kind: "warning" }))) return;
+    await run(() => api.deleteConnections(ids), ids.length === 1 ? tf("Deleted {name}", { name: names[0] }) : tf("Deleted {count} connections", { count: ids.length }));
     setPicked(new Set());
   };
 
@@ -181,31 +182,31 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
       e.preventDefault();
       setDropTarget(null);
       const ids = dropIds(e);
-      if (ids.length) void run(() => api.moveConnections(ids, group), `Moved ${ids.length} to ${group || "Ungrouped"}`).then(() => setPicked(new Set()));
+      if (ids.length) void run(() => api.moveConnections(ids, group), tf("Moved {count} to {group}", { count: ids.length, group: group || t("Ungrouped") })).then(() => setPicked(new Set()));
     },
   });
 
   const imported = (r: ImportReport) => {
     setDialog(null);
-    const parts = [`${r.added} new`, `${r.updated} updated`];
-    if (r.withSecrets) parts.push(`${r.withSecrets} with passwords`);
-    let msg = `Imported from ${r.source.split(" · ")[0]}: ${parts.join(", ")}`;
-    if (r.skipped.length) msg += `. Skipped: ${r.skipped.join(", ")}`;
-    if (r.passwordsNotImported) msg += ". Passwords are not readable from that app; enter each once.";
+    const parts = [tf("{count} new", { count: r.added }), tf("{count} updated", { count: r.updated })];
+    if (r.withSecrets) parts.push(tf("{count} with passwords", { count: r.withSecrets }));
+    let msg = tf("Imported from {source}: {details}", { source: r.source.split(" · ")[0], details: parts.join(", ") });
+    if (r.skipped.length) msg += `. ${tf("Skipped: {details}", { details: r.skipped.join(", ") })}`;
+    if (r.passwordsNotImported) msg += `. ${t("Passwords are not readable from that app; enter each once.")}`;
     toast(r.skipped.length ? "info" : "ok", msg);
     void reload();
   };
 
-  const title = sel === null ? "All connections" : sel === "" ? "Ungrouped" : sel;
+  const title = sel === null ? t("All connections") : sel === "" ? t("Ungrouped") : sel;
   const pickedIds = [...picked];
 
   return (
     <div className="home-view">
       <aside className="home-side">
         <div className="search-box">
-          <input ref={searchRef} className="search" placeholder="Search  ⌘F" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
+          <input ref={searchRef} className="search" placeholder={t("Search  ⌘F")} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
           {query && (
-            <button className="clear" onClick={() => setQuery("")} aria-label="Clear search">
+            <button className="clear" onClick={() => setQuery("")} aria-label={t("Clear search")}>
               <X size={12} />
             </button>
           )}
@@ -213,12 +214,12 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
         <ul className="tree">
           <li className={`tree-row ${sel === null ? "on" : ""}`} onClick={() => setSel(null)}>
             <span className="tree-icon">◎</span>
-            <span className="tree-name">All connections</span>
+            <span className="tree-name">{t("All connections")}</span>
             <span className="count">{conns.length}</span>
           </li>
           <li className="tree-head">
-            <span>Groups</span>
-            <button className="icon-btn" title="New group" onClick={() => setDialog({ kind: "new-group", parent: sel && sel !== "" ? sel : "" })}>
+            <span>{t("Groups")}</span>
+            <button className="icon-btn" title={t("New group")} onClick={() => setDialog({ kind: "new-group", parent: sel && sel !== "" ? sel : "" })}>
               <FolderPlus size={14} />
             </button>
           </li>
@@ -255,7 +256,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
               <span className="count">{groupCount(g)}</span>
               <button
                 className="icon-btn more"
-                title="Group actions"
+                title={t("Group actions")}
                 onClick={(e) => {
                   e.stopPropagation();
                   setMenu({ group: g, x: e.clientX, y: e.clientY });
@@ -268,11 +269,11 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           <li className={`tree-row ${sel === "" ? "on" : ""} ${dropTarget === "" ? "drop" : ""}`} onClick={() => setSel("")} {...dropProps("")}>
             <span className="caret none" />
             <span className="tree-icon">▢</span>
-            <span className="tree-name muted">Ungrouped</span>
+            <span className="tree-name muted">{t("Ungrouped")}</span>
             <span className="count">{ungrouped}</span>
           </li>
         </ul>
-        <p className="hint side-hint">Drag connections onto a group to move them. Right-click a group for more.</p>
+        <p className="hint side-hint">{t("Drag connections onto a group to move them. Right-click a group for more.")}</p>
       </aside>
 
       <section className="home-main">
@@ -281,47 +282,43 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           <span className="muted">{shown.length}</span>
           <span className="spacer" />
           <button className="primary" onClick={() => onEdit({ newInGroup: sel ?? "" })}>
-            <Plus size={14} />New connection
-          </button>
+            <Plus size={14} />{t("New connection")} </button>
         </div>
         <div className="env-filter">
           <button className={`chip ${envFilter === null ? "on" : ""}`} onClick={() => setEnvFilter(null)}>
-            All {inGroup.length}
+             {t("All")} {inGroup.length}
           </button>
           {[...ENVS, ""]
             .filter((e) => envCounts.has(e))
             .map((e) => (
               <button key={e || "none"} className={`chip env-chip env-${e || "none"} ${envFilter === e ? "on" : ""}`} onClick={() => setEnvFilter(envFilter === e ? null : e)}>
-                {e ? ENV_LABEL[e] : "untagged"} {envCounts.get(e)}
+                {e ? t(ENV_LABEL[e]) : t("untagged")} {envCounts.get(e)}
               </button>
             ))}
         </div>
 
         {picked.size > 0 && (
           <div className="bulk-bar">
-            <button className="icon-btn bulk-clear" onClick={() => setPicked(new Set())} title="Clear selection (Esc)" aria-label="Clear selection">
+            <button className="icon-btn bulk-clear" onClick={() => setPicked(new Set())} title={t("Clear selection (Esc)")} aria-label={t("Clear selection")}>
               <X size={14} />
             </button>
-            <b>{picked.size} selected</b>
+            <b>{picked.size}  {t("selected")}</b>
             {picked.size < shown.length ? (
               <button className="link" onClick={() => setPicked(new Set(shown.map((c) => c.id)))}>
-                Select all {shown.length}
+                 {t("Select all")} {shown.length}
               </button>
             ) : (
               <button className="link" onClick={() => setPicked(new Set())}>
-                Select none
-              </button>
+                 {t("Select none")} </button>
             )}
             <span className="spacer" />
-            <button onClick={() => setDialog({ kind: "move", ids: pickedIds })}><FolderInput size={14} />Move to group…</button>
-            <button onClick={() => setDialog({ kind: "export", ids: pickedIds })}><FileUp size={14} />Export…</button>
+            <button onClick={() => setDialog({ kind: "move", ids: pickedIds })}><FolderInput size={14} />{t("Move to group…")}</button>
+            <button onClick={() => setDialog({ kind: "export", ids: pickedIds })}><FileUp size={14} />{t("Export…")}</button>
             <button className="danger" onClick={() => void deleteConnections(pickedIds)}>
-              <Trash2 size={14} />Delete
-            </button>
+              <Trash2 size={14} />{t("Delete")} </button>
             <button onClick={() => setPicked(new Set())} title="Esc">
               <X size={14} />
-              Clear selection
-            </button>
+               {t("Clear selection")} </button>
           </div>
         )}
 
@@ -336,7 +333,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
             <section key={group || "-"} className="conn-group">
               {(sections.length > 1 || group !== sel) && (
                 <h3 className="section-title" onClick={() => setSel(group)}>
-                  {group || "Ungrouped"}
+                  {group || t("Ungrouped")}
                 </h3>
               )}
               <div className="card-grid">
@@ -365,7 +362,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                       role="checkbox"
                       aria-checked={picked.has(c.id)}
                       aria-label={`Select ${c.name}`}
-                      title={picked.has(c.id) ? "Deselect" : "Select (⌘-click also works)"}
+                      title={picked.has(c.id) ? t("Deselect") : t("Select (⌘-click also works)")}
                       onClick={(e) => {
                         e.stopPropagation();
                         togglePick(c.id);
@@ -391,15 +388,15 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                       )}
                     </div>
                     <div className={`btn-group card-actions ${connecting === c.id ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()}>
-                      <button title="Edit" aria-label="Edit" onClick={() => onEdit(c)}>
+                      <button title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(c)}>
                         <Pencil size={13} />
                       </button>
-                      <button title="More" aria-label="More" onClick={(e) => setMenu({ id: c.id, x: e.clientX, y: e.clientY })}>
+                      <button title={t("More")} aria-label={t("More")} onClick={(e) => setMenu({ id: c.id, x: e.clientX, y: e.clientY })}>
                         <MoreHorizontal size={13} />
                       </button>
                       <button className="primary" disabled={connecting === c.id} onClick={() => onConnect(c)}>
                         <Plug size={13} />
-                        {connecting === c.id ? "Connecting…" : "Connect"}
+                        {connecting === c.id ? t("Connecting…") : t("Connect")}
                       </button>
                     </div>
                   </div>
@@ -411,7 +408,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
             <div className="empty">
               {conns.length ? (
                 <>
-                  No connections match.{" "}
+                   {t("No connections match.")}{" "}
                   {(query || envFilter !== null) && (
                     <button
                       className="link"
@@ -420,12 +417,11 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                         setEnvFilter(null);
                       }}
                     >
-                      Clear filters
-                    </button>
+                       {t("Clear filters")} </button>
                   )}
                 </>
               ) : (
-                "No connections yet. Create one for MySQL, PostgreSQL, SQLite or Redis, optionally through SSH, or import them from TablePlus."
+                t("No connections yet. Create one for MySQL, PostgreSQL, SQLite or Redis, optionally through SSH, or import them from TablePlus.")
               )}
             </div>
           )}
@@ -441,18 +437,17 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                 const close = () => setMenu(null);
                 return (
                   <>
-                    <button onClick={() => (close(), onConnect(c))}><Plug size={14} />Connect</button>
-                    <button onClick={() => (close(), onEdit(c))}><Pencil size={14} />Edit…</button>
-                    <button onClick={() => (close(), setDialog({ kind: "move", ids: picked.has(c.id) ? pickedIds : [c.id] }))}><FolderInput size={14} />Move to group…</button>
+                    <button onClick={() => (close(), onConnect(c))}><Plug size={14} />{t("Connect")}</button>
+                    <button onClick={() => (close(), onEdit(c))}><Pencil size={14} />{t("Edit…")}</button>
+                    <button onClick={() => (close(), setDialog({ kind: "move", ids: picked.has(c.id) ? pickedIds : [c.id] }))}><FolderInput size={14} />{t("Move to group…")}</button>
                     <button onClick={() => (close(), togglePick(c.id))}>
                       {picked.has(c.id) ? <SquareMinus size={14} /> : <SquareCheck size={14} />}
-                      {picked.has(c.id) ? "Deselect" : "Select"}
+                      {picked.has(c.id) ? t("Deselect") : t("Select")}
                     </button>
-                    <button onClick={() => (close(), setDialog({ kind: "export", ids: [c.id] }))}><FileUp size={14} />Export…</button>
+                    <button onClick={() => (close(), setDialog({ kind: "export", ids: [c.id] }))}><FileUp size={14} />{t("Export…")}</button>
                     <hr />
                     <button className="danger" onClick={() => (close(), void deleteConnections(picked.has(c.id) ? pickedIds : [c.id]))}>
-                      <Trash2 size={14} />Delete
-                    </button>
+                      <Trash2 size={14} />{t("Delete")} </button>
                   </>
                 );
               })()
@@ -461,14 +456,13 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                 const close = () => setMenu(null);
                 return (
                   <>
-                    <button onClick={() => (close(), onEdit({ newInGroup: g }))}><Plus size={14} />New connection here…</button>
-                    <button onClick={() => (close(), setDialog({ kind: "new-group", parent: g }))}><FolderPlus size={14} />New subgroup…</button>
-                    <button onClick={() => (close(), setDialog({ kind: "rename-group", path: g }))}><PenLine size={14} />Rename / move…</button>
-                    <button onClick={() => (close(), setPicked(new Set(conns.filter((c) => within(c.group, g)).map((c) => c.id))))}><ListChecks size={14} />Select its connections</button>
+                    <button onClick={() => (close(), onEdit({ newInGroup: g }))}><Plus size={14} />{t("New connection here…")}</button>
+                    <button onClick={() => (close(), setDialog({ kind: "new-group", parent: g }))}><FolderPlus size={14} />{t("New subgroup…")}</button>
+                    <button onClick={() => (close(), setDialog({ kind: "rename-group", path: g }))}><PenLine size={14} />{t("Rename / move…")}</button>
+                    <button onClick={() => (close(), setPicked(new Set(conns.filter((c) => within(c.group, g)).map((c) => c.id))))}><ListChecks size={14} />{t("Select its connections")}</button>
                     <hr />
                     <button className="danger" onClick={() => (close(), setDialog({ kind: "delete-group", path: g }))}>
-                      <Trash2 size={14} />Delete group…
-                    </button>
+                      <Trash2 size={14} />{t("Delete group…")} </button>
                   </>
                 );
               })()}
@@ -477,50 +471,50 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
 
       {dialog?.kind === "new-group" && (
         <PromptDialog
-          title="New group"
-          label="Group path"
+          title={t("New group")}
+          label={t("Group path")}
           initial={dialog.parent ? dialog.parent + SEP : ""}
           placeholder="Work / Staging"
-          hint={<>Use “ / ” to nest, e.g. Acme / AI.</>}
-          confirm="Create"
+          hint={<>{t("Use “ / ” to nest, e.g. Acme / AI.")}</>}
+          confirm={t("Create")}
           onClose={() => setDialog(null)}
           onSubmit={async (v) => {
             const p = await api.createGroup(v);
             setDialog(null);
             await reload();
             setSel(p);
-            toast("ok", `Created ${p}`);
+            toast("ok", tf("Created {name}", { name: p }));
           }}
         />
       )}
       {dialog?.kind === "rename-group" && (
         <PromptDialog
-          title="Rename or move group"
-          label="New path"
+          title={t("Rename or move group")}
+          label={t("New path")}
           initial={dialog.path}
           options={groups.filter((g) => !within(g, dialog.path))}
-          hint={<>Subgroups and {groupCount(dialog.path)} connection(s) move along. Put a parent in front to nest it, e.g. Work / {leaf(dialog.path)}.</>}
-          confirm="Rename"
+          hint={<>{t("Subgroups and")} {groupCount(dialog.path)}  {t("connection(s) move along. Put a parent in front to nest it, e.g. Work /")} {leaf(dialog.path)}.</>}
+          confirm={t("Rename")}
           onClose={() => setDialog(null)}
           onSubmit={async (v) => {
             const n = await api.renameGroup(dialog.path, v);
             setDialog(null);
             await reload();
             setSel(v.split("/").map((s) => s.trim()).filter(Boolean).join(SEP));
-            toast("ok", `Renamed to ${v} (${n} connection(s))`);
+            toast("ok", tf("Renamed to {name} ({count} connections)", { name: v, count: n }));
           }}
         />
       )}
       {dialog?.kind === "delete-group" && (
         <PromptDialog
-          title={`Delete group “${leaf(dialog.path)}”`}
-          label={`Move its ${groupCount(dialog.path)} connection(s) to`}
+          title={tf("Delete group “{name}”", { name: leaf(dialog.path) })}
+          label={tf("Move its {count} connection(s) to", { count: groupCount(dialog.path) })}
           initial={dialog.path.includes(SEP) ? dialog.path.slice(0, dialog.path.lastIndexOf(SEP)) : ""}
-          placeholder="empty = Ungrouped"
+          placeholder={t("empty = Ungrouped")}
           options={groups.filter((g) => !within(g, dialog.path))}
           allowEmpty
-          hint="Subgroups are removed too. Connections are kept and moved; nothing is deleted from the databases."
-          confirm="Delete group"
+          hint={t("Subgroups are removed too. Connections are kept and moved; nothing is deleted from the databases.")}
+          confirm={t("Delete group")}
           danger
           onClose={() => setDialog(null)}
           onSubmit={async (v) => {
@@ -528,26 +522,26 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
             setDialog(null);
             await reload();
             setSel(v || null);
-            toast("ok", `Deleted group; moved ${n} connection(s) to ${v || "Ungrouped"}`);
+            toast("ok", tf("Deleted group; moved {count} connections to {group}", { count: n, group: v || t("Ungrouped") }));
           }}
         />
       )}
       {dialog?.kind === "move" && (
         <PromptDialog
-          title={`Move ${dialog.ids.length} connection(s)`}
-          label="To group"
+          title={tf("Move {count} connection(s)", { count: dialog.ids.length })}
+          label={t("To group")}
           initial={dialog.ids.length === 1 ? (conns.find((c) => c.id === dialog.ids[0])?.group ?? "") : sel ?? ""}
-          placeholder="empty = Ungrouped; a new name creates the group"
+          placeholder={t("empty = Ungrouped; a new name creates the group")}
           options={groups}
           allowEmpty
-          confirm="Move"
+          confirm={t("Move")}
           onClose={() => setDialog(null)}
           onSubmit={async (v) => {
             await api.moveConnections(dialog.ids, v);
             setDialog(null);
             setPicked(new Set());
             await reload();
-            toast("ok", `Moved ${dialog.ids.length} to ${v || "Ungrouped"}`);
+            toast("ok", tf("Moved {count} to {group}", { count: dialog.ids.length, group: v || t("Ungrouped") }));
           }}
         />
       )}

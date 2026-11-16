@@ -1,0 +1,58 @@
+{
+  "labels": [
+    "DBDock 帮助",
+    "搜索帮助",
+    "没有匹配内容。",
+    "MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1，内置 SSH。"
+  ],
+  "sections": {
+    "start": {
+      "title": "入门",
+      "html": "<p>按 ⌘N 新建连接，选择数据库类型，填写主机、用户名和密码后点击“测试”。也可以按 ⌘O 导入 TablePlus、DBeaver、URL 或 DBDock 导出文件。</p><p>双击连接卡片或点击“连接”打开会话；⌘1 返回连接列表。密码保存在 macOS 钥匙串中，表单不会显示已保存的密码。</p>"
+    },
+    "connections": {
+      "title": "连接与分组",
+      "html": "<h3>分组和多选</h3><p>使用侧边栏创建、重命名、移动或删除分组。路径中的 <code> / </code> 表示嵌套；删除分组时选择连接的新位置，数据库内容不会删除。可将卡片拖到分组，或使用“移动到分组”。</p><p>点击卡片右上角选择标记或按住 ⌘ 点击可多选。选择栏支持批量移动、导出和删除；Esc 或“清除选择”取消选择。</p><h3>环境标签</h3><p>连接可标记为本地、开发、测试、预发布或生产，并按标签筛选。生产连接和会话标签有红色标识。</p>"
+    },
+    "import": {
+      "title": "导入与导出",
+      "html": "<p>“文件 → 导入”（⌘O）自动识别 DBDock JSON、TablePlus Connections.plist、DBeaver data-sources.json 和含 URL 的文本或 .env。TablePlus 和 DBeaver 的密码不能读取，请导入后填写；URL 中的密码保存到钥匙串。同一来源再次导入会更新已有连接。⇧⌘I 可粘贴 URL。<code>rediss://</code> 暂不支持。</p><h3>导出</h3><p>“文件 → 导出”（⇧⌘E）可导出全部或所选连接。包含密码时，设置口令可使用 AES-256-GCM 加密，密钥由 Argon2id 派生。不设置口令时密码为明文，请妥善保管。</p>"
+    },
+    "ssh": {
+      "title": "SSH 隧道",
+      "html": "<p>在连接表单启用“通过 SSH”。数据库主机和端口从 SSH 服务器访问：同机数据库可用 127.0.0.1，也可填写私有 RDS 地址。</p><p>支持 ssh-agent、~/.ssh/config 中的 IdentityFile、默认密钥、指定密钥文件和密码。主机密钥必须已在 ~/.ssh/known_hosts 中验证；请先通过 OpenSSH 确认新主机。未知、已更改、不可读取的密钥和主机证书会被拒绝。</p><p>Server 可填写 SSH 配置别名。DBDock 隧道暂不支持 ProxyJump，请直接连接最后一跳。</p>"
+    },
+    "ssh-hosts": {
+      "title": "SSH 主机配置",
+      "html": "<p>“文件 → SSH 主机”（⇧⌘H）管理 ~/.ssh/config。可增删主机，编辑 HostName、User、Port、IdentityFile 和 ProxyJump，并用代理或密钥测试登录。</p><p>其他配置、注释和缩进会保留；原始文件编辑器支持 Host *、Match 等配置。每次保存前会创建带时间戳的 config.dbdock-*.bak。主机旁的数字表示使用它的 DBDock 连接数量。</p>"
+    },
+    "sql": {
+      "title": "SQL 数据库",
+      "html": "<h3>浏览与查询</h3><p>选择数据库或 schema，再打开表。数据视图支持分页、WHERE 过滤、列名补全和排序；结构视图列出字段、类型、默认值和主键。</p><p>SQL 编辑器按 ⌘↵ 执行选中内容或全部内容；支持多条语句、表和列补全。MySQL 与 PostgreSQL 可取消查询；SQLite 与 D1 不支持。一个会话使用一个连接，USE、SET 和事务作用于同一会话。</p><h3>编辑数据</h3><p>有主键的表支持双击编辑、添加或删除行、设置 NULL。⌘S 提交，预览 SQL 可查看将执行的语句。所有操作在一个事务中提交；任何 UPDATE 或 DELETE 未恰好匹配一行时全部回滚。</p><h3>D1 与兼容服务</h3><p>D1 需要账户 ID、数据库 ID 和具备 D1 Edit 权限的 API 令牌，通过 Cloudflare REST API 访问；网格编辑作为一次原子请求提交。StarRocks 和 Doris 可使用 MySQL 类型。</p>"
+    },
+    "redis": {
+      "title": "Redis",
+      "html": "<p>使用 SCAN 和匹配模式浏览键，点击“加载更多”继续。选择键可查看 string、hash、list、set、zset 或 stream 的预览、TTL 和大小；JSON 字符串会格式化显示。</p><p>通过数据库下拉框或 SELECT 切换数据库；底部控制台执行命令，↑ / ↓ 浏览历史。删除键前会确认。</p>"
+    },
+    "mongodb": {
+      "title": "MongoDB",
+      "html": "<p>使用主机和端口，或在主机中输入 mongodb:// / mongodb+srv:// URI。选项支持 authSource、tls 等；SSH 连接需要分别填写主机和端口。</p><h3>集合</h3><p>选择集合后可使用宽松语法填写 filter、sort 和 projection，支持 ObjectId 和 ISODate。切换表格或 JSON，双击文档编辑 Extended JSON，或插入和删除；已有文档的 _id 不可更改。可查看索引。</p><h3>Shell</h3><p>⌘↵ 执行当前行或选中内容。支持 find、aggregate、countDocuments、distinct、插入、更新、删除、db.runCommand、show dbs、show collections 和 use。</p>"
+    },
+    "vim": {
+      "title": "Vim 模式与外观",
+      "html": "<p>在“设置”（⌘,）中选择浅色、深色或跟随系统；语言可选择跟随系统、英文、简体中文、繁体中文和日语。Vim 模式适用于 SQL 编辑器、Mongo Shell、文档及 SSH 配置编辑器。</p><p>Esc 退出插入模式并关闭补全；:w 在文档和配置编辑器中保存，在 SQL 编辑器和 Shell 中运行。编辑器中的 Esc 不会关闭对话框。</p>"
+    },
+    "shortcuts": {
+      "title": "键盘快捷键",
+      "html": "<p>⌘N 新建连接；⇧⌘N 新建分组；⌘O 导入；⇧⌘I 粘贴 URL；⇧⌘E 导出；⇧⌘H 打开 SSH 主机；⌘, 打开设置；⌘? 打开帮助。</p><p>⌘1 返回连接列表；⌥⌘← / → 切换会话；⌘W 关闭会话；⌘F 搜索；⌘R 刷新；⌘↵ 运行查询；⌘S 提交或保存；Tab 接受补全。双击连接卡片连接，双击单元格或文档编辑。</p>"
+    },
+    "data": {
+      "title": "数据保存位置",
+      "html": "<p>连接和分组：<code>~/Library/Application Support/xyz.phpz.app.dbdock/</code>。密码、API 令牌及 SSH 口令：macOS 钥匙串服务 <code>xyz.phpz.app.dbdock</code>。SSH 主机：<code>~/.ssh/config</code>。界面设置保存在应用中。</p><p>应用只连接用户指定的数据库和 SSH 服务器；D1 还会访问 Cloudflare API。</p>"
+    },
+    "trouble": {
+      "title": "故障排查",
+      "html": "<h3>钥匙串反复请求授权</h3><p>钥匙串条目与写入它们的应用签名绑定。日常使用已安装的应用；如果条目由其他构建写入，可从能读取它的构建导出并重新导入。</p><h3>导入后密码认证失败</h3><p>TablePlus 和 DBeaver 不提供密码，请编辑连接并输入密码。</p><h3>SSH 主机密钥被拒绝</h3><p>确认主机密钥是否可信；首次连接先使用 OpenSSH 验证。如果服务器重建导致密钥变化，核实后用 ssh-keygen -R host 移除旧记录，再使用 OpenSSH 验证新密钥。</p><h3>MySQL 兼容服务无法连接</h3><p>检查端口和用户来源权限。StarRocks / Doris 通常使用 9030。</p><h3>表只读</h3><p>网格编辑需要主键，视图始终只读；可使用 SQL 编辑器。</p>"
+    }
+  }
+}

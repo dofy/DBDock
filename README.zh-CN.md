@@ -1,0 +1,37 @@
+# DBDock
+
+[English](README.md) · 简体中文 · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md)
+
+**版本 1.0.0** · macOS · Tauri 2 + Rust + React
+
+DBDock 是一款桌面数据库客户端，支持 **MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1**，内置 SSH 隧道、连接分组、环境标签和支持 Vim 的编辑器。
+
+## 功能
+
+- **连接管理**：卡片视图、嵌套分组、拖动和多选；使用环境标签区分本地、开发、测试、预发布和生产环境。
+- **导入与导出**：支持 DBDock、TablePlus、DBeaver 和连接 URL。密码保存在 macOS 钥匙串；可使用 AES-256-GCM 和 Argon2id 加密导出。未加口令的导出为明文，请妥善保管。`rediss://` 暂不支持，导入时会被拒绝。
+- **SSH**：支持 ssh-agent、密钥文件或密码；数据库地址从 SSH 服务器解析。主机密钥必须已在 `~/.ssh/known_hosts` 中验证，请先使用 OpenSSH 确认新主机。SSH Hosts 管理器编辑配置前会创建备份；目前隧道不支持 ProxyJump。
+- **SQL**：浏览结构和分页数据，使用过滤、排序及自动补全；可执行多条语句。具有主键的表支持编辑、插入和删除，提交在事务中执行，并检查更新和删除是否恰好命中一行。MySQL 和 PostgreSQL 支持取消查询，D1 不支持。
+- **Redis**：通过 SCAN 浏览键、查看类型与 TTL、切换数据库、删除键和运行命令。
+- **MongoDB**：浏览集合和索引，过滤、排序、分页，编辑文档，并使用内置 Shell。SSH 隧道使用直连模式。
+- **界面**：浅色与深色主题以及英文、简体中文、繁体中文、日语；主题和语言默认跟随系统，可在设置中更改。支持 Vim 模式、原生菜单和离线帮助。
+
+## 数据位置
+
+连接和分组存放在 `~/Library/Application Support/xyz.phpz.app.dbdock/`；密码、令牌和 SSH 口令存放在 macOS 钥匙串服务 `xyz.phpz.app.dbdock` 中；界面设置存放在应用的 Web 存储中。钥匙串权限与应用签名绑定，日常使用建议运行已安装的应用。
+
+## 构建与开发
+
+```bash
+pnpm install
+pnpm install:local  # 安装到 /Applications/DBDock.app
+pnpm tauri dev
+```
+
+本地安装脚本使用自签名证书 **DBDock Local Development**，以便重建后继续使用钥匙串授权；证书备份位于 iCloud Drive 的 `codesign-backup/`。图标源文件为 `branding/dbdock-icon.svg`。
+
+在 `src-tauri` 目录执行 `cargo test` 运行单元测试。真实数据库集成测试默认忽略，只能针对一次性测试数据库手动运行；具体命令和 D1 配置参见[英文 README](README.md#develop)。
+
+## 许可
+
+MIT，详见 [LICENSE](LICENSE)。数据库图标来自 [Simple Icons](https://simpleicons.org)（CC0）；相关名称属于各自所有者。

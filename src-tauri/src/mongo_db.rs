@@ -105,8 +105,7 @@ pub fn parse_shell_value(s: &str) -> Result<Value> {
     json5::from_str::<Value>(&rewrite_helpers(s)).map_err(|e| anyhow::anyhow!("cannot parse {s:?}: {e}"))
 }
 
-impl MongoConn {
-    pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Option<String>, tunnelled: bool) -> Result<Self> {
+async fn connection_options(cfg: &ConnectionConfig, host: &str, port: u16, password: Option<String>, tunnelled: bool) -> Result<ClientOptions> {
         let raw = cfg.host.trim();
         let is_uri = raw.starts_with("mongodb://") || raw.starts_with("mongodb+srv://");
         let uri = if is_uri && !tunnelled {
@@ -119,22 +118,28 @@ impl MongoConn {
             };
             let mut opts = cfg.options.trim().trim_start_matches('?').to_string();
             // A tunnel exposes one member; do not follow replica-set discovery to hosts we cannot reach.
-            if !opts.contains("directConnection") {
+            if tunnelled && !opts.to_lowercase().contains("directconnection=") {
                 opts = if opts.is_empty() { "directConnection=true".into() } else { format!("{opts}&directConnection=true") };
             }
             format!("mongodb://{auth}{host}:{}/{}?{opts}", if port == 0 { 27017 } else { port }, enc(cfg.database.trim()))
         };
         let mut options = ClientOptions::parse(&uri).await.context("invalid MongoDB connection settings")?;
         if is_uri && !tunnelled {
-            if let (Some(cred), Some(p)) = (options.credential.as_mut(), password.filter(|p| !p.is_empty())) {
-                if cred.password.is_none() {
-                    cred.password = Some(p);
-                }
+            if !cfg.user.trim().is_empty() || password.as_ref().is_some_and(|p| !p.is_empty()) {
+                let cred = options.credential.get_or_insert_with(Default::default);
+                if !cfg.user.trim().is_empty() { cred.username = Some(cfg.user.trim().to_string()); }
+                if let Some(p) = password.filter(|p| !p.is_empty()) { cred.password = Some(p); }
             }
         }
         options.app_name = Some("DBDock".into());
         options.server_selection_timeout = Some(Duration::from_secs(12));
         options.connect_timeout = Some(Duration::from_secs(12));
+        Ok(options)
+}
+
+impl MongoConn {
+    pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Option<String>, tunnelled: bool) -> Result<Self> {
+        let options = connection_options(cfg, host, port, password, tunnelled).await?;
         let default_db = options.default_database.clone().filter(|d| !d.is_empty()).unwrap_or_else(|| "admin".into());
         let client = Client::with_options(options)?;
         client
@@ -432,6 +437,20 @@ fn split_calls(s: &str) -> Result<Vec<(String, String)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn connection_options_preserve_discovery_and_override_uri_credentials() {
+        let mut cfg: ConnectionConfig = serde_json::from_value(serde_json::json!({"name":"mongo", "kind":"mongodb", "host":"localhost", "user":"new"})).unwrap();
+        let normal = connection_options(&cfg, "localhost", 27017, Some("pass".into()), false).await.unwrap();
+        assert_ne!(normal.direct_connection, Some(true));
+        let tunnel = connection_options(&cfg, "localhost", 27017, Some("pass".into()), true).await.unwrap();
+        assert_eq!(tunnel.direct_connection, Some(true));
+        cfg.host = "mongodb://old:oldpass@localhost/db".into();
+        let uri = connection_options(&cfg, "localhost", 27017, Some("newpass".into()), false).await.unwrap();
+        let cred = uri.credential.unwrap();
+        assert_eq!(cred.username.as_deref(), Some("new"));
+        assert_eq!(cred.password.as_deref(), Some("newpass"));
+    }
 
     #[test]
     fn shell_parsing() {

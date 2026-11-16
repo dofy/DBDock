@@ -1,3 +1,5 @@
+import { errText } from "../api";
+import { t } from "../i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { inEditor } from "../settings";
 
@@ -35,7 +37,7 @@ export function PromptDialog({ title, label, initial = "", placeholder, hint, op
     try {
       await onSubmit(v.trim());
     } catch (e) {
-      setError(typeof e === "string" ? e : String(e));
+      setError(errText(e));
       setBusy(false);
     }
   };
@@ -69,7 +71,7 @@ export function PromptDialog({ title, label, initial = "", placeholder, hint, op
         {error && <div className="status bad">{error}</div>}
         <div className="actions">
           <span className="spacer" />
-          <button onClick={onClose}>Cancel</button>
+          <button onClick={onClose}>{t("Cancel")}</button>
           <button className={danger ? "danger-solid" : "primary"} disabled={busy || (!allowEmpty && !v.trim())} onClick={() => void submit()}>
             {confirm}
           </button>

@@ -1,8 +1,10 @@
+import { t } from "../i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errText, type SessionInfo, type TableInfo } from "../api";
 import { TableView } from "./TableView";
 import { QueryView } from "./QueryView";
 import { FileCode, RefreshCw, X } from "lucide-react";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 
 type Tab =
   | { id: string; type: "table"; schema: string; table: string }
@@ -11,12 +13,13 @@ type Tab =
 interface Props {
   session: SessionInfo;
   dark: boolean;
+  dirtyTabs: React.MutableRefObject<Map<string, Map<string, "dirty" | "busy">>>;
 }
 
 let seq = 0;
 const newId = () => `t${++seq}`;
 
-export function SqlWorkspace({ session, dark }: Props) {
+export function SqlWorkspace({ session, dark, dirtyTabs }: Props) {
   const sid = session.sessionId;
   const [schemas, setSchemas] = useState<string[]>([]);
   const [schema, setSchema] = useState(session.defaultSchema || "");
@@ -76,7 +79,10 @@ export function SqlWorkspace({ session, dark }: Props) {
     setActive(tab.id);
   };
 
-  const closeTab = (id: string) => {
+  const closeTab = async (id: string) => {
+    const state = dirtyTabs.current.get(sid)?.get(id);
+    if (state === "busy") { await message(t("Wait for the commit to finish before closing this tab.")); return; }
+    if (state === "dirty" && !(await ask(t("Discard uncommitted changes in this tab?"), { title: t("Discard changes"), kind: "warning" }))) return;
     setTabs((ts) => {
       const i = ts.findIndex((t) => t.id === id);
       const next = ts.filter((t) => t.id !== id);
@@ -90,14 +96,14 @@ export function SqlWorkspace({ session, dark }: Props) {
   return (
     <div className="workspace">
       <aside className="sidebar">
-        <select value={schema} onChange={(e) => setSchema(e.target.value)} title={session.kind === "mysql" ? "Database" : "Schema"}>
+        <select value={schema} onChange={(e) => setSchema(e.target.value)} title={session.kind === "mysql" ? t("Database") : t("Schema")}>
           {schemas.map((s) => (
             <option key={s}>{s}</option>
           ))}
         </select>
         <div className="row">
-          <input className="search" placeholder="Filter tables" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button onClick={loadTables} title="Reload">
+          <input className="search" placeholder={t("Filter tables")} value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <button onClick={loadTables} title={t("Reload")}>
             <RefreshCw size={14} />
           </button>
         </div>
@@ -112,7 +118,7 @@ export function SqlWorkspace({ session, dark }: Props) {
               </li>
             );
           })}
-          {!shown.length && <li className="muted">No tables</li>}
+          {!shown.length && <li className="muted">{t("No tables")}</li>}
         </ul>
       </aside>
 
@@ -125,14 +131,14 @@ export function SqlWorkspace({ session, dark }: Props) {
                 className="x"
                 onClick={(e) => {
                   e.stopPropagation();
-                  closeTab(t.id);
+                  void closeTab(t.id);
                 }}
               >
                 <X size={12} />
               </button>
             </div>
           ))}
-          <button className="tab-add" onClick={newQuery} title="New query">
+          <button className="tab-add" onClick={newQuery} title={t("New query")}>
             <FileCode size={14} />SQL
           </button>
         </div>
@@ -147,6 +153,11 @@ export function SqlWorkspace({ session, dark }: Props) {
                   table={t.table}
                   isView={tables.find((x) => x.name === t.table)?.kind === "view"}
                   dark={dark}
+                  onDirtyChange={(dirty, busy) => {
+                    const tabs = dirtyTabs.current.get(sid) ?? new Map<string, "dirty" | "busy">();
+                    if (busy) tabs.set(t.id, "busy"); else if (dirty) tabs.set(t.id, "dirty"); else tabs.delete(t.id);
+                    if (tabs.size) dirtyTabs.current.set(sid, tabs); else dirtyTabs.current.delete(sid);
+                  }}
                 />
               ) : (
                 <QueryView
@@ -160,7 +171,7 @@ export function SqlWorkspace({ session, dark }: Props) {
               )}
             </div>
           ))}
-          {!tabs.length && <div className="grid-empty muted">Pick a table, or open a new SQL tab.</div>}
+          {!tabs.length && <div className="grid-empty muted">{t("Pick a table, or open a new SQL tab.")}</div>}
         </div>
       </section>
     </div>

@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use redis::aio::MultiplexedConnection;
 use redis::{ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo, Value as RValue};
 use serde::Serialize;
@@ -24,6 +25,7 @@ pub struct RedisConn {
 #[derive(Serialize)]
 pub struct KeyInfo {
     pub key: String,
+    pub id: String,
     #[serde(rename = "type")]
     pub kind: String,
     pub ttl: i64,
@@ -38,6 +40,7 @@ pub struct ScanPage {
 #[derive(Serialize)]
 pub struct KeyValue {
     pub key: String,
+    pub id: String,
     #[serde(rename = "type")]
     pub kind: String,
     pub ttl: i64,
@@ -67,6 +70,19 @@ async fn open(host: &str, port: u16, user: &str, password: &Option<String>, db: 
 
 fn text(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn binary_key_ids_preserve_distinct_keys() {
+        let binary = [0xff];
+        let replacement = "�".as_bytes();
+        assert_eq!(text(&binary), text(replacement));
+        assert_ne!(STANDARD.encode(binary), STANDARD.encode(replacement));
+        assert_eq!(STANDARD.decode(STANDARD.encode(binary)).unwrap(), binary);
+    }
 }
 
 pub fn to_json(v: RValue) -> Value {
@@ -162,23 +178,24 @@ impl RedisConn {
                 Some(RValue::Int(t)) => *t,
                 _ => -1,
             };
-            out.push(KeyInfo { key: text(k), kind, ttl });
+            out.push(KeyInfo { key: text(k), id: STANDARD.encode(k), kind, ttl });
         }
         Ok(ScanPage { cursor: next, keys: out })
     }
 
-    pub async fn get(&self, key: &str) -> Result<KeyValue> {
+    pub async fn get(&self, id: &str) -> Result<KeyValue> {
+        let key = STANDARD.decode(id).context("invalid Redis key")?;
         let mut c = self.c().await;
         let (kind, ttl): (String, i64) = redis::pipe()
             .cmd("TYPE")
-            .arg(key)
+            .arg(&key)
             .cmd("PTTL")
-            .arg(key)
+            .arg(&key)
             .query_async(&mut c)
             .await?;
         let q = |name: &str| {
             let mut cmd = redis::cmd(name);
-            cmd.arg(key);
+            cmd.arg(&key);
             cmd
         };
         let (size, value): (i64, Value) = match kind.as_str() {
@@ -214,17 +231,18 @@ impl RedisConn {
                 let v: RValue = q("XREVRANGE").arg("+").arg("-").arg("COUNT").arg(200).query_async(&mut c).await?;
                 (n, to_json(v))
             }
-            "none" => anyhow::bail!("key {key} does not exist"),
+            "none" => anyhow::bail!("key {} does not exist", text(&key)),
             other => (0, Value::String(format!("type {other} not previewable; use the console"))),
         };
         let truncated = match &value {
             Value::Array(a) => (a.len() as i64) < size,
             _ => false,
         };
-        Ok(KeyValue { key: key.to_string(), kind, ttl, size, value, truncated })
+        Ok(KeyValue { key: text(&key), id: id.to_string(), kind, ttl, size, value, truncated })
     }
 
-    pub async fn delete(&self, key: &str) -> Result<i64> {
+    pub async fn delete(&self, id: &str) -> Result<i64> {
+        let key = STANDARD.decode(id).context("invalid Redis key")?;
         Ok(redis::cmd("DEL").arg(key).query_async(&mut self.c().await).await?)
     }
 

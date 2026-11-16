@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { useEffect, useState } from "react";
 import { inEditor } from "../settings";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -101,7 +102,7 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
     setBusy(true);
     try {
       const v = await api.testConnection(named(), secrets);
-      toast("ok", `Connected · ${v}`);
+      toast("ok", tf("Connected · {version}", { version: v }));
     } catch (e) {
       toast("error", errText(e));
     } finally {
@@ -119,14 +120,14 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
     }
   };
 
-  const pwPlaceholder = editing ? "unchanged (saved in Keychain)" : "";
+  const pwPlaceholder = editing ? t("unchanged (saved in Keychain)") : "";
   const network = isTunnelable(c.kind);
   const mongoUri = c.kind === "mongodb" && c.host.trim().startsWith("mongodb");
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>{editing ? "Edit connection" : "New connection"}</h2>
+        <h2>{editing ? t("Edit connection") : t("New connection")}</h2>
 
         <div className="kind-picker">
           {KINDS.map((k) => (
@@ -138,9 +139,9 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
         </div>
 
         <div className="form">
-          <label>Name</label>
+          <label>{t("Name")}</label>
           <div className="row">
-            <input value={c.name} onChange={(e) => set("name", e.target.value)} placeholder="optional" />
+            <input value={c.name} onChange={(e) => set("name", e.target.value)} placeholder={t("optional")} />
             <div className="colors">
               {COLORS.map((col) => (
                 <button key={col} className={`swatch ${c.color === col ? "on" : ""}`} style={{ background: col }} onClick={() => set("color", col)} />
@@ -148,19 +149,18 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
             </div>
           </div>
 
-          <label>Environment</label>
+          <label>{t("Environment")}</label>
           <div className="env-picker">
             <button className={`env-opt ${!c.env ? "on" : ""}`} onClick={() => set("env", "")}>
-              none
-            </button>
+               {t("none")} </button>
             {ENVS.map((e) => (
               <button key={e} className={`env-opt env-${e} ${c.env === e ? "on" : ""}`} onClick={() => set("env", e)}>
-                {ENV_LABEL[e]}
+                {t(ENV_LABEL[e])}
               </button>
             ))}
           </div>
-          <label>Group</label>
-          <input value={c.group} onChange={(e) => set("group", e.target.value)} placeholder="Ungrouped — pick or type a new path" list="group-options" spellCheck={false} />
+          <label>{t("Group")}</label>
+          <input value={c.group} onChange={(e) => set("group", e.target.value)} placeholder={t("Ungrouped — pick or type a new path")} list="group-options" spellCheck={false} />
           <datalist id="group-options">
             {groups.map((g) => (
               <option key={g} value={g} />
@@ -169,22 +169,22 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
 
           {c.kind === "d1" ? (
             <>
-              <label>Account ID</label>
+              <label>{t("Account ID")}</label>
               <input value={c.cfAccountId} onChange={(e) => set("cfAccountId", e.target.value.trim())} placeholder="dash.cloudflare.com → Workers & Pages → Account ID" spellCheck={false} />
-              <label>Database ID</label>
-              <input value={c.database} onChange={(e) => set("database", e.target.value.trim())} placeholder="UUID, see `wrangler d1 list` or wrangler.jsonc" spellCheck={false} />
-              <label>API token</label>
+              <label>{t("Database ID")}</label>
+              <input value={c.database} onChange={(e) => set("database", e.target.value.trim())} placeholder={t("UUID, see `wrangler d1 list` or wrangler.jsonc")} spellCheck={false} />
+              <label>{t("API token")}</label>
               <input
                 type="password"
                 value={secrets.password ?? ""}
                 onChange={(e) => setSecrets((s) => ({ ...s, password: e.target.value }))}
-                placeholder={editing ? "unchanged (saved in Keychain)" : "token with D1 Edit permission"}
+                placeholder={editing ? t("unchanged (saved in Keychain)") : t("token with D1 Edit permission")}
               />
-              <p className="hint">Queries go through the Cloudflare REST API. D1 cannot cancel a running query.</p>
+              <p className="hint">{t("Queries go through the Cloudflare REST API. D1 cannot cancel a running query.")}</p>
             </>
           ) : network ? (
             <>
-              <label>Host</label>
+              <label>{t("Host")}</label>
               <div className="row">
                 <input
                   value={c.host}
@@ -194,9 +194,9 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
                 />
                 {!mongoUri && <input className="port" type="number" value={c.port || ""} onChange={(e) => set("port", Number(e.target.value))} />}
               </div>
-              <label>User</label>
-              <input value={c.user} onChange={(e) => set("user", e.target.value)} placeholder={c.kind === "redis" ? "default (ACL user, optional)" : ""} />
-              <label>Password</label>
+              <label>{t("User")}</label>
+              <input value={c.user} onChange={(e) => set("user", e.target.value)} placeholder={c.kind === "redis" ? t("default (ACL user, optional)") : ""} />
+              <label>{t("Password")}</label>
               <input
                 type="password"
                 value={secrets.password ?? ""}
@@ -205,32 +205,32 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
               />
               {c.kind === "redis" ? (
                 <>
-                  <label>Database</label>
+                  <label>{t("Database")}</label>
                   <input type="number" min={0} value={c.redisDb} onChange={(e) => set("redisDb", Number(e.target.value))} />
                 </>
               ) : c.kind === "mongodb" ? (
                 !mongoUri && (
                   <>
-                    <label>Database</label>
-                    <input value={c.database} onChange={(e) => set("database", e.target.value)} placeholder="default database (optional)" spellCheck={false} />
-                    <label>Options</label>
+                    <label>{t("Database")}</label>
+                    <input value={c.database} onChange={(e) => set("database", e.target.value)} placeholder={t("default database (optional)")} spellCheck={false} />
+                    <label>{t("Options")}</label>
                     <input value={c.options} onChange={(e) => set("options", e.target.value)} placeholder="authSource=admin&tls=true" spellCheck={false} />
                   </>
                 )
               ) : (
                 <>
-                  <label>Database</label>
-                  <input value={c.database} onChange={(e) => set("database", e.target.value)} placeholder={c.kind === "postgres" ? "postgres" : "optional"} />
+                  <label>{t("Database")}</label>
+                  <input value={c.database} onChange={(e) => set("database", e.target.value)} placeholder={c.kind === "postgres" ? "postgres" : t("optional")} />
                 </>
               )}
-              {mongoUri && <p className="hint">User and password above override the ones in the URI when filled. With SSH, use host and port instead of a URI.</p>}
+              {mongoUri && <p className="hint">{t("User and password above override the ones in the URI when filled. With SSH, use host and port instead of a URI.")}</p>}
             </>
           ) : (
             <>
-              <label>File</label>
+              <label>{t("File")}</label>
               <div className="row">
                 <input value={c.file} onChange={(e) => set("file", e.target.value)} placeholder="/path/to/db.sqlite" />
-                <button onClick={pickFile}><FolderOpen size={14} />Choose…</button>
+                <button onClick={pickFile}><FolderOpen size={14} />{t("Choose…")}</button>
               </div>
             </>
           )}
@@ -243,20 +243,19 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
                 <input type="checkbox" checked={c.ssh.enabled} onChange={(e) => setSsh("enabled", e.target.checked)} />
                 <span />
               </span>
-              <b>Over SSH</b>
+              <b>{t("Over SSH")}</b>
               <span className="muted small">
-                {c.ssh.enabled ? (c.ssh.host ? `via ${c.ssh.user ? `${c.ssh.user}@` : ""}${c.ssh.host}${c.ssh.port && c.ssh.port !== 22 ? `:${c.ssh.port}` : ""}` : "tunnel through a bastion / jump host") : "connect directly"}
+                {c.ssh.enabled ? (c.ssh.host ? `via ${c.ssh.user ? `${c.ssh.user}@` : ""}${c.ssh.host}${c.ssh.port && c.ssh.port !== 22 ? `:${c.ssh.port}` : ""}` : t("tunnel through a bastion / jump host")) : t("connect directly")}
               </span>
             </label>
             {c.ssh.enabled && (
               <div className="form ssh-body">
-                <label>Server</label>
+                <label>{t("Server")}</label>
                 <div className="row host-row">
-                  <input value={c.ssh.host} onChange={(e) => setSsh("host", e.target.value)} placeholder="host, IP, or ~/.ssh/config alias" spellCheck={false} />
+                  <input value={c.ssh.host} onChange={(e) => setSsh("host", e.target.value)} placeholder={t("host, IP, or ~/.ssh/config alias")} spellCheck={false} />
                   <input className="port" type="number" value={c.ssh.port || ""} onChange={(e) => setSsh("port", Number(e.target.value))} placeholder="22" />
-                  <button onClick={() => setHostMenu((v) => !v)} disabled={!hosts.length} title={hosts.length ? "Pick a Host from ~/.ssh/config" : "No hosts in ~/.ssh/config"}>
-                    <BookUser size={14} /> Hosts
-                  </button>
+                  <button onClick={() => setHostMenu((v) => !v)} disabled={!hosts.length} title={hosts.length ? t("Pick a Host from ~/.ssh/config") : t("No hosts in ~/.ssh/config")}>
+                    <BookUser size={14} />  {t("Hosts")} </button>
                   {hostMenu && (
                     <div className="host-menu" onMouseLeave={() => setHostMenu(false)}>
                       {hosts.map((h) => (
@@ -276,58 +275,53 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
                 {alias && (
                   <p className="hint resolved">
                     <ArrowRight size={12} /> {c.ssh.user || alias.user || "?"}@{alias.hostName ?? alias.alias}:{c.ssh.port && c.ssh.port !== 22 ? c.ssh.port : (alias.port ?? 22)}
-                    {alias.identityFile && keyMode === "auto" ? ` · key ${alias.identityFile}` : ""} — from ~/.ssh/config
-                  </p>
+                    {alias.identityFile && keyMode === "auto" ? ` · key ${alias.identityFile}` : ""}  {t("— from ~/.ssh/config")} </p>
                 )}
                 {suggest && (
                   <p className="hint resolved">
-                    This is <b>{suggest.alias}</b> in ~/.ssh/config.{" "}
+                     {t("This is")} <b>{suggest.alias}</b>  {t("in ~/.ssh/config.")}{" "}
                     <button className="link" onClick={() => pickAlias(suggest)}>
-                      Use the alias
-                    </button>{" "}
-                    so later edits to the config apply here too.
-                  </p>
+                       {t("Use the alias")} </button>{" "}
+                     {t("so later edits to the config apply here too.")} </p>
                 )}
-                <label>User</label>
-                <input value={c.ssh.user} onChange={(e) => setSsh("user", e.target.value)} placeholder={isAlias ? "from ~/.ssh/config" : "user name"} spellCheck={false} />
-                <label>Auth</label>
+                <label>{t("User")}</label>
+                <input value={c.ssh.user} onChange={(e) => setSsh("user", e.target.value)} placeholder={isAlias ? t("from ~/.ssh/config") : t("user name")} spellCheck={false} />
+                <label>{t("Auth")}</label>
                 <div className="seg">
-                  <button className={keyMode === "auto" ? "on" : ""} onClick={() => chooseKeyMode("auto")} title="ssh-agent, then IdentityFile from ~/.ssh/config, then ~/.ssh/id_*">
+                  <button className={keyMode === "auto" ? "on" : ""} onClick={() => chooseKeyMode("auto")} title={t("ssh-agent, then IdentityFile from ~/.ssh/config, then ~/.ssh/id_*")}>
                     Agent / ~/.ssh
                   </button>
                   <button className={keyMode === "file" ? "on" : ""} onClick={() => chooseKeyMode("file")}>
-                    Key file
-                  </button>
+                     {t("Key file")} </button>
                   <button className={keyMode === "password" ? "on" : ""} onClick={() => chooseKeyMode("password")}>
-                    Password
-                  </button>
+                     {t("Password")} </button>
                 </div>
                 {keyMode === "auto" && (
-                  <p className="hint">Tries ssh-agent, then IdentityFile from ~/.ssh/config, then ~/.ssh/id_ed25519, id_ecdsa, id_rsa.</p>
+                  <p className="hint">{t("Tries ssh-agent, then IdentityFile from ~/.ssh/config, then ~/.ssh/id_ed25519, id_ecdsa, id_rsa.")}</p>
                 )}
                 {keyMode === "file" && (
                   <>
-                    <label>Key file</label>
+                    <label>{t("Key file")}</label>
                     <div className="row">
                       <input value={c.ssh.keyPath} onChange={(e) => setSsh("keyPath", e.target.value)} placeholder="~/.ssh/id_ed25519" spellCheck={false} />
-                      <button onClick={pickKey}><FolderOpen size={14} />Choose…</button>
+                      <button onClick={pickKey}><FolderOpen size={14} />{t("Choose…")}</button>
                     </div>
                   </>
                 )}
                 {keyMode !== "password" && (
                   <>
-                    <label>Passphrase</label>
+                    <label>{t("Passphrase")}</label>
                     <input
                       type="password"
                       value={secrets.sshPassphrase ?? ""}
                       onChange={(e) => setSecrets((s) => ({ ...s, sshPassphrase: e.target.value }))}
-                      placeholder={editing ? "unchanged" : "only if the key file is encrypted"}
+                      placeholder={editing ? t("unchanged") : t("only if the key file is encrypted")}
                     />
                   </>
                 )}
                 {keyMode === "password" && (
                   <>
-                    <label>Password</label>
+                    <label>{t("Password")}</label>
                     <input
                       type="password"
                       value={secrets.sshPassword ?? ""}
@@ -336,7 +330,7 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
                     />
                   </>
                 )}
-                <p className="hint">Host and port above are reached from the SSH server, e.g. 127.0.0.1 for a database on that machine, or a private RDS endpoint.</p>
+                <p className="hint">{t("Host and port above are reached from the SSH server, e.g. 127.0.0.1 for a database on that machine, or a private RDS endpoint.")}</p>
               </div>
             )}
           </section>
@@ -345,13 +339,11 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
 
         <div className="actions">
           <button onClick={test} disabled={busy}>
-            <Zap size={14} />Test
-          </button>
+            <Zap size={14} />{t("Test")} </button>
           <span className="spacer" />
-          <button onClick={onClose}>Cancel</button>
+          <button onClick={onClose}>{t("Cancel")}</button>
           <button className="primary" onClick={save} disabled={busy || (c.kind === "sqlite" && !c.file) || (c.kind === "d1" && (!c.cfAccountId || !c.database))}>
-            <Save size={14} />Save
-          </button>
+            <Save size={14} />{t("Save")} </button>
         </div>
       </div>
     </div>

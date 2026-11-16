@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useState } from "react";
 import { inEditor } from "../settings";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -83,45 +84,41 @@ export function ImportDialog({ pasteFirst, onClose, onDone }: Props) {
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>
-            <FileDown size={16} /> Import connections
-          </h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <FileDown size={16} />  {t("Import connections")} </h2>
+          <button className="icon-btn" onClick={onClose} aria-label={t("Close")}>
             <X size={14} />
           </button>
         </div>
         <div className="seg" style={{ marginBottom: 12 }}>
           <button className={tab === "file" ? "on" : ""} onClick={() => setTab("file")}>
-            <FolderOpen size={14} /> From a file
-          </button>
+            <FolderOpen size={14} />  {t("From a file")} </button>
           <button className={tab === "paste" ? "on" : ""} onClick={() => setTab("paste")}>
-            <ClipboardPaste size={14} /> Paste URLs
-          </button>
+            <ClipboardPaste size={14} />  {t("Paste URLs")} </button>
         </div>
 
         {tab === "file" ? (
           file?.info.encrypted ? (
             <div className="form">
-              <label>File</label>
+              <label>{t("File")}</label>
               <code className="muted small">{file.path}</code>
-              <label>Passphrase</label>
+              <label>{t("Passphrase")}</label>
               <input type="password" autoFocus value={pass} onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void run(() => invoke<ImportReport>("import_file", { path: file.path, passphrase: pass }))} />
               <span />
               <button className="primary" disabled={busy || !pass} onClick={() => void run(() => invoke<ImportReport>("import_file", { path: file.path, passphrase: pass }))}>
-                <KeyRound size={14} /> Decrypt and import
-              </button>
+                <KeyRound size={14} />  {t("Decrypt and import")} </button>
             </div>
           ) : (
             <>
               <div className="import-sources">
                 <button className="import-source" onClick={() => void choose()} disabled={busy}>
                   <FolderOpen size={20} />
-                  <b>Choose a file…</b>
-                  <span className="muted small">format is detected automatically</span>
+                  <b>{t("Choose a file…")}</b>
+                  <span className="muted small">{t("format is detected automatically")}</span>
                 </button>
                 {tableplus && (
                   <button className="import-source" onClick={() => void choose(tableplus)} disabled={busy}>
                     <Database size={20} />
-                    <b>TablePlus on this Mac</b>
+                    <b>{t("TablePlus on this Mac")}</b>
                     <span className="muted small" title={tableplus}>
                       {tableplus.replace(/^\/Users\/[^/]+/, "~")}
                     </span>
@@ -147,12 +144,11 @@ export function ImportDialog({ pasteFirst, onClose, onDone }: Props) {
               spellCheck={false}
               placeholder={"One per line, or a whole .env file:\n\nDATABASE_URL=postgres://user:pass@db.example.com:5432/app\nREDIS_URL=redis://:secret@127.0.0.1:6379/0\nmongodb+srv://me:pw@cluster0.example.mongodb.net/shop\nsqlite:///Users/me/data/app.db"}
             />
-            <p className="hint">Passwords in the URLs go to the Keychain. Importing the same URL again updates it instead of adding a copy.</p>
+            <p className="hint">{t("Passwords in the URLs go to the Keychain. Importing the same URL again updates it instead of adding a copy.")}</p>
             <div className="actions">
               <span className="spacer" />
               <button className="primary" disabled={busy || !text.trim()} onClick={() => void run(() => invoke<ImportReport>("import_text", { text }))}>
-                <FileDown size={14} /> Import
-              </button>
+                <FileDown size={14} />  {t("Import")} </button>
             </div>
           </>
         )}

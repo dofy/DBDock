@@ -1,5 +1,7 @@
 # DBDock
 
+English · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md)
+
 **Version 1.0.0** · macOS · Tauri 2 + Rust + React
 
 A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1**,
@@ -31,8 +33,9 @@ Copyright © 2026 phpz.org · MIT License · <https://github.com/dofy/DBDock>
 
 - Tunnel through a bastion with **ssh-agent**, a key file or a password. With no key file,
   DBDock tries the agent, then `IdentityFile` from `~/.ssh/config`, then `~/.ssh/id_*`.
-- Host keys are checked against `~/.ssh/known_hosts` (trust on first use, changed keys
-  refused). The database host is resolved on the SSH server.
+- Host keys must already be trusted in `~/.ssh/known_hosts`; unknown, changed, unreadable,
+  and certificate host keys are refused. Verify and accept a new host with OpenSSH first.
+  The database host is resolved on the SSH server.
 - **SSH Hosts** (File menu, ⇧⌘H) manages `~/.ssh/config`: list, add, edit, delete and
   test-login Host blocks, or edit the raw file in the built-in editor. Edits touch only the
   HostName / User / Port / IdentityFile / ProxyJump lines of that block; comments and other
@@ -79,13 +82,13 @@ document edit / insert / delete by `_id`, and indexes. The Shell tab runs
 
 ### Editor and app
 
-- **Settings** (⌘,): Vim mode, plus version, copyright, Help and GitHub.
+- **Settings** (⌘,): choose a light or dark theme and English, Simplified Chinese, Traditional Chinese, or Japanese. Both follow the system by default. Configure Vim mode and find version, copyright, Help and GitHub.
 - **Vim mode** for the SQL editor, Mongo shell, document editor and SSH
   config editor; one Esc also closes an open completion; `:w` saves (runs in the SQL editor
   and shell).
 - Native menu for the common actions (File / View / Help), toasts for results, monospaced UI.
 - **Help** (⌘?, Help menu, Settings): a bundled, offline page (`public/help.html`) in its
-  own window, with search; **About DBDock** is an in-app panel with version, GitHub and help.
+  own window, with search and the selected language; **About DBDock** is an in-app panel with version, GitHub and help.
 
 ## Data
 
@@ -122,12 +125,20 @@ pnpm tauri dev
 ```
 
 Tests (`src-tauri`): `cargo test` runs the unit tests. Live tests against throwaway Docker
-servers (`dbdock-test-{mysql,pg,redis,ssh,mongo}`) and Cloudflare D1 are in
-`src-tauri/src/lib.rs`, module `it`:
+servers (`dbdock-test-{mysql,pg,redis,ssh,mongo}`) and Cloudflare D1 are ignored by
+default in `src-tauri/src/lib.rs`, module `it`. Run only against disposable databases:
 
 ```bash
-cd src-tauri && DBDOCK_IT=1 cargo test -- --nocapture
+cd src-tauri
+DBDOCK_IT=1 cargo test it::smoke -- --ignored --nocapture
+DBDOCK_IT=1 cargo test it::mongo -- --ignored --nocapture
+DBDOCK_IT=1 cargo test it::edit -- --ignored --nocapture
 ```
+
+The `it::d1` test additionally requires D1 credentials and explicitly configured scratch databases.
+`rediss://` imports are rejected until Redis TLS is supported.
+
+Frontend language and help coverage: `node --test tests/*.test.mjs` (Node 22.18+).
 
 ## Changelog
 

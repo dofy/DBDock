@@ -666,17 +666,16 @@ impl SqlPool {
     }
 
     /// Apply all changes in one transaction. Updates and deletes must hit exactly
-    /// one row (MySQL may report 0 for an update that sets the same value).
+    /// one row; SQLx negotiates MySQL's FOUND_ROWS capability.
     pub async fn apply(&self, schema: &str, table: &str, changes: &[Change]) -> Result<usize> {
         let stmts = self.change_sql(schema, table, changes)?;
         macro_rules! run_tx {
-            ($p:expr, $mysql:expr) => {{
+            ($p:expr) => {{
                 let mut tx = $p.begin().await?;
                 for (sql, ch) in stmts.iter().zip(changes) {
                     let n = sqlx::raw_sql(AssertSqlSafe(sql.clone())).execute(&mut *tx).await?.rows_affected();
                     let insert = matches!(ch, Change::Insert { .. });
-                    let lenient = $mysql && matches!(ch, Change::Update { .. });
-                    if !insert && (n > 1 || (n == 0 && !lenient)) {
+                    if !insert && n != 1 {
                         tx.rollback().await?;
                         anyhow::bail!("{sql}\naffected {n} rows, expected 1; rolled back (row changed elsewhere, or key not unique)");
                     }
@@ -685,9 +684,9 @@ impl SqlPool {
             }};
         }
         match self {
-            SqlPool::My(p) => run_tx!(p, true),
-            SqlPool::Pg(p) => run_tx!(p, false),
-            SqlPool::Lite(p) => run_tx!(p, false),
+            SqlPool::My(p) => run_tx!(p),
+            SqlPool::Pg(p) => run_tx!(p),
+            SqlPool::Lite(p) => run_tx!(p),
             SqlPool::D1(c) => {
                 // No BEGIN on D1, but one request is one atomic batch. After each UPDATE /
                 // DELETE, a guard raises "malformed JSON" unless exactly one row changed,
@@ -744,5 +743,25 @@ pub fn value_to_string(v: Value) -> String {
         Value::Null => String::new(),
         Value::String(s) => s,
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn missing_row_rolls_back_entire_grid_batch() {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        let db = SqlPool::Lite(pool);
+        db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT); INSERT INTO items VALUES (1, 'before')".into()).await.unwrap();
+        let key = |id| BTreeMap::from([("id".into(), Value::from(id))]);
+        let changes = vec![
+            Change::Update { key: key(1), set: BTreeMap::from([("value".into(), Value::from("after"))]) },
+            Change::Update { key: key(2), set: BTreeMap::from([("value".into(), Value::from("missing"))]) },
+        ];
+        assert!(db.apply("main", "items", &changes).await.is_err());
+        let result = db.execute("SELECT value FROM items WHERE id = 1".into()).await.unwrap();
+        assert_eq!(result[0].rows[0][0], Value::from("before"));
     }
 }

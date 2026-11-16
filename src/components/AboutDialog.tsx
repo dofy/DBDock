@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,13 +22,13 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal about" onMouseDown={(e) => e.stopPropagation()}>
-        <button className="icon-btn about-close" onClick={onClose} aria-label="Close">
+        <button className="icon-btn about-close" onClick={onClose} aria-label={t("Close")}>
           <X size={14} />
         </button>
         <img className="about-icon" src="/dbdock-icon.svg" alt="" width={112} height={112} />
         <h1>DBDock</h1>
-        <p className="about-version">Version {version}</p>
-        <p className="about-tagline">A database client for the stores you actually use, with SSH built in.</p>
+        <p className="about-version">{t("Version")} {version}</p>
+        <p className="about-tagline">{t("A database client for the stores you actually use, with SSH built in.")}</p>
         <div className="about-kinds">
           {KINDS.map((k) => (
             <DbIcon key={k} kind={k} size={30} />
@@ -35,8 +36,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         </div>
         <div className="about-actions">
           <button onClick={() => void invoke("open_help")}>
-            <BookOpen size={14} /> Help
-          </button>
+            <BookOpen size={14} />  {t("Help")} </button>
           <button onClick={() => void invoke("open_github")}>
             <svg viewBox="0 0 24 24" width={14} height={14} aria-hidden="true">
               <path d={siGithub.path} fill="currentColor" />

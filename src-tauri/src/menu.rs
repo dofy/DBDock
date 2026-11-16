@@ -10,81 +10,118 @@ fn item<R: Runtime>(app: &AppHandle<R>, id: &str, text: &str, accel: Option<&str
     MenuItem::with_id(app, id, text, true, accel)
 }
 
-pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+fn label<'a>(language: &str, english: &'a str) -> &'a str {
+    let texts = match english {
+        "About DBDock" => ["关于 DBDock", "關於 DBDock", "DBDock について"],
+        "Settings…" => ["设置…", "設定…", "設定…"],
+        "File" => ["文件", "檔案", "ファイル"],
+        "New Connection…" => ["新建连接…", "新增連線…", "新規接続…"],
+        "New Group…" => ["新建分组…", "新增群組…", "新規グループ…"],
+        "Import…" => ["导入…", "匯入…", "インポート…"],
+        "Paste Connection URLs…" => ["粘贴连接 URL…", "貼上連線 URL…", "接続 URL を貼り付け…"],
+        "Export…" => ["导出…", "匯出…", "エクスポート…"],
+        "SSH Hosts…" => ["SSH 主机…", "SSH 主機…", "SSH ホスト…"],
+        "Close Tab" => ["关闭标签页", "關閉分頁", "タブを閉じる"],
+        "Edit" => ["编辑", "編輯", "編集"], "View" => ["显示", "顯示", "表示"],
+        "Connections" => ["连接", "連線", "接続"],
+        "Search Connections" => ["搜索连接", "搜尋連線", "接続を検索"],
+        "Reload" => ["重新加载", "重新載入", "再読み込み"],
+        "Next Session" => ["下一个会话", "下一個工作階段", "次のセッション"],
+        "Previous Session" => ["上一个会话", "上一個工作階段", "前のセッション"],
+        "Window" => ["窗口", "視窗", "ウインドウ"],
+        "Close Window" => ["关闭窗口", "關閉視窗", "ウインドウを閉じる"],
+        "Help" => ["帮助", "說明", "ヘルプ"],
+        "DBDock Help" => ["DBDock 帮助", "DBDock 說明", "DBDock ヘルプ"],
+        "DBDock on GitHub" => ["DBDock 的 GitHub 页面", "DBDock 的 GitHub 頁面", "GitHub の DBDock"],
+        "Hide DBDock" => ["隐藏 DBDock", "隱藏 DBDock", "DBDock を隠す"],
+        "Hide Others" => ["隐藏其他应用", "隱藏其他應用程式", "ほかを隠す"],
+        "Show All" => ["显示全部", "顯示全部", "すべてを表示"],
+        "Quit DBDock" => ["退出 DBDock", "結束 DBDock", "DBDock を終了"],
+        "Undo" => ["撤销", "復原", "取り消す"], "Redo" => ["重做", "重做", "やり直す"],
+        "Cut" => ["剪切", "剪下", "カット"], "Copy" => ["复制", "複製", "コピー"],
+        "Paste" => ["粘贴", "貼上", "ペースト"], "Select All" => ["全选", "全選", "すべてを選択"],
+        "Enter Full Screen" => ["进入全屏幕", "進入全螢幕", "フルスクリーンにする"],
+        "Minimize" => ["最小化", "最小化", "しまう"], "Zoom" => ["缩放", "縮放", "拡大／縮小"],
+        _ => return english,
+    };
+    match language { "zh-CN" => texts[0], "zh-TW" => texts[1], "ja" => texts[2], _ => english }
+}
+
+pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Menu<R>> {
     let sep = || PredefinedMenuItem::separator(app);
     let app_menu = Submenu::with_items(
         app,
         "DBDock",
         true,
         &[
-            &item(app, "about", "About DBDock", None)?,
+            &item(app, "about", label(language, "About DBDock"), None)?,
             &sep()?,
-            &item(app, "settings", "Settings…", Some("CmdOrCtrl+,"))?,
+            &item(app, "settings", label(language, "Settings…"), Some("CmdOrCtrl+,"))?,
             &sep()?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::hide(app, Some(label(language, "Hide DBDock")))?,
+            &PredefinedMenuItem::hide_others(app, Some(label(language, "Hide Others")))?,
+            &PredefinedMenuItem::show_all(app, Some(label(language, "Show All")))?,
             &sep()?,
-            &PredefinedMenuItem::quit(app, None)?,
+            &PredefinedMenuItem::quit(app, Some(label(language, "Quit DBDock")))?,
         ],
     )?;
     let file = Submenu::with_items(
         app,
-        "File",
+        label(language, "File"),
         true,
         &[
-            &item(app, "new-connection", "New Connection…", Some("CmdOrCtrl+N"))?,
-            &item(app, "new-group", "New Group…", Some("CmdOrCtrl+Shift+N"))?,
+            &item(app, "new-connection", label(language, "New Connection…"), Some("CmdOrCtrl+N"))?,
+            &item(app, "new-group", label(language, "New Group…"), Some("CmdOrCtrl+Shift+N"))?,
             &sep()?,
-            &item(app, "import", "Import…", Some("CmdOrCtrl+O"))?,
-            &item(app, "import-urls", "Paste Connection URLs…", Some("CmdOrCtrl+Shift+I"))?,
-            &item(app, "export", "Export…", Some("CmdOrCtrl+Shift+E"))?,
+            &item(app, "import", label(language, "Import…"), Some("CmdOrCtrl+O"))?,
+            &item(app, "import-urls", label(language, "Paste Connection URLs…"), Some("CmdOrCtrl+Shift+I"))?,
+            &item(app, "export", label(language, "Export…"), Some("CmdOrCtrl+Shift+E"))?,
             &sep()?,
-            &item(app, "ssh-hosts", "SSH Hosts…", Some("CmdOrCtrl+Shift+H"))?,
+            &item(app, "ssh-hosts", label(language, "SSH Hosts…"), Some("CmdOrCtrl+Shift+H"))?,
             &sep()?,
-            &item(app, "close-tab", "Close Tab", Some("CmdOrCtrl+W"))?,
+            &item(app, "close-tab", label(language, "Close Tab"), Some("CmdOrCtrl+W"))?,
         ],
     )?;
     let edit = Submenu::with_items(
         app,
-        "Edit",
+        label(language, "Edit"),
         true,
         &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::undo(app, Some(label(language, "Undo")))?,
+            &PredefinedMenuItem::redo(app, Some(label(language, "Redo")))?,
             &sep()?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
+            &PredefinedMenuItem::cut(app, Some(label(language, "Cut")))?,
+            &PredefinedMenuItem::copy(app, Some(label(language, "Copy")))?,
+            &PredefinedMenuItem::paste(app, Some(label(language, "Paste")))?,
+            &PredefinedMenuItem::select_all(app, Some(label(language, "Select All")))?,
         ],
     )?;
     let view = Submenu::with_items(
         app,
-        "View",
+        label(language, "View"),
         true,
         &[
-            &item(app, "home", "Connections", Some("CmdOrCtrl+1"))?,
-            &item(app, "find", "Search Connections", Some("CmdOrCtrl+F"))?,
-            &item(app, "reload", "Reload", Some("CmdOrCtrl+R"))?,
+            &item(app, "home", label(language, "Connections"), Some("CmdOrCtrl+1"))?,
+            &item(app, "find", label(language, "Search Connections"), Some("CmdOrCtrl+F"))?,
+            &item(app, "reload", label(language, "Reload"), Some("CmdOrCtrl+R"))?,
             &sep()?,
-            &item(app, "next-tab", "Next Session", Some("CmdOrCtrl+Alt+Right"))?,
-            &item(app, "prev-tab", "Previous Session", Some("CmdOrCtrl+Alt+Left"))?,
+            &item(app, "next-tab", label(language, "Next Session"), Some("CmdOrCtrl+Alt+Right"))?,
+            &item(app, "prev-tab", label(language, "Previous Session"), Some("CmdOrCtrl+Alt+Left"))?,
             &sep()?,
-            &PredefinedMenuItem::fullscreen(app, None)?,
+            &PredefinedMenuItem::fullscreen(app, Some(label(language, "Enter Full Screen")))?,
         ],
     )?;
     let window = Submenu::with_items(
         app,
-        "Window",
+        label(language, "Window"),
         true,
-        &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?, &sep()?, &PredefinedMenuItem::close_window(app, Some("Close Window"))?],
+        &[&PredefinedMenuItem::minimize(app, Some(label(language, "Minimize")))?, &PredefinedMenuItem::maximize(app, Some(label(language, "Zoom")))?, &sep()?, &PredefinedMenuItem::close_window(app, Some(label(language, "Close Window")))?],
     )?;
     let help = Submenu::with_items(
         app,
-        "Help",
+        label(language, "Help"),
         true,
-        &[&item(app, "help", "DBDock Help", Some("CmdOrCtrl+?"))?, &sep()?, &item(app, "github", "DBDock on GitHub", None)?],
+        &[&item(app, "help", label(language, "DBDock Help"), Some("CmdOrCtrl+?"))?, &sep()?, &item(app, "github", label(language, "DBDock on GitHub"), None)?],
     )?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window, &help])
 }
@@ -135,4 +172,19 @@ pub fn open_help<R: Runtime>(app: &AppHandle<R>, section: Option<&str>) -> tauri
         .min_inner_size(640.0, 480.0)
         .build()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::label;
+
+    #[test]
+    fn menu_labels_follow_selected_language() {
+        assert_eq!(label("en", "File"), "File");
+        assert_eq!(label("zh-CN", "File"), "文件");
+        assert_eq!(label("zh-TW", "File"), "檔案");
+        assert_eq!(label("ja", "File"), "ファイル");
+        assert_eq!(label("unknown", "File"), "File");
+        assert_eq!(label("ja", "custom"), "custom");
+    }
 }

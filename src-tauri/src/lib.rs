@@ -305,6 +305,13 @@ fn open_help(app: tauri::AppHandle, section: Option<String>) -> CmdResult<()> {
 }
 
 #[tauri::command]
+fn set_menu_language(app: tauri::AppHandle, language: String) -> CmdResult<()> {
+    let menu = menu::build(&app, &language).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn open_github() {
     menu::open_github();
 }
@@ -517,7 +524,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .menu(|app| menu::build(app))
+        .menu(|app| menu::build(app, "en"))
         .on_menu_event(|app, e| menu::handle(app, e.id().as_ref()))
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
@@ -540,6 +547,7 @@ pub fn run() {
             ssh_config_hosts,
             open_help,
             open_github,
+            set_menu_language,
             ssh_hosts_list,
             ssh_host_save,
             ssh_host_delete,
@@ -643,8 +651,9 @@ mod it {
     }
 
     #[tokio::test]
+    #[ignore = "requires throwaway live database servers; set DBDOCK_IT=1"]
     async fn smoke() {
-        if std::env::var("DBDOCK_IT").is_err() { return; }
+        assert!(std::env::var("DBDOCK_IT").is_ok(), "set DBDOCK_IT=1");
         dump_sql(&cfg(Kind::Mysql, "127.0.0.1", 13306, "root", "shop"), pw("rootpw"), "shop", "products").await;
         dump_sql(&cfg(Kind::Postgres, "127.0.0.1", 15432, "postgres", "shop"), pw("pgpw"), "public", "users").await;
         let mut lite = cfg(Kind::Sqlite, "", 0, "", "");
@@ -657,7 +666,9 @@ mod it {
         let page = r.scan(0, "*", 100).await.unwrap();
         println!("scan {}", serde_json::to_string(&page).unwrap());
         for k in ["greeting", "q", "user:1", "tags", "board", "ev", "temp"] {
-            println!("get {}", r.get(k).await.map(|v| serde_json::to_string(&v).unwrap()).unwrap_or_else(|e| e.to_string()));
+            use base64::Engine;
+            let id = base64::engine::general_purpose::STANDARD.encode(k);
+            println!("get {}", r.get(&id).await.map(|v| serde_json::to_string(&v).unwrap()).unwrap_or_else(|e| e.to_string()));
         }
         println!("cmd {:?}", r.command("hgetall user:1").await.unwrap());
         println!("cmd err {:?}", r.command("nosuch").await.map_err(|e| e.to_string()));
@@ -725,8 +736,10 @@ mod it {
 
     /// DBDOCK_D1_TOKEN, DBDOCK_D1_ACCOUNT, DBDOCK_D1_RO (read-only db), DBDOCK_D1_RW (scratch db).
     #[tokio::test]
+    #[ignore = "requires a scratch Cloudflare D1 database and credentials"]
     async fn d1() {
-        let (Ok(token), Ok(acct)) = (std::env::var("DBDOCK_D1_TOKEN"), std::env::var("DBDOCK_D1_ACCOUNT")) else { return };
+        let token = std::env::var("DBDOCK_D1_TOKEN").expect("set DBDOCK_D1_TOKEN");
+        let acct = std::env::var("DBDOCK_D1_ACCOUNT").expect("set DBDOCK_D1_ACCOUNT");
         let mk = |db: &str| {
             let mut c = cfg(Kind::D1, "", 0, "", db);
             c.cf_account_id = acct.clone();
@@ -776,8 +789,9 @@ mod it {
     }
 
     #[tokio::test]
+    #[ignore = "requires a throwaway MongoDB server; set DBDOCK_IT=1"]
     async fn mongo() {
-        if std::env::var("DBDOCK_IT").is_err() { return; }
+        assert!(std::env::var("DBDOCK_IT").is_ok(), "set DBDOCK_IT=1");
         let mut c = cfg(Kind::Mongodb, "127.0.0.1", 17017, "root", "shop");
         c.options = "authSource=admin".into();
         let (sess, v, db) = open_session(&c, pw("mongo p@ss")).await.expect("mongo connect");
@@ -831,8 +845,9 @@ mod it {
     }
 
     #[tokio::test]
+    #[ignore = "requires throwaway live database servers; set DBDOCK_IT=1"]
     async fn edit() {
-        if std::env::var("DBDOCK_IT").is_err() { return; }
+        assert!(std::env::var("DBDOCK_IT").is_ok(), "set DBDOCK_IT=1");
         edit_and_cancel(&cfg(Kind::Mysql, "127.0.0.1", 13306, "root", "shop"), pw("rootpw"), "shop", "SELECT SLEEP(10)").await;
         edit_and_cancel(&cfg(Kind::Postgres, "127.0.0.1", 15432, "postgres", "shop"), pw("pgpw"), "public", "SELECT pg_sleep(10)").await;
         let mut lite = cfg(Kind::Sqlite, "", 0, "", "");

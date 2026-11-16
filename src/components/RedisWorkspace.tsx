@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, errText, fmtTtl, type KeyInfo, type KeyValue, type SessionInfo } from "../api";
@@ -45,12 +46,12 @@ function ValueView({ kv }: { kv: KeyValue }) {
       return <pre className="value">{pretty ?? s}</pre>;
     }
     case "hash":
-      return <KV rows={v as [string, string][]} head={["field", "value"]} />;
+      return <KV rows={v as [string, string][]} head={[t("field"), t("value")]} />;
     case "zset":
-      return <KV rows={(v as [string, number][]).map(([m, s]) => [m, String(s)])} head={["member", "score"]} />;
+      return <KV rows={(v as [string, number][]).map(([m, s]) => [m, String(s)])} head={[t("member"), t("score")]} />;
     case "list":
     case "set":
-      return <KV rows={(v as string[]).map((x, i) => [String(i), x])} head={[kv.type === "list" ? "index" : "#", "value"]} />;
+      return <KV rows={(v as string[]).map((x, i) => [String(i), x])} head={[kv.type === "list" ? t("index") : "#", t("value")]} />;
     case "stream":
       return (
         <KV
@@ -60,7 +61,7 @@ function ValueView({ kv }: { kv: KeyValue }) {
               .reduce<string[]>((acc, x, i) => (i % 2 ? [...acc.slice(0, -1), `${acc[acc.length - 1]}=${x}`] : [...acc, x]), [])
               .join("  "),
           ])}
-          head={["id", "fields"]}
+          head={[t("id"), t("fields")]}
         />
       );
     default:
@@ -178,10 +179,10 @@ export function RedisWorkspace({ session }: Props) {
 
   const del = async () => {
     if (!selected) return;
-    if (!(await ask(`Delete key "${selected.key}"? This cannot be undone.`, { title: "Delete key", kind: "warning" }))) return;
+    if (!(await ask(tf('Delete key "{name}"? This cannot be undone.', { name: selected.key }), { title: t("Delete key"), kind: "warning" }))) return;
     try {
-      await api.redisDelete(sid, selected.key);
-      setKeys((k) => k.filter((x) => x.key !== selected.key));
+      await api.redisDelete(sid, selected.id);
+      setKeys((k) => k.filter((x) => x.id !== selected.id));
       setSelected(null);
       setDbsize((n) => (n == null ? n : n - 1));
     } catch (e) {
@@ -204,7 +205,7 @@ export function RedisWorkspace({ session }: Props) {
         setDbsize(info.dbsize);
         await scan(0, true);
       } else if (selected) {
-        void open(selected.key).catch(() => {});
+        void open(selected.id).catch(() => {});
       }
     } catch (e) {
       setLines((l) => [...l, { cmd: line, out: `(error) ${errText(e)}`, error: true }]);
@@ -215,14 +216,14 @@ export function RedisWorkspace({ session }: Props) {
     <div className="workspace">
       <aside className="sidebar">
         <div className="row">
-          <select value={db} onChange={(e) => void switchDb(Number(e.target.value))} title="Database">
+          <select value={db} onChange={(e) => void switchDb(Number(e.target.value))} title={t("Database")}>
             {Array.from({ length: Math.max(16, db + 1) }, (_, i) => (
               <option key={i} value={i}>
                 db{i}
               </option>
             ))}
           </select>
-          <span className="muted small">{dbsize != null ? `${dbsize} keys` : ""}</span>
+          <span className="muted small">{dbsize != null ? tf("{count} keys", { count: dbsize }) : ""}</span>
         </div>
         <form
           className="row"
@@ -231,25 +232,25 @@ export function RedisWorkspace({ session }: Props) {
             void scan(0, true);
           }}
         >
-          <input className="search" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="pattern, e.g. user:*" spellCheck={false} />
-          <button type="submit" disabled={loading} title="Scan">
+          <input className="search" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder={t("pattern, e.g. user:*")} spellCheck={false} />
+          <button type="submit" disabled={loading} title={t("Scan")}>
             <RefreshCw size={14} />
           </button>
         </form>
         {error && <div className="status bad">{error}</div>}
         <ul className="list">
           {keys.map((k) => (
-            <li key={k.key} className={selected?.key === k.key ? "on" : ""} onClick={() => void open(k.key)} title={k.key}>
+            <li key={k.id} className={selected?.id === k.id ? "on" : ""} onClick={() => void open(k.id)} title={k.key}>
               <span className={`rtype t-${k.type}`}>{k.type === "string" ? "str" : k.type === "stream" ? "strm" : k.type}</span>
               <span className="kname">{k.key}</span>
             </li>
           ))}
           {cursor != null && (
             <li className="more" onClick={() => void scan(cursor, false)}>
-              {loading ? "Scanning…" : "Load more…"}
+              {loading ? t("Scanning…") : t("Load more…")}
             </li>
           )}
-          {!keys.length && cursor == null && <li className="muted">No keys</li>}
+          {!keys.length && cursor == null && <li className="muted">{t("No keys")}</li>}
         </ul>
       </aside>
 
@@ -261,21 +262,20 @@ export function RedisWorkspace({ session }: Props) {
                 <span className={`rtype t-${selected.type}`}>{selected.type}</span>
                 <b className="kname">{selected.key}</b>
                 <span className="muted">
-                  TTL {fmtTtl(selected.ttl)} · {selected.type === "string" ? `${selected.size} bytes` : `${selected.size} items`}
-                  {selected.truncated && " · preview"}
+                  TTL {fmtTtl(selected.ttl)} · {tf(selected.type === "string" ? "{count} bytes" : "{count} items", { count: selected.size })}
+                  {selected.truncated && t(" · preview")}
                 </span>
                 <span className="spacer" />
-                <button onClick={() => void open(selected.key)} title="Reload">
+                <button onClick={() => void open(selected.id)} title={t("Reload")}>
                   <RefreshCw size={14} />
                 </button>
                 <button className="danger" onClick={del}>
-                  <Trash2 size={14} />Delete
-                </button>
+                  <Trash2 size={14} />{t("Delete")} </button>
               </div>
               <ValueView kv={selected} />
             </>
           ) : (
-            <div className="grid-empty muted">Select a key.</div>
+            <div className="grid-empty muted">{t("Select a key.")}</div>
           )}
         </div>
         <div className="console">
@@ -293,7 +293,7 @@ export function RedisWorkspace({ session }: Props) {
           <input
             className="console-in"
             value={cmd}
-            placeholder="Redis command, e.g. HGETALL user:1   (↑ history)"
+            placeholder={t("Redis command, e.g. HGETALL user:1   (↑ history)")}
             spellCheck={false}
             onChange={(e) => setCmd(e.target.value)}
             onKeyDown={(e) => {

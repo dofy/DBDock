@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 use russh::client;
 use russh::keys::agent::client::AgentClient;
 use russh::keys::{
-    check_known_hosts, known_hosts::learn_known_hosts, load_secret_key, PrivateKeyWithHashAlg,
+    check_known_hosts, load_secret_key, PrivateKeyWithHashAlg,
     PublicKeyOrCertificate,
 };
 use tokio::net::TcpListener;
@@ -36,17 +36,14 @@ pub struct HostCheck {
 impl client::Handler for HostCheck {
     type Error = russh::Error;
 
-    /// Trust on first use against ~/.ssh/known_hosts; refuse a changed key.
+    /// Only connect when the host key is already trusted by OpenSSH.
     async fn check_server_key(&mut self, key: &PublicKeyOrCertificate) -> Result<bool, Self::Error> {
         let PublicKeyOrCertificate::PublicKey { key, .. } = key else {
-            return Ok(true);
+            return Ok(false);
         };
         match check_known_hosts(&self.host, self.port, key) {
             Ok(true) => Ok(true),
-            Ok(false) => {
-                let _ = learn_known_hosts(&self.host, self.port, key);
-                Ok(true)
-            }
+            Ok(false) => Ok(false),
             Err(russh::keys::Error::KeyChanged { line }) => {
                 eprintln!(
                     "host key for {}:{} changed (known_hosts line {line}); refusing",
@@ -54,8 +51,7 @@ impl client::Handler for HostCheck {
                 );
                 Ok(false)
             }
-            // Unreadable known_hosts: do not block the connection.
-            Err(_) => Ok(true),
+            Err(_) => Ok(false),
         }
     }
 }
@@ -117,7 +113,7 @@ pub async fn open(
     )
     .await
     .context("SSH connect timed out")?
-    .with_context(|| format!("SSH connect to {}:{port} failed (host key rejected?)", cfg.host))?;
+    .with_context(|| format!("SSH connect to {}:{port} failed. Verify the host key with OpenSSH and add it to known_hosts; certificates are not supported", cfg.host))?;
 
     let authed = match cfg.auth {
         SshAuth::Password => handle

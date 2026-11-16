@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { Play, Square } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
@@ -88,23 +89,21 @@ export function QueryView({ sessionId, kind, value, onChange, schema, dark }: Pr
       </div>
       <div className="toolbar">
         {running ? (
-          <button className="danger" onClick={cancel} disabled={kind === "sqlite" || kind === "d1"} title={kind === "sqlite" || kind === "d1" ? "This database cannot cancel a running query" : "Cancel the running query"}>
+          <button className="danger" onClick={cancel} disabled={kind === "sqlite" || kind === "d1"} title={kind === "sqlite" || kind === "d1" ? t("This database cannot cancel a running query") : t("Cancel the running query")}>
             <Square size={13} />
-            Cancel
-          </button>
+             {t("Cancel")} </button>
         ) : (
           <button className="primary" onClick={run}>
             <Play size={13} />
-            Run
-          </button>
+             {t("Run")} </button>
         )}
         {vimOn && <span className="vim-badge static">VIM</span>}
-        <span className="muted">{running ? "Running…" : `⌘↵ runs the selection, or everything${vimOn ? " · :w runs" : ""} · Tab accepts a suggestion`}</span>
+        <span className="muted">{running ? t("Running…") : `${t("⌘↵ runs the selection, or everything · Tab accepts a suggestion")}${vimOn ? t(" · :w runs") : ""}`}</span>
         <span className="spacer" />
         {results.length > 1 &&
           results.map((r, i) => (
             <button key={i} className={`chip ${i === active ? "on" : ""}`} onClick={() => setActive(i)}>
-              {r.columns.length ? `Result ${i + 1}` : `#${i + 1} (${r.rowsAffected ?? 0})`}
+              {r.columns.length ? tf("Result {number}", { number: i + 1 }) : `#${i + 1} (${r.rowsAffected ?? 0})`}
             </button>
           ))}
         {elapsed != null && <span className="muted">{elapsed} ms</span>}
@@ -116,12 +115,12 @@ export function QueryView({ sessionId, kind, value, onChange, schema, dark }: Pr
           <>
             <DataGrid result={cur} />
             <div className="statusbar">
-              {cur.columns.length ? `${cur.rows.length} row(s)` : `${cur.rowsAffected ?? 0} row(s) affected`}
-              {cur.truncated && " · truncated to 5000 rows"}
+              {cur.columns.length ? tf("{count} row(s)", { count: cur.rows.length }) : tf("{count} row(s) affected", { count: cur.rowsAffected ?? 0 })}
+              {cur.truncated && t(" · truncated to 5000 rows")}
             </div>
           </>
         ) : (
-          <div className="grid-empty muted">Results appear here.</div>
+          <div className="grid-empty muted">{t("Results appear here.")}</div>
         )}
       </div>
     </div>

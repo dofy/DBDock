@@ -9,13 +9,12 @@
     --bg: #ffffff; --bg2: #f6f7f9; --line: #e3e5ea; --fg: #1d2129; --muted: #6f7682;
     --accent: #ff674d; --accent-soft: #fff0ed; --code: #f1f3f6; --link: #d9462c;
     --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, "PingFang SC", monospace;
-    color-scheme: light dark;
+    color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
+  :root[data-theme="dark"] {
+      color-scheme: dark;
       --bg: #1b1d21; --bg2: #22252a; --line: #343840; --fg: #e5e7eb; --muted: #969ca8;
       --accent-soft: #3a2420; --code: #2a2d33; --link: #ff8a73;
-    }
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; scroll-padding-top: 16px; }
@@ -46,6 +45,7 @@
   header.hero img { width: 76px; height: 76px; filter: drop-shadow(0 8px 16px rgb(255 103 77 / 0.3)); }
   header.hero h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
   header.hero p { margin: 4px 0 0; color: var(--muted); }
+  .hero-github { display: inline-block; margin-top: 8px; font-size: 12px; overflow-wrap: anywhere; }
   section { padding-top: 18px; }
   section.hidden { display: none; }
   h2 { font-size: 18px; margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--accent-soft); }
@@ -75,6 +75,7 @@
     <div>
       <h1>DBDock Help</h1>
       <p>MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1, with SSH built in.</p>
+      <a class="hero-github github-link" href="https://github.com/dofy/DBDock" target="_blank" rel="noopener noreferrer">GitHub · github.com/dofy/DBDock ↗</a>
     </div>
   </header>
 
@@ -85,7 +86,7 @@
       <li><b>Or import</b> the ones you already have: <kbd>⌘</kbd><kbd>O</kbd> (TablePlus, DBeaver, connection URLs, a DBDock export).</li>
       <li><b>Connect</b>: double-click a card, or hover it and press <b>Connect</b>. Each connection opens as a tab at the top; <kbd>⌘</kbd><kbd>1</kbd> goes back to the list.</li>
     </ol>
-    <p>Passwords never go into a file: they are stored in the macOS Keychain, and the form shows <i>unchanged (saved in Keychain)</i> instead of the value.</p>
+    <p>Saved passwords are stored in the macOS Keychain, and the form shows <i>unchanged (saved in Keychain)</i> instead of the value. Exports can include passwords; use a passphrase to encrypt them.</p>
   </section>
 
   <section id="connections" data-title="Connections and groups">
@@ -136,7 +137,7 @@ jdbc:postgresql://localhost/app</code></pre>
       <li><b>Password</b>: SSH password login.</li>
     </ul>
     <p>The <b>Server</b> field accepts a Host alias from <code>~/.ssh/config</code>; the <b>Hosts</b> button lists them, and the line below shows what the alias resolves to. When a typed host and user match an existing alias, the form offers to use the alias, so later edits to the config apply here too.</p>
-    <p>Host keys are checked against <code>~/.ssh/known_hosts</code>: a new host is remembered on first use, a changed key is refused.</p>
+    <p>Host keys must already be trusted in <code>~/.ssh/known_hosts</code>. Verify and accept a new host with OpenSSH first; unknown, changed, unreadable, and certificate host keys are refused.</p>
     <div class="note">ProxyJump is not followed by DBDock tunnels yet. Point the connection at the last hop directly.</div>
   </section>
 
@@ -259,7 +260,7 @@ show dbs        show collections        use otherdb</code></pre>
     <h3>"password authentication failed" after an import</h3>
     <p>TablePlus and DBeaver do not share their passwords. Open <b>Edit</b> on the connection and type the password once.</p>
     <h3>SSH: "host key rejected"</h3>
-    <p>The server's key differs from the one in <code>~/.ssh/known_hosts</code>. If the change is expected (the server was rebuilt), remove the old line with <code>ssh-keygen -R host</code> and connect again.</p>
+    <p>The host key may be unknown, changed, unreadable, or a certificate. Verify new hosts with OpenSSH first. If a key change is expected, verify it, remove the old entry with <code>ssh-keygen -R host</code>, and verify the new key with OpenSSH.</p>
     <h3>MySQL-compatible server refuses the connection</h3>
     <p>Check the port (StarRocks and Doris usually listen on 9030) and that the user may connect from your address, or through the tunnel's server.</p>
     <h3>A table is read-only</h3>
@@ -270,45 +271,114 @@ show dbs        show collections        use otherdb</code></pre>
 
   <footer>
     DBDock 1.0.0 · Copyright © 2026 phpz.org · MIT License ·
-    <a href="https://github.com/dofy/DBDock" target="_blank" rel="noopener">github.com/dofy/DBDock</a>
+    <a class="github-link" href="https://github.com/dofy/DBDock" target="_blank" rel="noopener noreferrer">github.com/dofy/DBDock</a>
   </footer>
 </main>
 </div>
-<script>
+<script type="module">
+  // In the desktop app, use the same system-browser command as the native menu.
+  // Ordinary browser/file previews keep the normal anchor behavior.
+  for (const link of document.querySelectorAll('.github-link')) {
+    link.addEventListener('click', (event) => {
+      if (typeof window.__TAURI_INTERNALS__?.invoke === 'function') {
+        event.preventDefault();
+        window.__TAURI_INTERNALS__.invoke('open_github').catch(console.error);
+      }
+    });
+  }
+  const appearance = matchMedia('(prefers-color-scheme: dark)');
+  function updateAppearance() {
+    let theme = 'system';
+    try { theme = JSON.parse(localStorage.getItem('dbdock.settings') || '{}').theme || 'system'; } catch {}
+    document.documentElement.dataset.theme = theme === 'system' ? (appearance.matches ? 'dark' : 'light') : theme;
+  }
+  appearance.addEventListener('change', updateAppearance);
+  window.addEventListener('storage', updateAppearance);
+  updateAppearance();
   const sections = [...document.querySelectorAll("main section")];
   const toc = document.getElementById("toc");
-  for (const s of sections) {
-    const li = document.createElement("li");
-    li.innerHTML = `<a href="#${s.id}">${s.dataset.title}</a>`;
-    toc.appendChild(li);
+  const q = document.getElementById("q");
+  const originals = new Map(sections.map(s => [s.id, { title: s.dataset.title, html: s.innerHTML }]));
+  const examples = new Map(sections.map(s => [s.id, [...s.querySelectorAll("pre")].map(p => p.outerHTML).join("")]));
+  const originalLabels = [document.querySelector(".hero h1").textContent, q.placeholder, document.getElementById("empty").textContent, document.querySelector(".hero p").textContent];
+  let links = [];
+  let generation = 0;
+  function locale() {
+    let choice = "system";
+    try { choice = JSON.parse(localStorage.getItem("dbdock.settings") || "{}").language || "system"; } catch {}
+    if (choice !== "system") return ["en", "zh-CN", "zh-TW", "ja"].includes(choice) ? choice : "en";
+    for (const language of navigator.languages) {
+      const tag = language.toLowerCase();
+      if (tag.startsWith("zh")) return /hant|\b(tw|hk|mo)\b/.test(tag) ? "zh-TW" : "zh-CN";
+      if (tag.startsWith("ja")) return "ja";
+      if (tag.startsWith("en")) return "en";
+    }
+    return "en";
   }
-  const links = [...toc.querySelectorAll("a")];
+  function filter() {
+    const term = q.value.trim().toLowerCase();
+    let shown = 0;
+    sections.forEach((s, i) => {
+      const hit = !term || s.textContent.toLowerCase().includes(term);
+      s.classList.toggle("hidden", !hit);
+      if (links[i]) links[i].parentElement.style.display = hit ? "" : "none";
+      shown += hit ? 1 : 0;
+    });
+    document.getElementById("empty").style.display = shown ? "none" : "block";
+  }
   const mark = () => {
     let cur = sections[0];
     for (const s of sections) if (!s.classList.contains("hidden") && s.getBoundingClientRect().top < 120) cur = s;
     links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === `#${cur.id}`));
   };
+  async function updateLanguage() {
+    const request = ++generation;
+    const lang = locale();
+    let data = null;
+    if (lang !== "en") {
+      try { const response = await fetch(`help.${lang}.json`); if (!response.ok) throw new Error("help translation unavailable"); data = await response.json(); }
+      catch (error) { console.error(error); }
+    }
+    if (request !== generation) return;
+    document.documentElement.lang = data ? lang : "en";
+    const labels = data?.labels || originalLabels;
+    document.title = labels[0];
+    document.querySelector(".hero h1").textContent = labels[0];
+    q.placeholder = labels[1];
+    document.getElementById("empty").textContent = labels[2];
+    document.querySelector(".hero p").textContent = labels[3];
+    sections.forEach(s => {
+      const translated = data?.sections[s.id];
+      const entry = translated || originals.get(s.id);
+      s.dataset.title = entry.title;
+      if (translated) s.innerHTML = `<h2></h2>${entry.html}${examples.get(s.id) || ""}`;
+      else s.innerHTML = entry.html;
+      if (translated) s.querySelector("h2").textContent = entry.title;
+    });
+    toc.replaceChildren();
+    for (const s of sections) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = `#${s.id}`;
+      a.textContent = s.dataset.title;
+      li.appendChild(a);
+      toc.appendChild(li);
+    }
+    links = [...toc.querySelectorAll("a")];
+    filter();
+    requestAnimationFrame(jump);
+  }
   addEventListener("scroll", mark, { passive: true });
-  // Opened as help.html#section: jump there once the TOC exists.
   const jump = () => { const el = location.hash && document.getElementById(location.hash.slice(1)); if (el) el.scrollIntoView(); mark(); };
   addEventListener("hashchange", jump);
-  requestAnimationFrame(jump);
-  const q = document.getElementById("q");
-  q.addEventListener("input", () => {
-    const t = q.value.trim().toLowerCase();
-    let shown = 0;
-    sections.forEach((s, i) => {
-      const hit = !t || s.textContent.toLowerCase().includes(t);
-      s.classList.toggle("hidden", !hit);
-      links[i].parentElement.style.display = hit ? "" : "none";
-      shown += hit;
-    });
-    document.getElementById("empty").style.display = shown ? "none" : "block";
-  });
+  addEventListener("storage", updateLanguage);
+  addEventListener("languagechange", updateLanguage);
+  q.addEventListener("input", filter);
   addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "f") { e.preventDefault(); q.focus(); }
-    if (e.key === "Escape" && document.activeElement === q) { q.value = ""; q.dispatchEvent(new Event("input")); }
+    if (e.key === "Escape" && document.activeElement === q) { q.value = ""; filter(); }
   });
+  updateLanguage();
 </script>
 </body>
 </html>

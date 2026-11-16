@@ -1,3 +1,4 @@
+import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
@@ -67,7 +68,7 @@ function DocTable({ docs, selected, onSelect, onOpen }: { docs: Doc[]; selected:
           ))}
         </tbody>
       </table>
-      {!docs.length && <div className="grid-empty muted">No documents</div>}
+      {!docs.length && <div className="grid-empty muted">{t("No documents")}</div>}
     </div>
   );
 }
@@ -80,7 +81,7 @@ function DocList({ docs, selected, onSelect, onOpen }: { docs: Doc[]; selected: 
           {JSON.stringify(d, null, 2)}
         </pre>
       ))}
-      {!docs.length && <div className="grid-empty muted">No documents</div>}
+      {!docs.length && <div className="grid-empty muted">{t("No documents")}</div>}
     </div>
   );
 }
@@ -100,7 +101,7 @@ function DocEditor({ initial, isNew, onSave, onDelete, onClose }: { initial: Doc
       doc = JSON.parse(text);
       if (typeof doc !== "object" || doc === null || Array.isArray(doc)) throw new Error("a document must be a JSON object");
     } catch (e) {
-      return setError(`Invalid JSON: ${errText(e)}`);
+      return setError(tf("Invalid JSON: {error}", { error: errText(e) }));
     }
     setBusy(true);
     try {
@@ -113,8 +114,8 @@ function DocEditor({ initial, isNew, onSave, onDelete, onClose }: { initial: Doc
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal wide" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>{isNew ? "Insert document" : "Edit document"}</h2>
-        <p className="muted small">Extended JSON: {`{"$oid": "…"}`} for ObjectId, {`{"$date": "2026-01-02T03:04:05Z"}`} for dates. ⌘S saves.</p>
+        <h2>{isNew ? t("Insert document") : t("Edit document")}</h2>
+        <p className="muted small">{t("Extended JSON:")} {`{"$oid": "…"}`}  {t("for ObjectId,")} {`{"$date": "2026-01-02T03:04:05Z"}`}  {t("for dates. ⌘S saves.")}</p>
         <div className="doc-editor">
           <CodeEditor value={text} onChange={setText} language="json" onSave={() => void save()} autoFocus />
         </div>
@@ -122,13 +123,12 @@ function DocEditor({ initial, isNew, onSave, onDelete, onClose }: { initial: Doc
         <div className="actions">
           {onDelete && (
             <button className="danger" onClick={() => void onDelete()} disabled={busy}>
-              <Trash2 size={14} />Delete
-            </button>
+              <Trash2 size={14} />{t("Delete")} </button>
           )}
           <span className="spacer" />
-          <button onClick={onClose}>Cancel</button>
+          <button onClick={onClose}>{t("Cancel")}</button>
           <button className="primary" onClick={() => void save()} disabled={busy}>
-            {isNew ? "Insert" : "Save"}
+            {isNew ? t("Insert") : t("Save")}
           </button>
         </div>
       </div>
@@ -186,10 +186,10 @@ function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string
   };
 
   const del = async (d: Doc) => {
-    if (!(await ask(`Delete this document?\n\n_id: ${cellText(d._id)}`, { title: "Delete document", kind: "warning" }))) return;
+    if (!(await ask(`${t("Delete this document?")}\n\n_id: ${cellText(d._id)}`, { title: t("Delete document"), kind: "warning" }))) return;
     try {
       await api.mongoDelete(sessionId, db, coll, [d._id]);
-      toast("ok", "Deleted 1 document");
+      toast("ok", t("Deleted 1 document"));
       setEditing(null);
       await load();
     } catch (e) {
@@ -214,26 +214,21 @@ function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string
         {field("sort", sort, setSort, "{ _id: -1 }")}
         {field("projection", projection, setProjection, "{ name: 1 }")}
         <button className="primary" onClick={apply}>
-          <Search size={14} />Find
-        </button>
+          <Search size={14} />{t("Find")} </button>
       </div>
       <div className="toolbar">
         <div className="seg">
           <button className={mode === "table" ? "on" : ""} onClick={() => setMode("table")}>
-            Table
-          </button>
+             {t("Table")} </button>
           <button className={mode === "json" ? "on" : ""} onClick={() => setMode("json")}>
-            JSON
-          </button>
+             {t("JSON")} </button>
         </div>
         <span className="spacer" />
-        <button onClick={() => setEditing({ doc: {}, isNew: true })}><Plus size={14} />Insert</button>
+        <button onClick={() => setEditing({ doc: {}, isNew: true })}><Plus size={14} />{t("Insert")}</button>
         <button onClick={() => sel && open(selected!)} disabled={!sel}>
-          <Pencil size={14} />Edit
-        </button>
+          <Pencil size={14} />{t("Edit")} </button>
         <button className="danger" onClick={() => sel && void del(sel)} disabled={!sel}>
-          <Trash2 size={14} />Delete
-        </button>
+          <Trash2 size={14} />{t("Delete")} </button>
         <button
           onClick={() =>
             api
@@ -242,9 +237,8 @@ function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string
               .catch((e) => toast("error", errText(e)))
           }
         >
-          <ListTree size={14} />Indexes
-        </button>
-        <button onClick={() => void load()} disabled={loading} title="Refresh">
+          <ListTree size={14} />{t("Indexes")} </button>
+        <button onClick={() => void load()} disabled={loading} title={t("Refresh")}>
           <RefreshCw size={14} />
         </button>
       </div>
@@ -270,11 +264,10 @@ function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string
         >
           {[20, 50, 200, 1000].map((n) => (
             <option key={n} value={n}>
-              {n} / page
-            </option>
+              {n}  {t("/ page")} </option>
           ))}
         </select>
-        <span className="muted">double-click a document to edit</span>
+        <span className="muted">{t("double-click a document to edit")}</span>
         <span className="spacer" />
         {elapsed !== null && <span className="muted">{elapsed} ms</span>}
       </div>
@@ -288,10 +281,10 @@ function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string
           onSave={async (d) => {
             if (editing.isNew) {
               await api.mongoInsert(sessionId, db, coll, d);
-              toast("ok", "Inserted 1 document");
+              toast("ok", t("Inserted 1 document"));
             } else {
               await api.mongoReplace(sessionId, db, coll, editing.doc._id, d);
-              toast("ok", "Saved");
+              toast("ok", t("Saved"));
             }
             setEditing(null);
             await load();
@@ -301,11 +294,11 @@ function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string
       {indexes && (
         <div className="modal-backdrop" onMouseDown={() => setIndexes(null)}>
           <div className="modal wide" onMouseDown={(e) => e.stopPropagation()}>
-            <h2>Indexes · {coll}</h2>
+            <h2>{t("Indexes ·")} {coll}</h2>
             <pre className="sql-preview">{JSON.stringify(indexes, null, 2)}</pre>
             <div className="actions">
               <span className="spacer" />
-              <button onClick={() => setIndexes(null)}><X size={14} />Close</button>
+              <button onClick={() => setIndexes(null)}><X size={14} />{t("Close")}</button>
             </div>
           </div>
         </div>
@@ -392,13 +385,12 @@ function ShellView({ sessionId, db, onUse, dark }: { sessionId: string; db: stri
       </div>
       <div className="toolbar">
         <button className="primary" onClick={() => void run()} disabled={running}>
-          {running ? "Running…" : "Run"}
+          {running ? t("Running…") : t("Run")}
         </button>
-        <span className="muted">⌘↵ runs the current line or selection · db = {db}</span>
+        <span className="muted">{t("⌘↵ runs the current line or selection · db =")} {db}</span>
         <span className="spacer" />
         <button onClick={() => setOut([])} disabled={!out.length}>
-          <Eraser size={14} />Clear
-        </button>
+          <Eraser size={14} />{t("Clear")} </button>
       </div>
       <div className="results shell-out">
         {out.map((e, i) => (
@@ -410,13 +402,13 @@ function ShellView({ sessionId, db, onUse, dark }: { sessionId: string; db: stri
             {e.error ? (
               <pre className="error">{e.error}</pre>
             ) : e.docs ? (
-              <pre className="value">{e.docs.length ? e.docs.map((d) => JSON.stringify(d, null, 2)).join("\n") : "(no documents)"}</pre>
+              <pre className="value">{e.docs.length ? e.docs.map((d) => JSON.stringify(d, null, 2)).join("\n") : t("(no documents)")}</pre>
             ) : (
               <pre className="value">{JSON.stringify(e.value, null, 2)}</pre>
             )}
           </div>
         ))}
-        {!out.length && <div className="grid-empty muted">Results appear here.</div>}
+        {!out.length && <div className="grid-empty muted">{t("Results appear here.")}</div>}
         <div ref={endRef} />
       </div>
     </div>
@@ -485,14 +477,14 @@ export function MongoWorkspace({ session, dark }: { session: SessionInfo; dark: 
   return (
     <div className="workspace">
       <aside className="sidebar">
-        <select value={db} onChange={(e) => switchDb(e.target.value)} title="Database">
+        <select value={db} onChange={(e) => switchDb(e.target.value)} title={t("Database")}>
           {[...new Set([db, ...dbs])].map((d) => (
             <option key={d}>{d}</option>
           ))}
         </select>
         <div className="row">
-          <input className="search" placeholder="Filter collections" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button onClick={loadColls} title="Reload">
+          <input className="search" placeholder={t("Filter collections")} value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <button onClick={loadColls} title={t("Reload")}>
             <RefreshCw size={14} />
           </button>
         </div>
@@ -506,7 +498,7 @@ export function MongoWorkspace({ session, dark }: { session: SessionInfo; dark: 
               </li>
             );
           })}
-          {!shown.length && <li className="muted">No collections</li>}
+          {!shown.length && <li className="muted">{t("No collections")}</li>}
         </ul>
       </aside>
       <section className="main">
@@ -533,8 +525,7 @@ export function MongoWorkspace({ session, dark }: { session: SessionInfo; dark: 
               setActive(t.id);
             }}
           >
-            <SquareTerminal size={14} />Shell
-          </button>
+            <SquareTerminal size={14} />{t("Shell")} </button>
         </div>
         <div className="tab-body">
           {tabs.map((t) => (
@@ -542,7 +533,7 @@ export function MongoWorkspace({ session, dark }: { session: SessionInfo; dark: 
               {t.type === "coll" ? <CollectionView sessionId={sid} db={db} coll={t.coll} /> : <ShellView sessionId={sid} db={db} onUse={switchDb} dark={dark} />}
             </div>
           ))}
-          {!tabs.length && <div className="grid-empty muted">Pick a collection, or open a shell.</div>}
+          {!tabs.length && <div className="grid-empty muted">{t("Pick a collection, or open a shell.")}</div>}
         </div>
       </section>
     </div>

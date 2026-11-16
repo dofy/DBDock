@@ -1,8 +1,10 @@
+import { t, tf } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errText, type ConnectionConfig, type SessionInfo } from "./api";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { EnvBadge, Home, type MenuAction } from "./components/Home";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { SqlWorkspace } from "./components/SqlWorkspace";
 import { RedisWorkspace } from "./components/RedisWorkspace";
 import { MongoWorkspace } from "./components/MongoWorkspace";
@@ -12,25 +14,30 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { AboutDialog } from "./components/AboutDialog";
 import "./styles.css";
 import { X } from "lucide-react";
+import { ask, message } from "@tauri-apps/plugin-dialog";
+import { updateSettings, useDarkMode, useSettings } from "./settings";
+import { resolveLocale } from "./i18n";
 
 interface Open {
   conn: ConnectionConfig;
   session: SessionInfo;
 }
 
-function useDark() {
-  const q = window.matchMedia("(prefers-color-scheme: dark)");
-  const [dark, setDark] = useState(q.matches);
-  useEffect(() => {
-    const f = (e: MediaQueryListEvent) => setDark(e.matches);
-    q.addEventListener("change", f);
-    return () => q.removeEventListener("change", f);
-  }, [q]);
-  return dark;
-}
-
 function Shell() {
-  const dark = useDark();
+  const dark = useDarkMode();
+  const settings = useSettings();
+  const { language } = settings;
+  useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; }, [dark]);
+  useEffect(() => {
+    const locale = resolveLocale(language);
+    document.documentElement.lang = locale;
+    void invoke("set_menu_language", { language: locale }).catch(() => {});
+  }, [language, settings]);
+  useEffect(() => {
+    const changed = () => updateSettings({});
+    window.addEventListener("languagechange", changed);
+    return () => window.removeEventListener("languagechange", changed);
+  }, []);
   const toast = useToast();
   const [conns, setConns] = useState<ConnectionConfig[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
@@ -41,6 +48,7 @@ function Shell() {
   const [homeAction, setHomeAction] = useState<MenuAction | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const dirtyTabs = useRef(new Map<string, Map<string, "dirty" | "busy">>());
 
   const reload = useCallback(async () => {
     try {
@@ -69,7 +77,11 @@ function Shell() {
     }
   };
 
-  const close = (sessionId: string) => {
+  const close = async (sessionId: string) => {
+    const tabs = dirtyTabs.current.get(sessionId);
+    if (tabs && [...tabs.values()].includes("busy")) { await message(t("Wait for the commit to finish before closing this connection.")); return; }
+    if (tabs?.size && !(await ask(t("Discard uncommitted changes in this connection?"), { title: t("Discard changes"), kind: "warning" }))) return;
+    dirtyTabs.current.delete(sessionId);
     void api.disconnect(sessionId);
     setOpened((o) => o.filter((x) => x.session.sessionId !== sessionId));
     if (active === sessionId) setActive(null);
@@ -90,7 +102,8 @@ function Shell() {
       case "home":
         return setActive(null);
       case "close-tab":
-        return active && close(active);
+        if (active) void close(active);
+        return;
       case "next-tab":
         return cycle(1);
       case "prev-tab":
@@ -115,8 +128,7 @@ function Shell() {
     <div className="app">
       <header className="topbar">
         <button className={`top-tab home ${active === null ? "on" : ""}`} onClick={() => setActive(null)}>
-          Connections
-        </button>
+           {t("Connections")} </button>
         {opened.map(({ conn, session }) => (
           <div
             key={session.sessionId}
@@ -131,7 +143,7 @@ function Shell() {
               className="x"
               onClick={(e) => {
                 e.stopPropagation();
-                close(session.sessionId);
+                void close(session.sessionId);
               }}
             >
               <X size={12} />
@@ -149,7 +161,7 @@ function Shell() {
           ) : session.kind === "mongodb" ? (
             <MongoWorkspace session={session} dark={dark} />
           ) : (
-            <SqlWorkspace session={session} dark={dark} />
+            <SqlWorkspace session={session} dark={dark} dirtyTabs={dirtyTabs} />
           )}
         </div>
       ))}
@@ -165,7 +177,7 @@ function Shell() {
           onClose={() => setEditing(null)}
           onSaved={(c) => {
             setEditing(null);
-            toast("ok", `Saved ${c.name}`);
+            toast("ok", tf("Saved {name}", { name: c.name }));
             void reload();
           }}
         />
