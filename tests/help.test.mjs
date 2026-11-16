@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
+import { HEALTH_CHECK_CONCURRENCY } from '../src/healthCheckQueue.ts';
 
 const ids = ['start', 'connections', 'import', 'ssh', 'ssh-hosts', 'sql', 'redis', 'mongodb', 'vim', 'shortcuts', 'data', 'trouble'];
 for (const locale of ['zh-CN', 'zh-TW', 'ja']) {
@@ -29,4 +30,19 @@ test('offline translation script matches the language resources', async () => {
   assert.doesNotMatch(html, /<script type="module">/);
   assert.doesNotMatch(html, /dbdock\.help-language|id="help-language"/);
   assert.match(html, /localStorage\.getItem\("dbdock\.settings"\)/);
+});
+
+test('help documents batch health checks and drag handles in each language', async () => {
+  const english = await readFile(new URL('../public/help.html', import.meta.url), 'utf8');
+  assert.match(english, /<h3>Connection health<\/h3>/);
+  assert.match(english, /drag the handle/);
+  assert.match(english, /up to four tests at once/);
+  assert.equal(HEALTH_CHECK_CONCURRENCY, 4);
+  for (const locale of ['zh-CN', 'zh-TW', 'ja']) {
+    const help = JSON.parse(await readFile(new URL(`../public/help.${locale}.json`, import.meta.url), 'utf8'));
+    const section = help.sections.connections.html;
+    assert.match(section, /<h3>[^<]*(?:健康檢查|健康检查|ヘルスチェック)<\/h3>/);
+    assert.match(section, /(?:手柄|把手|ハンドル)/);
+    assert.match(section, /4/);
+  }
 });
