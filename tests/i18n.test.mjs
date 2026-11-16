@@ -47,3 +47,14 @@ test('missing SQLite file and batch actions are localized for every supported la
     assert.equal(tf('Batch test {count} connection(s)', { count: 3 }), expectedButton);
   }
 });
+
+test('parallel health check guidance includes the limit in each language', () => {
+  const message = 'Required fields are checked locally; credentials are checked only during a connection test. Up to {count} tests run at once and may request Keychain access. Stopping waits for running checks to finish.';
+  for (const language of ['en', 'zh-CN', 'zh-TW', 'ja']) {
+    updateSettings({ language });
+    const translated = tf(message, { count: 4 });
+    assert.ok(translated.includes('4'));
+    assert.ok(!translated.includes('{count}'));
+    if (language !== 'en') assert.notEqual(translated, message.replace('{count}', '4'));
+  }
+});

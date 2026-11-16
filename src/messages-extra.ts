@@ -13,7 +13,7 @@ export const extraMessages: Record<string, readonly [string, string, string]> = 
   'Delete connection "{name}"? The database is not deleted. Legacy Keychain copies may remain.': ['删除连接“{name}”？数据库本身不会被删除，旧版钥匙串副本可能仍会保留。', '刪除連線「{name}」？資料庫本身不會被刪除，舊版鑰匙圈副本可能仍會保留。', '接続「{name}」を削除しますか？データベース自体は削除されません。旧キーチェーンのコピーは残る場合があります。'],
   'Last checked: {time}': ['上次检查：{time}', '上次檢查：{time}', '最終チェック：{time}'],
   'Checking {count} connection(s)': ['检查 {count} 个连接', '檢查 {count} 個連線', '{count} 件の接続をチェック'],
-  'Required fields are checked locally; credentials are checked only during a connection test. Tests run one at a time and may request Keychain access. Stopping waits for the current check to finish.': ['必填项在本地检查；凭据仅在测试连接时验证。测试逐个进行，可能请求钥匙串授权。停止时会等待当前检查结束。', '必填項目在本機檢查；憑證僅在測試連線時驗證。測試逐一進行，可能要求鑰匙圈授權。停止時會等待目前的檢查完成。', '必須項目はローカルで確認し、認証情報は接続テスト時に検証します。テストは一件ずつ実行し、キーチェーンへのアクセスを求める場合があります。停止時は実行中のテストを待ちます。'],
+  'Required fields are checked locally; credentials are checked only during a connection test. Up to {count} tests run at once and may request Keychain access. Stopping waits for running checks to finish.': ['必填项在本地检查；凭据仅在测试连接时验证。最多同时测试 {count} 个连接，可能请求钥匙串授权。停止时会等待正在进行的检查结束。', '必填項目在本機檢查；憑證僅在測試連線時驗證。最多同時測試 {count} 個連線，可能要求鑰匙圈授權。停止時會等待進行中的檢查完成。', '必須項目はローカルで確認し、認証情報は接続テスト時に検証します。同時に最大 {count} 件をテストし、キーチェーンへのアクセスを求める場合があります。停止時は実行中のテストを待ちます。'],
   '{count} configuration issue(s)': ['{count} 个配置问题', '{count} 個設定問題', '設定の問題 {count} 件'],
   '{count} tested': ['已测试 {count} 个', '已測試 {count} 個', 'テスト済み {count} 件'],
   '{count} connected': ['连接成功 {count} 个', '連線成功 {count} 個', '接続成功 {count} 件'],
