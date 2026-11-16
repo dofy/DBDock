@@ -83,7 +83,7 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .app { display: flex; flex-direction: column; height: 100%; }
 
 /* top session tabs */
-.topbar { display: flex; gap: 2px; padding: 6px 8px 0; background: var(--bg2); border-bottom: 1px solid var(--line); overflow-x: auto; flex-shrink: 0; }
+.topbar { display: flex; gap: 2px; padding: 6px 8px 0; background: var(--bg2); border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; flex-shrink: 0; }
 .top-tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid transparent; border-bottom: none; border-radius: 7px 7px 0 0; cursor: pointer; background: none; white-space: nowrap; }
 .top-tab.on { background: var(--bg); border-color: var(--line); margin-bottom: -1px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; }
@@ -112,14 +112,15 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .modal h2 { margin: 0 0 12px; font-size: 16px; }
 .modal.connection-form { display: flex; flex-direction: column; overflow: hidden; }
 .connection-form > h2, .connection-form-actions { flex: none; }
-.connection-form-body { min-height: 0; overflow-y: auto; }
-.kind-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 14px; }
-.kind-btn { font-size: 12px; white-space: normal; line-height: 1.2; }
+.connection-form-body { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
+.kind-picker { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-bottom: 14px; }
+.kind-btn { font-size: 12px; white-space: normal; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; text-align: center; }
 .kind-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px; background: var(--bg2); }
 .kind-btn.active { border-color: var(--accent); background: var(--sel); }
-.form { display: grid; grid-template-columns: 110px 1fr; gap: 8px 10px; align-items: center; }
+.form { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px 10px; align-items: center; }
 .form > label { color: var(--muted); text-align: right; }
 .form .port { width: 80px; flex: none; }
+.form > * { min-width: 0; }
 fieldset.ssh { border: 1px solid var(--line); border-radius: 8px; margin: 14px 0 0; padding: 8px 12px 12px; }
 fieldset.ssh.off { padding-bottom: 0; }
 .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -150,7 +151,7 @@ fieldset.ssh.off { padding-bottom: 0; }
 .kname { overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 12px; }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.tabs { display: flex; align-items: center; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--line); overflow-x: auto; flex-shrink: 0; }
+.tabs { display: flex; align-items: center; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; flex-shrink: 0; }
 .tab { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px 6px 0 0; cursor: pointer; white-space: nowrap; color: var(--muted); }
 .tab.on { color: var(--fg); background: var(--bg2); box-shadow: inset 0 -2px var(--accent); }
 .tab-add { margin-left: 4px; padding: 2px 8px; font-size: 12px; }
@@ -265,7 +266,7 @@ pre.value { margin: 0; padding: 10px 12px; flex: 1; overflow: auto; font-family:
 .ssh-card { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg2); overflow: hidden; }
 .ssh-card.on { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .ssh-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; user-select: none; }
-.ssh-head .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.ssh-head .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
 .ssh-body { padding: 4px 12px 12px; border-top: 1px solid var(--line); padding-top: 12px; background: var(--bg); }
 .switch { position: relative; width: 30px; height: 18px; flex-shrink: 0; }
 .switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
@@ -307,7 +308,7 @@ pre.value { margin: 0; padding: 10px 12px; flex: 1; overflow: auto; font-family:
 .section-title { margin: 14px 0 8px 2px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; display: inline-block; }
 .section-title:hover { color: var(--accent); }
 .conn-group { margin-bottom: 4px; }
-.bulk-bar { position: absolute; left: 20px; right: 20px; bottom: 16px; z-index: 3; display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 6px 10px; border-radius: 8px; background: var(--sel); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.bulk-bar { position: absolute; left: 20px; right: 20px; bottom: 16px; z-index: 3; display: flex; align-items: center; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 6px 10px; border-radius: 8px; background: var(--sel); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .bulk-bar > :not(.spacer) { flex-shrink: 0; }
 .bulk-bar + .home-scroll { padding-bottom: 80px; }
 .empty { padding: 60px 20px; text-align: center; color: var(--muted); }
@@ -603,3 +604,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 .card:hover .card-icon-slot .db-icon { visibility: hidden; }
 .card:hover .card-drag-handle { display: grid; }
 .drag-active .drop-zone:not(.drop) { background: color-mix(in srgb, var(--accent) 10%, var(--bg2)); outline: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line)); outline-offset: -1px; }
+
+/* Scrollbars. Strips that scroll sideways (tabs, bulk bar) never show a bar; a
+   trackpad or shift+wheel still scrolls them. Everything else gets a slim thumb
+   on a transparent track, shown only while the pointer is over that area, so
+   "always show scrollbars" in macOS settings does not draw tracks everywhere. */
+.topbar, .tabs, .bulk-bar { scrollbar-width: none; }
+.topbar::-webkit-scrollbar, .tabs::-webkit-scrollbar, .bulk-bar::-webkit-scrollbar { display: none; }
+::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--fg) 22%, transparent); }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--fg) 38%, transparent); }
