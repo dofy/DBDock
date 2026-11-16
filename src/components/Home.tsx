@@ -299,21 +299,39 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
 
         {picked.size > 0 && (
           <div className="bulk-bar">
-            <b>{picked.size} selected</b>
-            <button className="link" onClick={() => setPicked(new Set(shown.map((c) => c.id)))}>
-              Select all {shown.length}
+            <button className="icon-btn bulk-clear" onClick={() => setPicked(new Set())} title="Clear selection (Esc)" aria-label="Clear selection">
+              <X size={14} />
             </button>
+            <b>{picked.size} selected</b>
+            {picked.size < shown.length ? (
+              <button className="link" onClick={() => setPicked(new Set(shown.map((c) => c.id)))}>
+                Select all {shown.length}
+              </button>
+            ) : (
+              <button className="link" onClick={() => setPicked(new Set())}>
+                Select none
+              </button>
+            )}
             <span className="spacer" />
             <button onClick={() => setDialog({ kind: "move", ids: pickedIds })}><FolderInput size={14} />Move to group…</button>
             <button onClick={() => setDialog({ kind: "export", ids: pickedIds })}><FileUp size={14} />Export…</button>
             <button className="danger" onClick={() => void deleteConnections(pickedIds)}>
               <Trash2 size={14} />Delete
             </button>
-            <button onClick={() => setPicked(new Set())}><Check size={14} />Done</button>
+            <button onClick={() => setPicked(new Set())} title="Esc">
+              <X size={14} />
+              Clear selection
+            </button>
           </div>
         )}
 
-        <div className="home-scroll">
+        <div
+          className="home-scroll"
+          onClick={(e) => {
+            // Clicks on the background (not on a card or a section title) clear the selection.
+            if (picked.size && !(e.target as HTMLElement).closest(".card, .section-title")) setPicked(new Set());
+          }}
+        >
           {sections.map(([group, items]) => (
             <section key={group || "-"} className="conn-group">
               {(sections.length > 1 || group !== sel) && (
@@ -342,14 +360,19 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                     }}
                   >
                     <span className="card-color" style={{ background: c.color }} />
-                    <input
-                      type="checkbox"
+                    <button
                       className="pick"
-                      checked={picked.has(c.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={() => togglePick(c.id)}
+                      role="checkbox"
+                      aria-checked={picked.has(c.id)}
                       aria-label={`Select ${c.name}`}
-                    />
+                      title={picked.has(c.id) ? "Deselect" : "Select (⌘-click also works)"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePick(c.id);
+                      }}
+                    >
+                      <Check size={12} strokeWidth={3} />
+                    </button>
                     <DbIcon kind={c.kind} size={36} />
                     <div className="card-text">
                       <div className="card-title">
@@ -367,16 +390,16 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                         </div>
                       )}
                     </div>
-                    <div className={`card-actions ${connecting === c.id ? "busy" : ""}`} onClick={(e) => e.stopPropagation()}>
-                      <button className="icon-btn" title="Edit" onClick={() => onEdit(c)}>
-                        <Pencil size={14} />
+                    <div className={`btn-group card-actions ${connecting === c.id ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()}>
+                      <button title="Edit" aria-label="Edit" onClick={() => onEdit(c)}>
+                        <Pencil size={13} />
                       </button>
-                      <button className="icon-btn" title="More" onClick={(e) => setMenu({ id: c.id, x: e.clientX, y: e.clientY })}>
-                        <MoreHorizontal size={14} />
+                      <button title="More" aria-label="More" onClick={(e) => setMenu({ id: c.id, x: e.clientX, y: e.clientY })}>
+                        <MoreHorizontal size={13} />
                       </button>
-                      <button className="primary small-btn" disabled={connecting === c.id} onClick={() => onConnect(c)}>
+                      <button className="primary" disabled={connecting === c.id} onClick={() => onConnect(c)}>
                         <Plug size={13} />
-                        {connecting === c.id ? "…" : "Connect"}
+                        {connecting === c.id ? "Connecting…" : "Connect"}
                       </button>
                     </div>
                   </div>

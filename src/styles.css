@@ -467,3 +467,44 @@ button.link { display: inline-flex; }
 .settings-about > div { display: flex; flex-direction: column; }
 .settings-links { margin-top: 8px; }
 .settings-links > button { flex: 1; }
+
+/* ===== card: selection badge + bottom-right button group ===== */
+.card { padding: 14px 14px 14px 18px; }
+/* round select badge, top-right (Photos / Finder style) */
+.card .pick {
+  position: absolute; top: 8px; right: 8px; left: auto; z-index: 2;
+  width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--muted) 55%, transparent);
+  color: transparent; opacity: 0; transform: scale(0.85);
+  transition: opacity 0.12s, transform 0.12s, background 0.12s, border-color 0.12s;
+  backdrop-filter: blur(6px);
+}
+.card:hover .pick, .card.picking .pick { opacity: 1; transform: scale(1); }
+.card .pick:hover { border-color: var(--accent); color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.card.picked .pick { opacity: 1; transform: scale(1); background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 45%, transparent); }
+.card.picked { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.card.picking { cursor: pointer; }
+.card.picking .card-actions { display: none; }
+
+/* joined button group */
+.btn-group { display: inline-flex; align-items: stretch; border-radius: 8px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 14px rgb(0 0 0 / 0.08); }
+.btn-group > button { border-radius: 0; height: 26px; padding: 0 9px; margin: 0; font-size: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+.btn-group > button + button { margin-left: -1px; }
+.btn-group > button:first-child { border-radius: 8px 0 0 8px; }
+.btn-group > button:last-child { border-radius: 0 8px 8px 0; }
+.btn-group > button:hover:not(:disabled) { background: var(--sel); filter: none; position: relative; z-index: 1; }
+.btn-group > button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn-group > button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000); }
+
+/* actions float at the card's bottom-right on hover */
+.card-actions {
+  position: absolute; right: 10px; bottom: 10px; top: auto; transform: translateY(4px);
+  padding-left: 0; background: none; opacity: 0; pointer-events: none;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.card:hover .card-actions, .card-actions.busy { opacity: 1; transform: none; pointer-events: auto; }
+.card-actions .icon-btn { opacity: 1; }
+.card-title { padding-right: 22px; }
+.bulk-clear { width: 24px; height: 24px; }
