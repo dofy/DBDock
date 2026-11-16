@@ -1189,6 +1189,7 @@ dependencies = [
  "futures",
  "json5",
  "keyring",
+ "libc",
  "mongodb",
  "plist",
  "rand 0.8.8",

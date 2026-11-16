@@ -64,6 +64,7 @@ export function TransferDialog({ mode, onClose, onDone }: Props) {
                {t("Include passwords and SSH passphrases")} </label>
             {withSecrets && (
               <div className="form" style={{ marginTop: 10 }}>
+                <p className="hint">{t("The first export of each connection may require authorization for existing Keychain items. Once migrated, credentials use one item; existing items are retained.")}</p>
                 <label>{t("Passphrase")}</label>
                 <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder={t("recommended; empty = plain text")} autoFocus />
                 <label>{t("Repeat")}</label>

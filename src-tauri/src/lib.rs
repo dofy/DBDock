@@ -169,8 +169,8 @@ fn delete_connection(state: State<'_, AppState>, id: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-async fn test_connection(config: ConnectionConfig, secrets: SecretsInput) -> CmdResult<String> {
-    let resolved = secrets.resolve(&config.id);
+async fn test_connection(state: State<'_, AppState>, config: ConnectionConfig, secrets: SecretsInput) -> CmdResult<String> {
+    let resolved = state.store.resolve_secrets(&config.id, &secrets).map_err(err)?;
     let (_session, version, _) = open_session(&config, resolved).await.map_err(err)?;
     Ok(version)
 }
@@ -179,7 +179,7 @@ async fn test_connection(config: ConnectionConfig, secrets: SecretsInput) -> Cmd
 async fn connect(state: State<'_, AppState>, id: String) -> CmdResult<SessionInfo> {
     let cfg = state.store.get(&id).map_err(err)?;
     let (session, server_version, default_schema) =
-        open_session(&cfg, store::load_secrets(&id)).await.map_err(err)?;
+        open_session(&cfg, state.store.resolve_secrets(&id, &SecretsInput::default()).map_err(err)?).await.map_err(err)?;
     let session_id = uuid::Uuid::new_v4().to_string();
     state.sessions.lock().unwrap().insert(session_id.clone(), Arc::new(session));
     Ok(SessionInfo { session_id, kind: cfg.kind, server_version, default_schema })

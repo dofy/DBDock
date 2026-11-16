@@ -1,13 +1,14 @@
 //! Saved connection configs (JSON on disk) and their secrets (OS keychain).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// Entries are bound to the app that wrote them, so the app never reads entries
-/// written by another build or service name: that would prompt on every read.
+/// The legacy per-field entries and the consolidated vault share this service.
+/// macOS may require authorization when legacy entries were written by another build.
 const KEYRING_SERVICE: &str = "xyz.phpz.app.dbdock";
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,7 +92,7 @@ pub struct SecretsInput {
 }
 
 /// Resolved secrets used to open a connection.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Secrets {
     pub password: Option<String>,
     pub ssh_password: Option<String>,
@@ -100,39 +101,42 @@ pub struct Secrets {
 
 const FIELDS: [&str; 3] = ["password", "ssh_password", "ssh_passphrase"];
 
-fn entry_in(service: &str, id: &str, field: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(service, &format!("{id}:{field}")).map_err(|e| anyhow::anyhow!("keychain unavailable: {e}"))
+const VAULT_ACCOUNT: &str = "__dbdock_vault_v1";
+
+trait Credentials: Send + Sync {
+    fn read(&self, account: &str) -> Result<Option<String>>;
+    fn write(&self, account: &str, value: Option<&str>) -> Result<()>;
 }
 
-fn entry(id: &str, field: &str) -> Result<keyring::Entry> {
-    entry_in(KEYRING_SERVICE, id, field)
-}
-
-fn secret_get(id: &str, field: &str) -> Option<String> {
-    entry(id, field).ok()?.get_password().ok()
-}
-
-fn secret_read(id: &str, field: &str) -> Result<Option<String>> {
-    match entry(id, field)?.get_password() {
-        Ok(value) => Ok(Some(value)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(anyhow::anyhow!("keychain read failed: {e}")),
-    }
-}
-
-fn secret_put(id: &str, field: &str, value: &Option<String>) -> Result<()> {
-    let Some(value) = value else { return Ok(()) };
-    let e = entry(id, field)?;
-    if value.is_empty() {
-        match e.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => {},
-            Err(err) => return Err(anyhow::anyhow!("keychain delete failed: {err}")),
+struct Keychain;
+impl Credentials for Keychain {
+    fn read(&self, account: &str) -> Result<Option<String>> {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, account)
+            .map_err(|e| anyhow::anyhow!("keychain unavailable: {e}"))?;
+        match entry.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(anyhow::anyhow!("keychain read failed: {e}")),
         }
-    } else {
-        e.set_password(value)
-            .map_err(|err| anyhow::anyhow!("keychain write failed: {err}"))?;
     }
-    Ok(())
+    fn write(&self, account: &str, value: Option<&str>) -> Result<()> {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, account)
+            .map_err(|e| anyhow::anyhow!("keychain unavailable: {e}"))?;
+        match value {
+            Some(value) => entry.set_password(value)
+                .map_err(|e| anyhow::anyhow!("keychain write failed: {e}")),
+            None => match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                Err(e) => Err(anyhow::anyhow!("keychain delete failed: {e}")),
+            },
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+struct Vault {
+    version: u32,
+    secrets: BTreeMap<String, Secrets>,
 }
 
 impl SecretsInput {
@@ -140,29 +144,27 @@ impl SecretsInput {
         [&self.password, &self.ssh_password, &self.ssh_passphrase]
     }
 
-    /// Prefer non-empty values from the form; fall back to the keychain.
-    pub fn resolve(&self, id: &str) -> Secrets {
-        let pick = |input: &Option<String>, field: &str| match input {
-            Some(v) if !v.is_empty() => Some(v.clone()),
-            Some(_) => None,
-            None if id.is_empty() => None,
-            None => secret_get(id, field),
-        };
-        Secrets {
-            password: pick(&self.password, FIELDS[0]),
-            ssh_password: pick(&self.ssh_password, FIELDS[1]),
-            ssh_passphrase: pick(&self.ssh_passphrase, FIELDS[2]),
+    fn apply(&self, secrets: &mut Secrets) {
+        for (value, target) in self.as_array().into_iter().zip([
+            &mut secrets.password, &mut secrets.ssh_password, &mut secrets.ssh_passphrase,
+        ]) {
+            if let Some(value) = value {
+                *target = (!value.is_empty()).then(|| value.clone());
+            }
         }
     }
-}
-
-pub fn load_secrets(id: &str) -> Secrets {
-    SecretsInput::default().resolve(id)
 }
 
 pub struct Store {
     path: PathBuf,
     lock: Mutex<()>,
+    credentials: Box<dyn Credentials>,
+}
+
+struct StoreGuard<'a> {
+    _mutex: std::sync::MutexGuard<'a, ()>,
+    #[cfg(unix)]
+    _file: std::fs::File,
 }
 
 /// Remove userinfo passwords without parsing the host list as a URL (MongoDB URIs
@@ -186,11 +188,28 @@ pub fn strip_mongo_password(cfg: &mut ConnectionConfig) -> Result<Option<String>
 
 impl Store {
     pub fn new(dir: PathBuf) -> Self {
-        Self { path: dir.join("connections.json"), lock: Mutex::new(()) }
+        Self { path: dir.join("connections.json"), lock: Mutex::new(()), credentials: Box::new(Keychain) }
+    }
+
+    fn acquire(&self) -> Result<StoreGuard<'_>> {
+        let mutex = self.lock.lock().map_err(|_| anyhow::anyhow!("connection store lock poisoned"))?;
+        #[cfg(unix)]
+        let file = {
+            use std::os::fd::AsRawFd;
+            let dir = self.path.parent().context("connection store has no parent")?;
+            std::fs::create_dir_all(dir)?;
+            let file = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(dir.join("connections.lock"))?;
+            // Closing this descriptor releases the advisory process lock.
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            file
+        };
+        Ok(StoreGuard { _mutex: mutex, #[cfg(unix)] _file: file })
     }
 
     pub fn list(&self) -> Result<Vec<ConnectionConfig>> {
-        let _guard = self.lock.lock().map_err(|_| anyhow::anyhow!("connection store lock poisoned"))?;
+        let _guard = self.acquire()?;
         self.list_locked()
     }
 
@@ -221,25 +240,102 @@ impl Store {
         Ok(())
     }
 
+    fn vault(&self) -> Result<Option<Vault>> {
+        let Some(raw) = self.credentials.read(VAULT_ACCOUNT)? else { return Ok(None) };
+        let vault: Vault = serde_json::from_str(&raw).context("invalid credential vault")?;
+        anyhow::ensure!(vault.version == 1, "unsupported credential vault version");
+        Ok(Some(vault))
+    }
+
+    fn legacy_secrets(&self, id: &str) -> Result<Secrets> {
+        let read = |field| self.credentials.read(&format!("{id}:{field}"));
+        Ok(Secrets { password: read(FIELDS[0])?, ssh_password: read(FIELDS[1])?, ssh_passphrase: read(FIELDS[2])? })
+    }
+
+    fn save_vault(&self, vault: &Vault) -> Result<()> {
+        let raw = serde_json::to_string(vault)?;
+        self.credentials.write(VAULT_ACCOUNT, Some(&raw))?;
+        anyhow::ensure!(self.vault()?.as_ref() == Some(vault), "credential vault verification failed");
+        Ok(())
+    }
+
+    /// Called under the store lock. Legacy entries remain untouched even on success.
+    fn migrate_vault(&self, configs: &[ConnectionConfig], ids: Option<&[String]>) -> Result<Vault> {
+        let mut vault = self.vault()?.unwrap_or_else(|| Vault { version: 1, secrets: BTreeMap::new() });
+        let mut changed = false;
+        for config in configs.iter().filter(|c| ids.is_none_or(|ids| ids.contains(&c.id))) {
+            if !vault.secrets.contains_key(&config.id) {
+                vault.secrets.insert(config.id.clone(), self.legacy_secrets(&config.id)?);
+                changed = true;
+            }
+        }
+        if changed { self.save_vault(&vault)?; }
+        Ok(vault)
+    }
+
+    pub fn resolve_secrets(&self, id: &str, input: &SecretsInput) -> Result<Secrets> {
+        let _guard = self.acquire()?;
+        let needs_saved = !id.is_empty() && input.as_array().iter().any(|value| value.is_none());
+        let mut secrets = if !needs_saved { Secrets::default() } else if let Some(vault) = self.vault()? {
+            match vault.secrets.get(id) { Some(secrets) => secrets.clone(), None => self.legacy_secrets(id)? }
+        } else { self.legacy_secrets(id)? };
+        input.apply(&mut secrets);
+        Ok(secrets)
+    }
+
+    /// Take a consistent snapshot while preventing concurrent credential updates.
+    pub fn export_snapshot(&self, include_secrets: bool, ids: Option<&[String]>) -> Result<(Vec<ConnectionConfig>, BTreeMap<String, Secrets>)> {
+        let _guard = self.acquire()?;
+        let configs = self.list_locked()?;
+        let secrets = if include_secrets { self.migrate_vault(&configs, ids)?.secrets } else { BTreeMap::new() };
+        Ok((configs, secrets))
+    }
+
     fn write_with_secrets(&self, list: &[ConnectionConfig], updates: &[(String, SecretsInput)]) -> Result<()> {
+        if !updates.iter().any(|(_, input)| input.as_array().iter().any(|value| value.is_some())) {
+            return self.write(list);
+        }
+        if let Some(mut vault) = self.vault()? {
+            let previous = serde_json::to_string(&vault)?;
+            for (id, input) in updates {
+                if !input.as_array().iter().any(|value| value.is_some()) { continue; }
+                if !vault.secrets.contains_key(id) {
+                    vault.secrets.insert(id.clone(), self.legacy_secrets(id)?);
+                }
+                input.apply(vault.secrets.entry(id.clone()).or_default());
+            }
+            let result = self.save_vault(&vault).and_then(|()| self.write(list));
+            if let Err(error) = result {
+                if let Err(rollback) = self.credentials.write(VAULT_ACCOUNT, Some(&previous)) {
+                    anyhow::bail!("{error:#}; Keychain rollback failed: {rollback}");
+                }
+                return Err(error);
+            }
+            return Ok(());
+        }
         let mut previous = Vec::new();
-        for (id, secrets) in updates {
-            for (field, value) in FIELDS.iter().zip(secrets.as_array()) {
-                if value.is_some() && !previous.iter().any(|(i, f, _): &(String, &str, Option<String>)| i == id && f == field) {
-                    previous.push((id.clone(), *field, secret_read(id, field)?));
+        for (id, input) in updates {
+            for (field, value) in FIELDS.iter().zip(input.as_array()) {
+                let account = format!("{id}:{field}");
+                if value.is_some() && !previous.iter().any(|(a, _): &(String, Option<String>)| *a == account) {
+                    previous.push((account.clone(), self.credentials.read(&account)?));
                 }
             }
         }
         let result = (|| -> Result<()> {
-            for (id, secrets) in updates {
-                for (field, value) in FIELDS.iter().zip(secrets.as_array()) { secret_put(id, field, value)?; }
+            for (id, input) in updates {
+                for (field, value) in FIELDS.iter().zip(input.as_array()) {
+                    if let Some(value) = value {
+                        self.credentials.write(&format!("{id}:{field}"), (!value.is_empty()).then_some(value.as_str()))?;
+                    }
+                }
             }
             self.write(list)
         })();
         if let Err(error) = result {
             let mut rollback_errors = Vec::new();
-            for (id, field, old) in previous.into_iter().rev() {
-                if let Err(e) = secret_put(&id, field, &Some(old.unwrap_or_default())) { rollback_errors.push(e.to_string()); }
+            for (account, old) in previous.into_iter().rev() {
+                if let Err(e) = self.credentials.write(&account, old.as_deref()) { rollback_errors.push(e.to_string()); }
             }
             if !rollback_errors.is_empty() { anyhow::bail!("{error:#}; Keychain rollback failed: {}", rollback_errors.join("; ")); }
             return Err(error);
@@ -255,7 +351,7 @@ impl Store {
     }
 
     pub fn save(&self, mut cfg: ConnectionConfig, secrets: &SecretsInput) -> Result<ConnectionConfig> {
-        let _guard = self.lock.lock().map_err(|_| anyhow::anyhow!("connection store lock poisoned"))?;
+        let _guard = self.acquire()?;
         if cfg.id.is_empty() {
             cfg.id = uuid::Uuid::new_v4().to_string();
         }
@@ -280,7 +376,7 @@ impl Store {
     }
 
     pub fn upsert_with_secrets(&self, items: Vec<(ConnectionConfig, SecretsInput)>) -> Result<(usize, usize)> {
-        let _guard = self.lock.lock().map_err(|_| anyhow::anyhow!("connection store lock poisoned"))?;
+        let _guard = self.acquire()?;
         let mut list = self.list_locked()?;
         let (mut added, mut updated) = (0, 0);
         let mut updates = Vec::new();
@@ -306,7 +402,7 @@ impl Store {
 
     /// Apply `f` to every connection's group; `Some(new)` replaces it. Returns how many changed.
     pub fn update_groups(&self, f: impl Fn(&str) -> Option<String>) -> Result<usize> {
-        let _guard = self.lock.lock().map_err(|_| anyhow::anyhow!("connection store lock poisoned"))?;
+        let _guard = self.acquire()?;
         let mut list = self.list_locked()?;
         let mut n = 0;
         for c in list.iter_mut() {
@@ -322,7 +418,7 @@ impl Store {
     }
 
     pub fn move_to_group(&self, ids: &[String], group: &str) -> Result<usize> {
-        let _guard = self.lock.lock().map_err(|_| anyhow::anyhow!("connection store lock poisoned"))?;
+        let _guard = self.acquire()?;
         let group = crate::groups::normalize(group);
         let mut list = self.list_locked()?;
         let mut n = 0;
@@ -335,7 +431,7 @@ impl Store {
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {
-        let _guard = self.lock.lock().map_err(|_| anyhow::anyhow!("connection store lock poisoned"))?;
+        let _guard = self.acquire()?;
         let mut list = self.list_locked()?;
         list.retain(|c| c.id != id);
         self.write_with_secrets(&list, &[(id.to_string(), SecretsInput {
@@ -356,6 +452,158 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    #[derive(Default)]
+    struct MemoryCredentials {
+        values: Mutex<BTreeMap<String, String>>,
+        reads: Mutex<Vec<String>>,
+        fail_read: Mutex<Option<String>>,
+        fail_write: Mutex<bool>,
+    }
+
+    impl Credentials for Arc<MemoryCredentials> {
+        fn read(&self, account: &str) -> Result<Option<String>> {
+            self.reads.lock().unwrap().push(account.to_string());
+            if self.fail_read.lock().unwrap().as_deref() == Some(account) { anyhow::bail!("access denied"); }
+            Ok(self.values.lock().unwrap().get(account).cloned())
+        }
+        fn write(&self, account: &str, value: Option<&str>) -> Result<()> {
+            if *self.fail_write.lock().unwrap() { anyhow::bail!("write denied"); }
+            let mut values = self.values.lock().unwrap();
+            match value { Some(value) => { values.insert(account.into(), value.into()); }, None => { values.remove(account); } }
+            Ok(())
+        }
+    }
+
+    fn memory_store() -> (Store, Arc<MemoryCredentials>, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("dbdock-vault-{}", uuid::Uuid::new_v4()));
+        let credentials = Arc::new(MemoryCredentials::default());
+        let store = Store { path: dir.join("connections.json"), lock: Mutex::new(()), credentials: Box::new(credentials.clone()) };
+        let configs = ["one", "two"].into_iter().map(|id| serde_json::from_value(serde_json::json!({"id":id,"name":id,"kind":"postgres"})).unwrap()).collect();
+        store.upsert_many(configs).unwrap();
+        credentials.values.lock().unwrap().extend([
+            ("one:password".into(), "first".into()),
+            ("one:ssh_password".into(), "ssh".into()),
+            ("two:password".into(), "second".into()),
+        ]);
+        (store, credentials, dir)
+    }
+
+    #[test]
+    fn migration_is_scoped_and_subsequent_reads_use_vault() {
+        let (store, credentials, dir) = memory_store();
+        let (_, snapshot) = store.export_snapshot(true, Some(&["one".into()])).unwrap();
+        assert_eq!(snapshot["one"].password.as_deref(), Some("first"));
+        assert_eq!(snapshot["one"].ssh_password.as_deref(), Some("ssh"));
+        assert!(!credentials.reads.lock().unwrap().iter().any(|s| s.starts_with("two:")));
+        credentials.reads.lock().unwrap().clear();
+        store.export_snapshot(true, Some(&["one".into()])).unwrap();
+        assert!(!credentials.reads.lock().unwrap().iter().any(|s| s.starts_with("one:")));
+        assert_eq!(credentials.values.lock().unwrap().get("one:password").unwrap(), "first");
+        let (_, snapshot) = store.export_snapshot(true, None).unwrap();
+        assert_eq!(snapshot["two"].password.as_deref(), Some("second"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn migration_failure_preserves_legacy_and_retry_succeeds() {
+        let (store, credentials, dir) = memory_store();
+        *credentials.fail_read.lock().unwrap() = Some("two:password".into());
+        assert!(store.export_snapshot(true, None).is_err());
+        assert!(!credentials.values.lock().unwrap().contains_key(VAULT_ACCOUNT));
+        assert_eq!(credentials.values.lock().unwrap().get("one:password").unwrap(), "first");
+        *credentials.fail_read.lock().unwrap() = None;
+        *credentials.fail_write.lock().unwrap() = true;
+        assert!(store.export_snapshot(true, None).is_err());
+        assert!(!credentials.values.lock().unwrap().contains_key(VAULT_ACCOUNT));
+        *credentials.fail_write.lock().unwrap() = false;
+        let (_, secrets) = store.export_snapshot(true, None).unwrap();
+        assert_eq!(secrets["one"].password.as_deref(), Some("first"));
+        assert_eq!(secrets["two"].password.as_deref(), Some("second"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn updates_and_deletion_do_not_resurrect_legacy_values() {
+        let (store, credentials, dir) = memory_store();
+        store.export_snapshot(true, Some(&["one".into()])).unwrap();
+        let config = store.get("one").unwrap();
+        store.save(config, &SecretsInput { password: Some("updated".into()), ..Default::default() }).unwrap();
+        let got = store.resolve_secrets("one", &SecretsInput::default()).unwrap();
+        assert_eq!(got.password.as_deref(), Some("updated"));
+        assert_eq!(got.ssh_password.as_deref(), Some("ssh"));
+        store.delete("one").unwrap();
+        assert_eq!(store.resolve_secrets("one", &SecretsInput::default()).unwrap(), Secrets::default());
+        assert_eq!(credentials.values.lock().unwrap().get("one:password").unwrap(), "first");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn incremental_migration_failure_keeps_existing_vault_unchanged() {
+        let (store, credentials, dir) = memory_store();
+        store.export_snapshot(true, Some(&["one".into()])).unwrap();
+        let previous = credentials.values.lock().unwrap()[VAULT_ACCOUNT].clone();
+        *credentials.fail_read.lock().unwrap() = Some("two:password".into());
+        assert!(store.export_snapshot(true, None).is_err());
+        assert_eq!(credentials.values.lock().unwrap()[VAULT_ACCOUNT], previous);
+        assert_eq!(store.resolve_secrets("one", &SecretsInput::default()).unwrap().password.as_deref(), Some("first"));
+        *credentials.fail_read.lock().unwrap() = None;
+        assert_eq!(store.export_snapshot(true, None).unwrap().1["two"].password.as_deref(), Some("second"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn vault_update_rolls_back_if_config_write_fails() {
+        let (mut store, credentials, dir) = memory_store();
+        store.export_snapshot(true, None).unwrap();
+        let configs = store.list().unwrap();
+        let previous = credentials.values.lock().unwrap()[VAULT_ACCOUNT].clone();
+        // A directory at the target path makes the atomic rename fail.
+        store.path = dir.join("unwritable-target");
+        std::fs::create_dir(&store.path).unwrap();
+        let result = store.write_with_secrets(&configs, &[("one".into(), SecretsInput { password: Some("new".into()), ..Default::default() })]);
+        assert!(result.is_err());
+        assert_eq!(credentials.values.lock().unwrap()[VAULT_ACCOUNT], previous);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn malformed_vault_never_falls_back_to_stale_legacy_data() {
+        let (store, credentials, dir) = memory_store();
+        credentials.values.lock().unwrap().insert(VAULT_ACCOUNT.into(), "invalid".into());
+        assert!(store.resolve_secrets("one", &SecretsInput::default()).is_err());
+        assert!(store.export_snapshot(true, None).is_err());
+        assert_eq!(credentials.values.lock().unwrap().get("one:password").unwrap(), "first");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn separate_stores_serialize_credential_updates() {
+        let (store, credentials, dir) = memory_store();
+        store.export_snapshot(true, None).unwrap();
+        let other = Store { path: store.path.clone(), lock: Mutex::new(()), credentials: Box::new(credentials.clone()) };
+        let first = std::thread::spawn(move || {
+            for i in 0..20 {
+                let cfg = store.get("one").unwrap();
+                store.save(cfg, &SecretsInput { password: Some(format!("first-{i}")), ..Default::default() }).unwrap();
+            }
+            store
+        });
+        let second = std::thread::spawn(move || {
+            for i in 0..20 {
+                let cfg = other.get("two").unwrap();
+                other.save(cfg, &SecretsInput { password: Some(format!("second-{i}")), ..Default::default() }).unwrap();
+            }
+        });
+        let store = first.join().unwrap();
+        second.join().unwrap();
+        let (_, secrets) = store.export_snapshot(true, None).unwrap();
+        assert_eq!(secrets["one"].password.as_deref(), Some("first-19"));
+        assert_eq!(secrets["two"].password.as_deref(), Some("second-19"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn strips_password_from_mongo_multi_host_uri() {

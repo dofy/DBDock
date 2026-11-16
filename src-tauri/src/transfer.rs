@@ -17,7 +17,7 @@ use base64::Engine;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
-use crate::store::{load_secrets, ConnectionConfig, SecretsInput, Store};
+use crate::store::{ConnectionConfig, Secrets, SecretsInput, Store};
 
 const FORMAT: &str = "dbdock.connections";
 const VERSION: u32 = 1;
@@ -175,22 +175,8 @@ pub fn export(
     include_secrets: bool,
     passphrase: Option<String>,
 ) -> Result<usize> {
-    let items: Vec<ExportItem> = store
-        .list()?
-        .into_iter()
-        .filter(|c| ids.as_ref().is_none_or(|ids| ids.contains(&c.id)))
-        .map(|config| {
-            let secrets = include_secrets.then(|| {
-                let s = load_secrets(&config.id);
-                ExportSecrets {
-                    password: nonempty(s.password),
-                    ssh_password: nonempty(s.ssh_password),
-                    ssh_passphrase: nonempty(s.ssh_passphrase),
-                }
-            });
-            ExportItem { config, secrets }
-        })
-        .collect();
+    let (configs, secrets) = store.export_snapshot(include_secrets, ids.as_deref()).context("could not read credentials for export")?;
+    let items = export_items(configs, ids.as_deref(), include_secrets, |id| Ok(secrets.get(id).cloned().unwrap_or_default()))?;
     let n = items.len();
     let env = match passphrase.filter(|p| !p.is_empty()) {
         Some(p) => encrypt(&items, &p)?,
@@ -207,6 +193,29 @@ pub fn export(
     };
     write_private(path, &serde_json::to_string_pretty(&env)?)?;
     Ok(n)
+}
+
+fn export_items(
+    configs: Vec<ConnectionConfig>,
+    ids: Option<&[String]>,
+    include_secrets: bool,
+    read: impl Fn(&str) -> Result<Secrets>,
+) -> Result<Vec<ExportItem>> {
+    configs
+        .into_iter()
+        .filter(|c| ids.is_none_or(|ids| ids.contains(&c.id)))
+        .map(|config| {
+            let secrets = if include_secrets {
+                let s = read(&config.id).context("could not read credentials for export")?;
+                Some(ExportSecrets {
+                    password: nonempty(s.password),
+                    ssh_password: nonempty(s.ssh_password),
+                    ssh_passphrase: nonempty(s.ssh_passphrase),
+                })
+            } else { None };
+            Ok(ExportItem { config, secrets })
+        })
+        .collect()
 }
 
 /// Owner-only permissions: the file may hold passwords.
@@ -280,5 +289,16 @@ mod tests {
         assert!(decrypt(env, Some("wrong")).unwrap_err().to_string().contains("wrong passphrase"));
         let env: Envelope = serde_json::from_str(&text).unwrap();
         assert!(decrypt(env, None).is_err());
+    }
+
+    #[test]
+    fn export_fails_if_a_credential_cannot_be_read() {
+        let configs = vec![item("a").config];
+        let error = export_items(configs.clone(), None, true, |_| anyhow::bail!("access denied"))
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("access denied"));
+        let without_secrets = export_items(configs, None, false, |_| panic!("unexpected credential read"))
+            .unwrap();
+        assert!(without_secrets[0].secrets.is_none());
     }
 }
