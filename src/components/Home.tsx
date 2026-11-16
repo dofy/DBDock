@@ -415,10 +415,10 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                           {c.ssh.host}
                         </div>
                       )}
-                      {(() => { const last = latestHealth(c, health); if (!last) return null; const checked = new Date(last.checkedAt).toLocaleString(document.documentElement.lang || undefined); return (
-                        <div className={`card-health ${last.status}`} title={tf("Last checked: {time}", { time: checked })}>
+                      {(() => { const last = latestHealth(c, health); if (!last) return null; const date = new Date(last.checkedAt); const locale = document.documentElement.lang || undefined; const checked = date.toLocaleString(locale); const shortTime = date.toLocaleString(locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }); const label = `${t(last.status === "ok" ? "Connected" : "Failed")} · ${tf("Last checked: {time}", { time: checked })}`; return (
+                        <div className={`card-health ${last.status}`} role="img" title={label} aria-label={label}>
                           {last.status === "ok" ? <CheckCircle2 size={12} aria-hidden="true" /> : <AlertCircle size={12} aria-hidden="true" />}
-                          <span>{t(last.status === "ok" ? "Connected" : "Failed")}</span><span className="card-health-time">{tf("Last checked: {time}", { time: checked })}</span>
+                          <span className="card-health-time" aria-hidden="true">{shortTime}</span>
                         </div>
                       ); })()}
                     </div>
@@ -581,7 +581,10 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
         />
       )}
       {dialog?.kind === "ssh-hosts" && <SshHostsDialog conns={conns} onClose={() => setDialog(null)} />}
-      {dialog?.kind === "health" && <HealthDialog key={dialog.sequence} connections={dialog.connections} onClose={() => setDialog(null)} onEdit={onEdit} onDelete={async (c) => {
+      {dialog?.kind === "health" && <HealthDialog key={dialog.sequence} connections={dialog.connections} groups={groups} onClose={() => setDialog(null)} onSaved={(c) => {
+        toast("ok", tf("Saved {name}", { name: c.name }));
+        void reload();
+      }} onDelete={async (c) => {
         await api.deleteConnections([c.id]);
         clearHealth([c.id]);
         setPicked((current) => { const next = new Set(current); next.delete(c.id); return next; });

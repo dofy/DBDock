@@ -3,15 +3,17 @@ import { Activity, CheckCircle2, Circle, AlertCircle, LoaderCircle, X } from "lu
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, ENV_LABEL, errText, type ConnectionConfig } from "../api";
 import { configurationIssues, summarizeHealth, type ConnectionCheckResult } from "../connectionHealth";
-import { beginHealthCheck, finishHealthCheck } from "../healthHistory";
+import { beginHealthCheck, clearHealth, finishHealthCheck } from "../healthHistory";
 import { healthCheckQueue, HEALTH_CHECK_CONCURRENCY } from "../healthCheckQueue";
 import { t, tf } from "../i18n";
 import { DbIcon } from "./DbIcon";
+import { ConnectionForm } from "./ConnectionForm";
 
 type Result = ConnectionCheckResult;
-export function HealthDialog({ connections, onClose, onEdit, onDelete }: { connections: ConnectionConfig[]; onClose: () => void; onEdit: (c: ConnectionConfig) => void; onDelete: (c: ConnectionConfig) => Promise<void> }) {
+export function HealthDialog({ connections, groups, onClose, onSaved, onDelete }: { connections: ConnectionConfig[]; groups: string[]; onClose: () => void; onSaved: (c: ConnectionConfig) => void; onDelete: (c: ConnectionConfig) => Promise<void> }) {
   const [items, setItems] = useState(connections);
   const [results, setResults] = useState<Record<string, Result>>({});
+  const [editing, setEditing] = useState<ConnectionConfig | null>(null);
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -22,10 +24,10 @@ export function HealthDialog({ connections, onClose, onEdit, onDelete }: { conne
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { controller.current?.abort(); mounted.current = false; }; }, []);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !editing) onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, editing]);
   const issues = items.map(configurationIssues);
   const testable = items.filter((_, i) => issues[i].length === 0);
   const summary = summarizeHealth(items.map((item) => item.id), results);
@@ -75,7 +77,8 @@ export function HealthDialog({ connections, onClose, onEdit, onDelete }: { conne
       if (mounted.current) setDeleting(false);
     }
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}>
+  return <>
+  <div className="modal-backdrop" onMouseDown={onClose} hidden={!!editing}>
     <div className="modal health-dialog" role="dialog" aria-modal="true" aria-labelledby="health-title" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><h2 id="health-title"><Activity size={17} />{t("Connection health")}</h2><button className="icon-btn" onClick={onClose} aria-label={t("Close")}><X size={14} /></button></div>
       <p className="muted">{tf("Checking {count} connection(s)", { count: items.length })}</p>
@@ -95,12 +98,20 @@ export function HealthDialog({ connections, onClose, onEdit, onDelete }: { conne
             <div className={`health-result ${r?.status ?? ""}`}>
               {r?.status === "running" ? <><LoaderCircle size={14} className="health-spinner" />{t("Testing")}</> : r?.status === "ok" ? <><CheckCircle2 size={14} />{t("Connected")}</> : r?.status === "error" ? <><AlertCircle size={14} />{t("Failed")}</> : <><Circle size={14} />{t(r?.status === "waiting" && running ? "Waiting" : "Not tested")}</>}
             </div>
-            <button disabled={running || deleting} onClick={() => { onClose(); onEdit(c); }}>{t("Edit")}</button>
+            <button disabled={running || deleting} onClick={() => setEditing(c)}>{t("Edit")}</button>
             <button className="danger" disabled={running || deleting} onClick={() => void remove(c)}>{t("Delete")}</button>
           </div>;
         })}
       </div>
       <div className="actions"><span className="spacer" /><button onClick={onClose}>{t("Close")}</button>{running ? <button onClick={stop} disabled={stopping}>{t(stopping ? "Stopping…" : "Stop")}</button> : <button className="primary" disabled={!testable.length || deleting} onClick={() => void run()}>{tf("Batch test {count} connection(s)", { count: testable.length })}</button>}</div>
     </div>
-  </div>;
+  </div>
+  {editing && <ConnectionForm initial={editing} groups={groups} onClose={() => setEditing(null)} onSaved={(saved) => {
+    clearHealth([saved.id]);
+    setItems((current) => current.map((item) => item.id === saved.id ? saved : item));
+    setResults((current) => { const next = { ...current }; delete next[saved.id]; return next; });
+    setEditing(null);
+    onSaved(saved);
+  }} />}
+  </>;
 }
