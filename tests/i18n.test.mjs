@@ -15,6 +15,9 @@ test('dynamic messages interpolate without modifying user data', () => {
   updateSettings({ language: 'zh-CN' });
   assert.equal(tf('Delete connection "{name}" and its saved passwords?', { name: 'prod {name}' }), '删除连接“prod {name}”及其已保存的密码？');
   assert.equal(t('SSH login OK'), 'SSH 登录成功');
+  assert.equal(tf('Release to move to {group}', { group: 'Demo' }), '松开后移动到 Demo');
+  assert.equal(t('Custom connection color'), '自定义连接颜色');
+  assert.equal(tf('Delete connection "{name}"? The database is not deleted. Legacy Keychain copies may remain.', { name: 'demo' }), '删除连接“demo”？数据库本身不会被删除，旧版钥匙串副本可能仍会保留。');
   updateSettings({ language: 'ja' });
   assert.equal(tf('Saved {name}', { name: '顧客' }), '顧客 を保存しました');
 });

@@ -17,6 +17,7 @@ import { X } from "lucide-react";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { updateSettings, useDarkMode, useSettings } from "./settings";
 import { resolveLocale } from "./i18n";
+import { clearHealth } from "./healthHistory";
 
 interface Open {
   conn: ConnectionConfig;
@@ -176,6 +177,7 @@ function Shell() {
           groups={groups}
           onClose={() => setEditing(null)}
           onSaved={(c) => {
+            clearHealth([c.id]);
             setEditing(null);
             toast("ok", tf("Saved {name}", { name: c.name }));
             void reload();

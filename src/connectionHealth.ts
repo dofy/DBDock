@@ -1,5 +1,15 @@
 import type { ConnectionConfig } from "./api";
 
+export type ConnectionCheckResult = { status: "waiting" | "running" | "ok" | "error"; error?: string };
+
+/** Count only results belonging to the currently displayed connections. */
+export function summarizeHealth(ids: readonly string[], results: Readonly<Record<string, ConnectionCheckResult>>) {
+  const visible = ids.map((id) => results[id]).filter((result): result is ConnectionCheckResult => !!result);
+  const connected = visible.filter((result) => result.status === "ok").length;
+  const failed = visible.filter((result) => result.status === "error").length;
+  return { tested: connected + failed, connected, failed };
+}
+
 /** Only flag settings that cannot be used; blank host/port use app defaults. */
 export function configurationIssues(c: ConnectionConfig): string[] {
   const issues: string[] = [];

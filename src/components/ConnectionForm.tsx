@@ -142,9 +142,9 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
           <label>{t("Name")}</label>
           <div className="row">
             <input value={c.name} onChange={(e) => set("name", e.target.value)} placeholder={t("optional")} />
-            <div className="colors">
+            <div className="colors" role="group" aria-label={t("Connection color")}>
               {COLORS.map((col) => (
-                <button key={col} className={`swatch ${c.color === col ? "on" : ""}`} style={{ background: col }} onClick={() => set("color", col)} />
+                <button key={col} className={`swatch ${c.color === col ? "on" : ""}`} style={{ background: col }} title={`${t("Connection color")} ${col}`} aria-label={`${t("Connection color")} ${col}`} onClick={() => set("color", col)} />
               ))}
             </div>
           </div>

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { configurationIssues } from '../src/connectionHealth.ts';
+import { configurationIssues, summarizeHealth } from '../src/connectionHealth.ts';
 
 const config = (overrides = {}) => ({ kind: 'postgres', host: '', port: 0, redisDb: 0, file: '', cfAccountId: '', database: '', ssh: { enabled: false, host: '', port: 22 }, ...overrides });
 
@@ -22,4 +22,11 @@ test('reports invalid ports, Redis index, and incompatible SSH URI', () => {
   assert.deepEqual(configurationIssues(config({ kind: 'mongodb', host: 'mongodb://example.com', ssh: { enabled: true, host: '', port: -1 } })), [
     'SSH host is required', 'SSH port must be between 1 and 65535, or empty for default', 'With SSH, enter the MongoDB host and port separately',
   ]);
+});
+
+test('summary counts only the current scope and excludes pending checks', () => {
+  const results = { a: { status: 'ok' }, b: { status: 'error' }, old: { status: 'error' }, waiting: { status: 'waiting' } };
+  assert.deepEqual(summarizeHealth(['a', 'b', 'waiting'], results), { tested: 2, connected: 1, failed: 1 });
+  assert.deepEqual(summarizeHealth(['a'], results), { tested: 1, connected: 1, failed: 0 });
+  assert.deepEqual(summarizeHealth([], results), { tested: 0, connected: 0, failed: 0 });
 });

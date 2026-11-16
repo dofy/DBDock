@@ -629,5 +629,23 @@ mod tests {
         assert_eq!(store.list().unwrap().len(), 20);
         std::fs::remove_dir_all(dir).unwrap();
     }
+
+    #[test]
+    fn move_connections_updates_only_selected_items_and_persists() {
+        let dir = std::env::temp_dir().join(format!("dbdock-move-{}", uuid::Uuid::new_v4()));
+        let store = Store::new(dir.clone());
+        let configs = ["one", "two", "other"].into_iter().map(|id| {
+            serde_json::from_value(serde_json::json!({"id": id, "name": id, "kind": "sqlite", "group": "Source"})).unwrap()
+        }).collect();
+        store.upsert_many(configs).unwrap();
+        assert_eq!(store.move_to_group(&["one".into(), "two".into()], " Target / Nested ").unwrap(), 2);
+        let reopened = Store::new(dir.clone());
+        assert_eq!(reopened.get("one").unwrap().group, "Target / Nested");
+        assert_eq!(reopened.get("two").unwrap().group, "Target / Nested");
+        assert_eq!(reopened.get("other").unwrap().group, "Source");
+        assert_eq!(reopened.move_to_group(&["one".into()], "").unwrap(), 1);
+        assert_eq!(store.get("one").unwrap().group, "");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
 

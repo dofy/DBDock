@@ -1,5 +1,5 @@
 import { t, tf } from "../i18n";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, ENV_LABEL, ENVS, errText, type ConnectionConfig } from "../api";
 import { DbIcon } from "./DbIcon";
@@ -9,7 +9,8 @@ import { TransferDialog } from "./TransferDialog";
 import { ImportDialog, type ImportReport } from "./ImportDialog";
 import { SshHostsDialog } from "./SshHostsDialog";
 import { HealthDialog } from "./HealthDialog";
-import { Activity, Check, Database, FileUp, Folder, FolderInput, FolderPlus, Inbox, ListChecks, MoreHorizontal, PenLine, Pencil, Plug, Plus, SquareCheck, SquareMinus, Trash2, X } from "lucide-react";
+import { clearAllHealth, clearHealth, healthSnapshot, latestHealth, subscribeHealth } from "../healthHistory";
+import { Activity, AlertCircle, Check, CheckCircle2, Database, FileUp, Folder, FolderInput, FolderPlus, Inbox, ListChecks, MoreHorizontal, PenLine, Pencil, Plug, Plus, SquareCheck, SquareMinus, Trash2, X } from "lucide-react";
 
 const SEP = " / ";
 /** null = all connections, "" = ungrouped, otherwise a group path (includes subgroups). */
@@ -39,7 +40,7 @@ type Dialog =
   | { kind: "export"; ids?: string[] }
   | { kind: "import"; paste?: boolean }
   | { kind: "ssh-hosts" }
-  | { kind: "health"; connections: ConnectionConfig[] };
+  | { kind: "health"; connections: ConnectionConfig[]; sequence: number };
 
 export interface MenuAction {
   id: string;
@@ -59,6 +60,7 @@ interface Props {
 
 export function Home({ conns, groups, reload, connecting, onConnect, onEdit, action }: Props) {
   const toast = useToast();
+  const health = useSyncExternalStore(subscribeHealth, healthSnapshot);
   const [query, setQuery] = useState("");
   const [envFilter, setEnvFilter] = useState<string | null>(null);
   const [sel, setSel] = useState<GroupSel>(null);
@@ -67,7 +69,10 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | { group: string; x: number; y: number } | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const draggedIds = useRef<string[] | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const healthSequence = useRef(0);
+  const openHealth = (connections: ConnectionConfig[]) => setDialog({ kind: "health", connections, sequence: ++healthSequence.current });
 
   // Native menu actions that belong to the home screen.
   useEffect(() => {
@@ -160,36 +165,45 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
     const names = conns.filter((c) => ids.includes(c.id)).map((c) => c.name);
     const msg = ids.length === 1 ? tf('Delete connection "{name}" and its saved passwords?', { name: names[0] }) : `${tf("Delete {count} connections and their saved passwords?", { count: ids.length })}\n\n${names.join(", ")}`;
     if (!(await ask(msg, { title: t("Delete"), kind: "warning" }))) return;
-    await run(() => api.deleteConnections(ids), ids.length === 1 ? tf("Deleted {name}", { name: names[0] }) : tf("Deleted {count} connections", { count: ids.length }));
+    await run(async () => { await api.deleteConnections(ids); clearHealth(ids); }, ids.length === 1 ? tf("Deleted {name}", { name: names[0] }) : tf("Deleted {count} connections", { count: ids.length }));
     setPicked(new Set());
-  };
-
-  const dropIds = (e: React.DragEvent): string[] => {
-    try {
-      return JSON.parse(e.dataTransfer.getData("application/x-dbdock-ids"));
-    } catch {
-      return [];
-    }
   };
 
   const dropProps = (group: string) => ({
     onDragOver: (e: React.DragEvent) => {
-      if (e.dataTransfer.types.includes("application/x-dbdock-ids")) {
+      if (draggedIds.current?.length) {
         e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
         setDropTarget(group);
       }
     },
-    onDragLeave: () => setDropTarget((t) => (t === group ? null : t)),
+    onDragLeave: (e: React.DragEvent) => {
+      if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+      setDropTarget((t) => (t === group ? null : t));
+    },
     onDrop: (e: React.DragEvent) => {
+      const ids = draggedIds.current;
+      if (!ids?.length) return;
       e.preventDefault();
+      e.stopPropagation();
+      draggedIds.current = null;
       setDropTarget(null);
-      const ids = dropIds(e);
-      if (ids.length) void run(() => api.moveConnections(ids, group), tf("Moved {count} to {group}", { count: ids.length, group: group || t("Ungrouped") })).then(() => setPicked(new Set()));
+      void (async () => {
+        try {
+          const moved = await api.moveConnections(ids, group);
+          await reload();
+          setPicked(new Set());
+          toast("ok", tf("Moved {count} to {group}", { count: moved, group: group || t("Ungrouped") }));
+        } catch (error) {
+          toast("error", errText(error));
+        }
+      })();
     },
   });
 
   const imported = (r: ImportReport) => {
     setDialog(null);
+    clearAllHealth();
     const parts = [tf("{count} new", { count: r.added }), tf("{count} updated", { count: r.updated })];
     if (r.withSecrets) parts.push(tf("{count} with passwords", { count: r.withSecrets }));
     let msg = tf("Imported from {source}: {details}", { source: r.source.split(" · ")[0], details: parts.join(", ") });
@@ -256,6 +270,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                 {leaf(g)}
               </span>
               <span className="count">{groupCount(g)}</span>
+              <span className="drop-mark" aria-hidden="true">{t("Drop here")}</span>
               <button
                 className="icon-btn more"
                 title={t("Group actions")}
@@ -273,9 +288,10 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
             <span className="tree-icon"><Inbox size={14} aria-hidden="true" /></span>
             <span className="tree-name muted">{t("Ungrouped")}</span>
             <span className="count">{ungrouped}</span>
+            <span className="drop-mark" aria-hidden="true">{t("Drop here")}</span>
           </li>
         </ul>
-        <p className="hint side-hint">{t("Drag connections onto a group to move them. Right-click a group for more.")}</p>
+        <p className="hint side-hint" aria-live="polite">{dropTarget === null ? t("Drag connections onto a group to move them. Right-click a group for more.") : tf("Release to move to {group}", { group: dropTarget || t("Ungrouped") })}</p>
       </aside>
 
       <section className="home-main">
@@ -283,7 +299,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           <h1 title={title}>{title}</h1>
           <span className="muted">{shown.length}</span>
           <span className="spacer" />
-          <button disabled={!shown.length} onClick={() => setDialog({ kind: "health", connections: [...shown] })}><Activity size={14} />{tf("Batch check shown ({count})", { count: shown.length })}</button>
+          <button disabled={!shown.length} onClick={() => openHealth([...shown])}><Activity size={14} />{tf("Batch check shown ({count})", { count: shown.length })}</button>
           <button className="primary" onClick={() => onEdit({ newInGroup: sel ?? "" })}>
             <Plus size={14} />{t("New connection")} </button>
         </div>
@@ -315,7 +331,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                  {t("Select none")} </button>
             )}
             <span className="spacer" />
-            <button onClick={() => setDialog({ kind: "health", connections: conns.filter((c) => picked.has(c.id)) })}><Activity size={14} />{tf("Check selected ({count})", { count: picked.size })}</button>
+            <button onClick={() => openHealth(conns.filter((c) => picked.has(c.id)))}><Activity size={14} />{tf("Check selected ({count})", { count: picked.size })}</button>
             <button onClick={() => setDialog({ kind: "move", ids: pickedIds })}><FolderInput size={14} />{t("Move to group…")}</button>
             <button onClick={() => setDialog({ kind: "export", ids: pickedIds })}><FileUp size={14} />{t("Export…")}</button>
             <button className="danger" onClick={() => void deleteConnections(pickedIds)}>
@@ -348,9 +364,12 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                     draggable
                     onDragStart={(e) => {
                       const ids = picked.has(c.id) ? pickedIds : [c.id];
-                      e.dataTransfer.setData("application/x-dbdock-ids", JSON.stringify(ids));
+                      draggedIds.current = ids;
+                      // WebKit accepts text/plain reliably; IDs remain in memory only.
+                      e.dataTransfer.setData("text/plain", "DBDock connections");
                       e.dataTransfer.effectAllowed = "move";
                     }}
+                    onDragEnd={() => { draggedIds.current = null; setDropTarget(null); }}
                     onClick={(e) => {
                       if (e.metaKey || e.ctrlKey || e.shiftKey || picked.size) togglePick(c.id);
                     }}
@@ -360,7 +379,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                       setMenu({ id: c.id, x: e.clientX, y: e.clientY });
                     }}
                   >
-                    <span className="card-color" style={{ background: c.color }} />
+                    <span className="card-color" style={{ background: c.color }} title={t("Custom connection color")} />
                     <button
                       className="pick"
                       role="checkbox"
@@ -390,6 +409,12 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                           {c.ssh.host}
                         </div>
                       )}
+                      {(() => { const last = latestHealth(c, health); if (!last) return null; const checked = new Date(last.checkedAt).toLocaleString(document.documentElement.lang || undefined); return (
+                        <div className={`card-health ${last.status}`} title={tf("Last checked: {time}", { time: checked })}>
+                          {last.status === "ok" ? <CheckCircle2 size={12} aria-hidden="true" /> : <AlertCircle size={12} aria-hidden="true" />}
+                          <span>{t(last.status === "ok" ? "Connected" : "Failed")}</span><span className="card-health-time">{tf("Last checked: {time}", { time: checked })}</span>
+                        </div>
+                      ); })()}
                     </div>
                     <div className={`btn-group card-actions ${connecting === c.id ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()}>
                       <button title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(c)}>
@@ -550,7 +575,13 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
         />
       )}
       {dialog?.kind === "ssh-hosts" && <SshHostsDialog conns={conns} onClose={() => setDialog(null)} />}
-      {dialog?.kind === "health" && <HealthDialog connections={dialog.connections} onClose={() => setDialog(null)} onEdit={onEdit} />}
+      {dialog?.kind === "health" && <HealthDialog key={dialog.sequence} connections={dialog.connections} onClose={() => setDialog(null)} onEdit={onEdit} onDelete={async (c) => {
+        await api.deleteConnections([c.id]);
+        clearHealth([c.id]);
+        setPicked((current) => { const next = new Set(current); next.delete(c.id); return next; });
+        await reload();
+        toast("ok", tf("Deleted {name}", { name: c.name }));
+      }} />}
       {dialog?.kind === "import" && <ImportDialog pasteFirst={dialog.paste} onClose={() => setDialog(null)} onDone={imported} />}
       {dialog?.kind === "export" && (
         <TransferDialog
