@@ -175,6 +175,20 @@ async fn test_connection(state: State<'_, AppState>, config: ConnectionConfig, s
     Ok(version)
 }
 
+/// Test a saved connection without creating a workspace session.
+#[tauri::command]
+async fn check_saved_connection(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let cfg = state.store.get(&id).map_err(err)?;
+    if cfg.kind == Kind::Sqlite {
+        return tokio::time::timeout(std::time::Duration::from_secs(30), sql::check_sqlite_readonly(&cfg.file))
+            .await.map_err(|_| "connection check timed out".to_string())?.map_err(err);
+    }
+    let secrets = state.store.resolve_secrets(&id, &SecretsInput::default()).map_err(err)?;
+    tokio::time::timeout(std::time::Duration::from_secs(30), open_session(&cfg, secrets))
+        .await.map_err(|_| "connection check timed out".to_string())?.map_err(err)?;
+    Ok(())
+}
+
 #[tauri::command]
 async fn connect(state: State<'_, AppState>, id: String) -> CmdResult<SessionInfo> {
     let cfg = state.store.get(&id).map_err(err)?;
@@ -535,6 +549,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             list_connections,
+            check_saved_connection,
             save_connection,
             delete_connection,
             detect_import_file,

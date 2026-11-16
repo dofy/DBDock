@@ -8,7 +8,8 @@ import { useToast } from "./Toast";
 import { TransferDialog } from "./TransferDialog";
 import { ImportDialog, type ImportReport } from "./ImportDialog";
 import { SshHostsDialog } from "./SshHostsDialog";
-import { Check, FileUp, FolderInput, FolderPlus, ListChecks, MoreHorizontal, PenLine, Pencil, Plug, Plus, SquareCheck, SquareMinus, Trash2, X } from "lucide-react";
+import { HealthDialog } from "./HealthDialog";
+import { Activity, Check, Database, FileUp, Folder, FolderInput, FolderPlus, Inbox, ListChecks, MoreHorizontal, PenLine, Pencil, Plug, Plus, SquareCheck, SquareMinus, Trash2, X } from "lucide-react";
 
 const SEP = " / ";
 /** null = all connections, "" = ungrouped, otherwise a group path (includes subgroups). */
@@ -37,7 +38,8 @@ type Dialog =
   | { kind: "move"; ids: string[] }
   | { kind: "export"; ids?: string[] }
   | { kind: "import"; paste?: boolean }
-  | { kind: "ssh-hosts" };
+  | { kind: "ssh-hosts" }
+  | { kind: "health"; connections: ConnectionConfig[] };
 
 export interface MenuAction {
   id: string;
@@ -213,7 +215,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
         </div>
         <ul className="tree">
           <li className={`tree-row ${sel === null ? "on" : ""}`} onClick={() => setSel(null)}>
-            <span className="tree-icon">◎</span>
+            <span className="tree-icon"><Database size={14} aria-hidden="true" /></span>
             <span className="tree-name">{t("All connections")}</span>
             <span className="count">{conns.length}</span>
           </li>
@@ -249,7 +251,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
               >
                 {collapsed.has(g) ? "▸" : "▾"}
               </button>
-              <span className="tree-icon">▤</span>
+              <span className="tree-icon"><Folder size={14} aria-hidden="true" /></span>
               <span className="tree-name" title={g}>
                 {leaf(g)}
               </span>
@@ -268,7 +270,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           ))}
           <li className={`tree-row ${sel === "" ? "on" : ""} ${dropTarget === "" ? "drop" : ""}`} onClick={() => setSel("")} {...dropProps("")}>
             <span className="caret none" />
-            <span className="tree-icon">▢</span>
+            <span className="tree-icon"><Inbox size={14} aria-hidden="true" /></span>
             <span className="tree-name muted">{t("Ungrouped")}</span>
             <span className="count">{ungrouped}</span>
           </li>
@@ -281,6 +283,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
           <h1 title={title}>{title}</h1>
           <span className="muted">{shown.length}</span>
           <span className="spacer" />
+          <button disabled={!shown.length} onClick={() => setDialog({ kind: "health", connections: [...shown] })}><Activity size={14} />{t("Check health")}</button>
           <button className="primary" onClick={() => onEdit({ newInGroup: sel ?? "" })}>
             <Plus size={14} />{t("New connection")} </button>
         </div>
@@ -312,6 +315,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                  {t("Select none")} </button>
             )}
             <span className="spacer" />
+            <button onClick={() => setDialog({ kind: "health", connections: conns.filter((c) => picked.has(c.id)) })}><Activity size={14} />{t("Check health")}</button>
             <button onClick={() => setDialog({ kind: "move", ids: pickedIds })}><FolderInput size={14} />{t("Move to group…")}</button>
             <button onClick={() => setDialog({ kind: "export", ids: pickedIds })}><FileUp size={14} />{t("Export…")}</button>
             <button className="danger" onClick={() => void deleteConnections(pickedIds)}>
@@ -546,6 +550,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
         />
       )}
       {dialog?.kind === "ssh-hosts" && <SshHostsDialog conns={conns} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "health" && <HealthDialog connections={dialog.connections} onClose={() => setDialog(null)} onEdit={onEdit} />}
       {dialog?.kind === "import" && <ImportDialog pasteFirst={dialog.paste} onClose={() => setDialog(null)} onDone={imported} />}
       {dialog?.kind === "export" && (
         <TransferDialog

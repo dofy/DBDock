@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::mysql::{MySqlConnection, MySqlConnectOptions, MySqlPool, MySqlPoolOptions, MySqlRow};
 use sqlx::postgres::{PgConnection, PgConnectOptions, PgPool, PgPoolOptions, PgRow, PgValueFormat};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection, SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::{AssertSqlSafe, Column, Connection, Either, Row, ValueRef};
 
 use crate::store::{expand_tilde, ConnectionConfig, Kind};
@@ -174,6 +174,15 @@ pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Op
         Kind::Redis | Kind::Mongodb => unreachable!("handled elsewhere"),
     };
     Ok(conn)
+}
+
+/// Check a SQLite file without creating or modifying it.
+pub async fn check_sqlite_readonly(path: &str) -> Result<()> {
+    let options = SqliteConnectOptions::new().filename(expand_tilde(path)).read_only(true).create_if_missing(false);
+    let mut conn = SqliteConnection::connect_with(&options).await?;
+    sqlx::query_scalar::<_, i64>("PRAGMA schema_version").fetch_one(&mut conn).await?;
+    conn.close().await?;
+    Ok(())
 }
 
 // ---------- value decoding ----------
@@ -749,6 +758,27 @@ pub fn value_to_string(v: Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sqlite_health_check_does_not_create_or_modify_files() {
+        let dir = std::env::temp_dir().join(format!("dbdock-health-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let missing = dir.join("missing.sqlite");
+        assert!(check_sqlite_readonly(missing.to_str().unwrap()).await.is_err());
+        assert!(!missing.exists());
+        let db = dir.join("valid.sqlite");
+        let options = SqliteConnectOptions::new().filename(&db).create_if_missing(true);
+        let mut conn = SqliteConnection::connect_with(&options).await.unwrap();
+        sqlx::query("CREATE TABLE example (id INTEGER)").execute(&mut conn).await.unwrap();
+        conn.close().await.unwrap();
+        let before = std::fs::read(&db).unwrap();
+        check_sqlite_readonly(db.to_str().unwrap()).await.unwrap();
+        assert_eq!(std::fs::read(&db).unwrap(), before);
+        let invalid = dir.join("invalid.sqlite");
+        std::fs::write(&invalid, b"not a sqlite database").unwrap();
+        assert!(check_sqlite_readonly(invalid.to_str().unwrap()).await.is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[tokio::test]
     async fn missing_row_rolls_back_entire_grid_batch() {

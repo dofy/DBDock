@@ -163,6 +163,7 @@ export const api = {
   deleteConnections: (ids: string[]) => invoke<number>("delete_connections", { ids }),
   testConnection: (config: ConnectionConfig, secrets: SecretsInput) =>
     invoke<string>("test_connection", { config, secrets }),
+  checkSavedConnection: (id: string) => invoke<void>("check_saved_connection", { id }),
   connect: (id: string) => invoke<SessionInfo>("connect", { id }),
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
 
