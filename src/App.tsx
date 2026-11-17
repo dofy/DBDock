@@ -21,6 +21,7 @@ import { updateSettings, useDarkMode, useSettings } from "./settings";
 import { resolveLocale } from "./i18n";
 import { clearHealth } from "./healthHistory";
 import { SqlHistory } from "./sqlHistory";
+import { quitDecision } from "./quitGuard";
 
 interface Open {
   conn: ConnectionConfig;
@@ -71,6 +72,7 @@ function Shell() {
   const sqlHistory = useRef(new SqlHistory());
   const dirtyTabs = useRef(new Map<string, Map<string, "dirty" | "busy">>());
   const closingSessions = useRef(new Set<string>());
+  const quitPending = useRef(false);
 
   const reload = useCallback(async () => {
     try {
@@ -146,6 +148,24 @@ function Shell() {
     }
   };
 
+  const quit = async () => {
+    if (quitPending.current) return;
+    quitPending.current = true;
+    try {
+      const busy = [...dirtyTabs.current.values()].some((tabs) => [...tabs.values()].includes("busy"));
+      const decision = quitDecision(opened.length, connecting.length, !!document.querySelector('.modal-backdrop:not([hidden])'), busy);
+      if (decision === "blocked") { await message(t("Wait for the commit to finish before quitting.")); return; }
+      if (decision === "confirm" && !(await ask(t("Quit DBDock? Open connections will close and unsaved edits will be lost."), {
+        title: t("Quit DBDock"), kind: "warning", okLabel: t("Quit"), cancelLabel: t("Cancel"),
+      }))) return;
+      await invoke("confirm_quit");
+    } catch (e) {
+      toast("error", errText(e));
+    } finally {
+      quitPending.current = false;
+    }
+  };
+
   // Native menu: session-level items here, the rest go to the home screen.
   const menuRef = useRef<(id: string) => void>(() => {});
   menuRef.current = (id: string) => {
@@ -161,6 +181,9 @@ function Shell() {
       return;
     }
     switch (id) {
+      case "quit-app":
+        void quit();
+        return;
       case "command-palette":
         return openCommands();
       case "new-connection":

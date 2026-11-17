@@ -46,3 +46,23 @@ test('help documents batch health checks and drag handles in each language', asy
     assert.match(section, /4/);
   }
 });
+
+test('keyboard shortcuts use matching tables in every language', async () => {
+  const english = await readFile(new URL('../public/help.html', import.meta.url), 'utf8');
+  const section = english.match(/<section id="shortcuts"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(section);
+  const keys = (html) => [...html.matchAll(/<kbd>([^<]+)<\/kbd>/g)].map((match) => match[1]);
+  const expected = keys(section);
+  assert.ok(expected.includes('⇧⌘P'));
+  assert.ok(expected.includes('⌃1–9'));
+  assert.ok(expected.includes('⌘1–9'));
+  assert.ok(expected.includes('⇧⌘↵'));
+  for (const locale of ['zh-CN', 'zh-TW', 'ja']) {
+    const help = JSON.parse(await readFile(new URL(`../public/help.${locale}.json`, import.meta.url), 'utf8'));
+    const html = help.sections.shortcuts.html;
+    assert.match(html, /<table><thead>/);
+    assert.match(html, /<th scope="col">/);
+    assert.deepEqual(keys(html), expected, `${locale}: shortcuts`);
+    assert.equal((html.match(/<tr>/g) || []).length, (section.match(/<tr>/g) || []).length);
+  }
+});

@@ -45,7 +45,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "shortcuts": {
         "title": "键盘快捷键",
-        "html": "<p>⌘N 新建连接；⇧⌘N 新建分组；⌘O 导入；⇧⌘I 粘贴 URL；⇧⌘E 导出；⇧⌘H 打开 SSH 主机；⌘, 打开设置；⌘? 打开帮助。</p><p>⌃1 返回连接列表；⌃⇧Tab / ⌃Tab 切换会话；⌘T 新建 SQL 标签页；⇧⌘W 关闭当前数据库标签页；⌘W 关闭会话（需确认）；⌘F 搜索；⌘R 刷新；⌘↵ 运行查询；⌘S 提交或保存；Tab 接受补全。双击连接卡片连接，双击单元格或文档编辑。</p>"
+        "html": "<p>按住 Control 或 Command 可显示标签编号。</p><table><thead><tr><th scope=\"col\">快捷键</th><th scope=\"col\">操作</th></tr></thead><tbody><tr><td><kbd>⌘N</kbd></td><td>新建连接</td></tr><tr><td><kbd>⇧⌘N</kbd></td><td>新建分组</td></tr><tr><td><kbd>⇧⌘P</kbd></td><td>打开命令面板</td></tr><tr><td><kbd>⌘O</kbd></td><td>导入连接</td></tr><tr><td><kbd>⇧⌘I</kbd></td><td>粘贴连接 URL</td></tr><tr><td><kbd>⇧⌘E</kbd></td><td>导出连接</td></tr><tr><td><kbd>⇧⌘H</kbd></td><td>打开 SSH 主机</td></tr><tr><td><kbd>⌘,</kbd></td><td>打开设置</td></tr><tr><td><kbd>⌘?</kbd></td><td>打开帮助</td></tr><tr><td><kbd>⌃1–9</kbd></td><td>切换顶部标签；1 为连接列表</td></tr><tr><td><kbd>⌘1–9</kbd></td><td>切换数据库标签</td></tr><tr><td><kbd>⌃⇧Tab</kbd> / <kbd>⌃Tab</kbd></td><td>上一个 / 下一个会话</td></tr><tr><td><kbd>⌥⌘←</kbd> / <kbd>⌥⌘→</kbd></td><td>上一个 / 下一个数据库标签</td></tr><tr><td><kbd>⌘T</kbd></td><td>在当前 SQL 连接中新建查询</td></tr><tr><td><kbd>⇧⌘W</kbd></td><td>关闭当前数据库标签</td></tr><tr><td><kbd>⌘W</kbd></td><td>关闭当前会话（需确认）</td></tr><tr><td><kbd>⌘Q</kbd></td><td>退出（有打开的工作时需确认）</td></tr><tr><td><kbd>⌘F</kbd></td><td>搜索连接</td></tr><tr><td><kbd>⌘R</kbd></td><td>刷新连接列表</td></tr><tr><td><kbd>⌘↵</kbd></td><td>执行当前行或选区（SQL / Mongo Shell）</td></tr><tr><td><kbd>⇧⌘↵</kbd></td><td>执行全部 SQL</td></tr><tr><td><kbd>⌘S</kbd></td><td>保存 SQL、提交表格更改或保存文档 / 配置</td></tr><tr><td><kbd>Tab</kbd></td><td>接受补全</td></tr></tbody></table>"
       },
       "data": {
         "title": "数据保存位置",
@@ -53,7 +53,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "trouble": {
         "title": "故障排查",
-        "html": "<h3>钥匙串反复请求授权</h3><p>钥匙串条目与写入它们的应用签名绑定。日常使用已安装的应用；如果条目由其他构建写入，可从能读取它的构建导出并重新导入。</p><h3>导入后密码认证失败</h3><p>TablePlus 和 DBeaver 不提供密码，请编辑连接并输入密码。</p><h3>SSH 主机密钥被拒绝</h3><p>确认主机密钥是否可信；首次连接先使用 OpenSSH 验证。如果服务器重建导致密钥变化，核实后用 ssh-keygen -R host 移除旧记录，再使用 OpenSSH 验证新密钥。</p><h3>MySQL 兼容服务无法连接</h3><p>检查端口和用户来源权限。StarRocks / Doris 通常使用 9030。</p><h3>表只读</h3><p>网格编辑需要主键，视图始终只读；可使用 SQL 编辑器。</p>"
+        "html": "<h3>钥匙串反复请求授权</h3><p>更新后首次读取时，macOS 可能要求授权旧钥匙串条目，以便 DBDock 复制凭据库。旧条目保留作恢复副本，之后不会同步更新。后续请使用同一签名身份的已安装应用；更换或丢失签名身份可能需要重新授权。</p><h3>导入后密码认证失败</h3><p>TablePlus 和 DBeaver 不提供密码，请编辑连接并输入密码。</p><h3>SSH 主机密钥被拒绝</h3><p>确认主机密钥是否可信；首次连接先使用 OpenSSH 验证。如果服务器重建导致密钥变化，核实后用 ssh-keygen -R host 移除旧记录，再使用 OpenSSH 验证新密钥。</p><h3>MySQL 兼容服务无法连接</h3><p>检查端口和用户来源权限。StarRocks / Doris 通常使用 9030。</p><h3>表只读</h3><p>网格编辑需要主键，视图始终只读；可使用 SQL 编辑器。</p>"
       }
     }
   },
@@ -103,7 +103,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "shortcuts": {
         "title": "鍵盤快捷鍵",
-        "html": "<p>⌘N 新增連線；⇧⌘N 新增群組；⌘O 匯入；⇧⌘I 貼上 URL；⇧⌘E 匯出；⇧⌘H 開啟 SSH 主機；⌘, 開啟設定；⌘? 開啟說明。</p><p>⌃1 返回連線清單；⌃⇧Tab / ⌃Tab 切換工作階段；⌘T 新增 SQL 分頁；⇧⌘W 關閉目前的資料庫分頁；⌘W 關閉工作階段（需確認）；⌘F 搜尋；⌘R 重新整理；⌘↵ 執行查詢；⌘S 提交或儲存；Tab 接受補全。按兩下連線卡片連線，按兩下儲存格或文件編輯。</p>"
+        "html": "<p>按住 Control 或 Command 可顯示分頁編號。</p><table><thead><tr><th scope=\"col\">快速鍵</th><th scope=\"col\">操作</th></tr></thead><tbody><tr><td><kbd>⌘N</kbd></td><td>新增連線</td></tr><tr><td><kbd>⇧⌘N</kbd></td><td>新增群組</td></tr><tr><td><kbd>⇧⌘P</kbd></td><td>開啟命令面板</td></tr><tr><td><kbd>⌘O</kbd></td><td>匯入連線</td></tr><tr><td><kbd>⇧⌘I</kbd></td><td>貼上連線 URL</td></tr><tr><td><kbd>⇧⌘E</kbd></td><td>匯出連線</td></tr><tr><td><kbd>⇧⌘H</kbd></td><td>開啟 SSH 主機</td></tr><tr><td><kbd>⌘,</kbd></td><td>開啟設定</td></tr><tr><td><kbd>⌘?</kbd></td><td>開啟說明</td></tr><tr><td><kbd>⌃1–9</kbd></td><td>切換頂部分頁；1 為連線清單</td></tr><tr><td><kbd>⌘1–9</kbd></td><td>切換資料庫分頁</td></tr><tr><td><kbd>⌃⇧Tab</kbd> / <kbd>⌃Tab</kbd></td><td>上一個 / 下一個工作階段</td></tr><tr><td><kbd>⌥⌘←</kbd> / <kbd>⌥⌘→</kbd></td><td>上一個 / 下一個資料庫分頁</td></tr><tr><td><kbd>⌘T</kbd></td><td>在目前的 SQL 連線中新增查詢</td></tr><tr><td><kbd>⇧⌘W</kbd></td><td>關閉目前的資料庫分頁</td></tr><tr><td><kbd>⌘W</kbd></td><td>關閉目前的工作階段（需確認）</td></tr><tr><td><kbd>⌘Q</kbd></td><td>結束（有開啟的工作時需確認）</td></tr><tr><td><kbd>⌘F</kbd></td><td>搜尋連線</td></tr><tr><td><kbd>⌘R</kbd></td><td>重新整理連線清單</td></tr><tr><td><kbd>⌘↵</kbd></td><td>執行目前行或選取內容（SQL / Mongo Shell）</td></tr><tr><td><kbd>⇧⌘↵</kbd></td><td>執行全部 SQL</td></tr><tr><td><kbd>⌘S</kbd></td><td>儲存 SQL、提交表格變更或儲存文件 / 設定</td></tr><tr><td><kbd>Tab</kbd></td><td>接受補全</td></tr></tbody></table>"
       },
       "data": {
         "title": "資料儲存位置",
@@ -111,7 +111,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "trouble": {
         "title": "疑難排解",
-        "html": "<h3>鑰匙圈反覆要求授權</h3><p>鑰匙圈項目與寫入它們的應用程式簽章綁定。日常使用已安裝的應用程式；若項目由其他建置寫入，可從能讀取的建置匯出再重新匯入。</p><h3>匯入後密碼驗證失敗</h3><p>TablePlus 和 DBeaver 不提供密碼，請編輯連線並輸入密碼。</p><h3>SSH 主機金鑰被拒絕</h3><p>確認主機金鑰是否可信；首次連線先透過 OpenSSH 驗證。若伺服器重建導致金鑰變更，確認後用 ssh-keygen -R host 移除舊紀錄，再以 OpenSSH 驗證新金鑰。</p><h3>MySQL 相容服務無法連線</h3><p>檢查連接埠和使用者來源權限。StarRocks / Doris 通常使用 9030。</p><h3>資料表唯讀</h3><p>表格編輯需要主鍵，檢視表一律唯讀；可使用 SQL 編輯器。</p>"
+        "html": "<h3>鑰匙圈反覆要求授權</h3><p>更新後首次讀取時，macOS 可能要求授權舊鑰匙圈項目，以便 DBDock 複製憑證庫。舊項目保留作還原副本，之後不會同步更新。後續請使用相同簽署身分的已安裝應用程式；更換或遺失身分可能需要重新授權。</p><h3>匯入後密碼驗證失敗</h3><p>TablePlus 和 DBeaver 不提供密碼，請編輯連線並輸入密碼。</p><h3>SSH 主機金鑰被拒絕</h3><p>確認主機金鑰是否可信；首次連線先透過 OpenSSH 驗證。若伺服器重建導致金鑰變更，確認後用 ssh-keygen -R host 移除舊紀錄，再以 OpenSSH 驗證新金鑰。</p><h3>MySQL 相容服務無法連線</h3><p>檢查連接埠和使用者來源權限。StarRocks / Doris 通常使用 9030。</p><h3>資料表唯讀</h3><p>表格編輯需要主鍵，檢視表一律唯讀；可使用 SQL 編輯器。</p>"
       }
     }
   },
@@ -161,7 +161,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "shortcuts": {
         "title": "キーボードショートカット",
-        "html": "<p>⌘N 接続作成、⇧⌘N グループ作成、⌘O インポート、⇧⌘I URL 貼り付け、⇧⌘E エクスポート、⇧⌘H SSH ホスト、⌘, 設定、⌘? ヘルプ。</p><p>⌃1 接続一覧、⌃⇧Tab / ⌃Tab セッション切替、⌘T SQL タブを新規作成、⇧⌘W 現在のデータベースタブを閉じる、⌘W セッションを閉じる（確認あり）、⌘F 検索、⌘R 更新、⌘↵ 実行、⌘S コミットまたは保存、Tab 補完確定。接続カードはダブルクリックで接続し、セルやドキュメントはダブルクリックで編集します。</p>"
+        "html": "<p>Control または Command を押すとタブの番号が表示されます。</p><table><thead><tr><th scope=\"col\">キー</th><th scope=\"col\">操作</th></tr></thead><tbody><tr><td><kbd>⌘N</kbd></td><td>接続を新規作成</td></tr><tr><td><kbd>⇧⌘N</kbd></td><td>グループを新規作成</td></tr><tr><td><kbd>⇧⌘P</kbd></td><td>コマンドパレットを開く</td></tr><tr><td><kbd>⌘O</kbd></td><td>接続をインポート</td></tr><tr><td><kbd>⇧⌘I</kbd></td><td>接続 URL を貼り付け</td></tr><tr><td><kbd>⇧⌘E</kbd></td><td>接続をエクスポート</td></tr><tr><td><kbd>⇧⌘H</kbd></td><td>SSH ホストを開く</td></tr><tr><td><kbd>⌘,</kbd></td><td>設定を開く</td></tr><tr><td><kbd>⌘?</kbd></td><td>ヘルプを開く</td></tr><tr><td><kbd>⌃1–9</kbd></td><td>上部タブを切り替え、1 は接続一覧</td></tr><tr><td><kbd>⌘1–9</kbd></td><td>データベースタブを切り替え</td></tr><tr><td><kbd>⌃⇧Tab</kbd> / <kbd>⌃Tab</kbd></td><td>前 / 次のセッション</td></tr><tr><td><kbd>⌥⌘←</kbd> / <kbd>⌥⌘→</kbd></td><td>前 / 次のデータベースタブ</td></tr><tr><td><kbd>⌘T</kbd></td><td>現在の SQL 接続にクエリを新規作成</td></tr><tr><td><kbd>⇧⌘W</kbd></td><td>現在のデータベースタブを閉じる</td></tr><tr><td><kbd>⌘W</kbd></td><td>現在のセッションを閉じる（要確認）</td></tr><tr><td><kbd>⌘Q</kbd></td><td>終了（作業中は要確認）</td></tr><tr><td><kbd>⌘F</kbd></td><td>接続を検索</td></tr><tr><td><kbd>⌘R</kbd></td><td>接続一覧を更新</td></tr><tr><td><kbd>⌘↵</kbd></td><td>現在行または選択範囲を実行（SQL / Mongo シェル）</td></tr><tr><td><kbd>⇧⌘↵</kbd></td><td>SQL 全体を実行</td></tr><tr><td><kbd>⌘S</kbd></td><td>SQL 保存、表の変更をコミット、文書 / 設定を保存</td></tr><tr><td><kbd>Tab</kbd></td><td>補完候補を確定</td></tr></tbody></table>"
       },
       "data": {
         "title": "データの保存先",
@@ -169,7 +169,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "trouble": {
         "title": "トラブルシューティング",
-        "html": "<h3>キーチェーンへのアクセス確認が繰り返される</h3><p>項目は保存したアプリの署名に紐づきます。通常はインストール済みアプリを使ってください。別のビルドで保存した場合は、読み取れるビルドからエクスポートして再インポートできます。</p><h3>インポート後にパスワード認証が失敗する</h3><p>TablePlus と DBeaver はパスワードを共有しません。接続を編集して入力してください。</p><h3>SSH ホスト鍵が拒否される</h3><p>ホスト鍵の信頼性を確認し、初回は OpenSSH で検証してください。サーバー再構築などで鍵が変わった場合は確認後に ssh-keygen -R host で古い記録を削除し、OpenSSH で新しい鍵を検証します。</p><h3>MySQL 互換サービスに接続できない</h3><p>ポートとユーザーの接続元権限を確認してください。StarRocks / Doris は通常 9030 を使います。</p><h3>テーブルが読み取り専用</h3><p>グリッド編集には主キーが必要です。ビューは常に読み取り専用です。SQL エディターを使用してください。</p>"
+        "html": "<h3>キーチェーンへのアクセス確認が繰り返される</h3><p>更新後の初回アクセス時、資格情報を新しい項目にコピーするため、旧項目へのアクセス許可を求められる場合があります。旧項目は復旧用に残り、以降は更新されません。同じ署名 ID でインストールしたアプリを使用してください。署名 ID の変更や紛失後は再度許可が必要な場合があります。</p><h3>インポート後にパスワード認証が失敗する</h3><p>TablePlus と DBeaver はパスワードを共有しません。接続を編集して入力してください。</p><h3>SSH ホスト鍵が拒否される</h3><p>ホスト鍵の信頼性を確認し、初回は OpenSSH で検証してください。サーバー再構築などで鍵が変わった場合は確認後に ssh-keygen -R host で古い記録を削除し、OpenSSH で新しい鍵を検証します。</p><h3>MySQL 互換サービスに接続できない</h3><p>ポートとユーザーの接続元権限を確認してください。StarRocks / Doris は通常 9030 を使います。</p><h3>テーブルが読み取り専用</h3><p>グリッド編集には主キーが必要です。ビューは常に読み取り専用です。SQL エディターを使用してください。</p>"
       }
     }
   }

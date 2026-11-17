@@ -101,7 +101,10 @@ pub struct Secrets {
 
 const FIELDS: [&str; 3] = ["password", "ssh_password", "ssh_passphrase"];
 
-const VAULT_ACCOUNT: &str = "__dbdock_vault_v1";
+// A new item receives the current signed app's access identity. Keep the old
+// item as a recovery copy because it may be bound to an ad-hoc build hash.
+const OLD_VAULT_ACCOUNT: &str = "__dbdock_vault_v1";
+const VAULT_ACCOUNT: &str = "__dbdock_vault_v2";
 
 trait Credentials: Send + Sync {
     fn read(&self, account: &str) -> Result<Option<String>>;
@@ -241,9 +244,29 @@ impl Store {
     }
 
     fn vault(&self) -> Result<Option<Vault>> {
-        let Some(raw) = self.credentials.read(VAULT_ACCOUNT)? else { return Ok(None) };
+        let (raw, migrate) = match self.credentials.read(VAULT_ACCOUNT)? {
+            Some(raw) => (raw, false),
+            None => match self.credentials.read(OLD_VAULT_ACCOUNT)? {
+                Some(raw) => (raw, true),
+                None => return Ok(None),
+            },
+        };
         let vault: Vault = serde_json::from_str(&raw).context("invalid credential vault")?;
         anyhow::ensure!(vault.version == 1, "unsupported credential vault version");
+        if migrate {
+            // Never delete the old item or fall back to stale per-connection secrets.
+            self.credentials.write(VAULT_ACCOUNT, Some(&raw)).context("credential vault migration failed")?;
+            let verified = self.credentials.read(VAULT_ACCOUNT).and_then(|copy| match copy {
+                Some(copy) if copy == raw => Ok(()),
+                _ => Err(anyhow::anyhow!("credential vault copy verification failed")),
+            });
+            if let Err(error) = verified {
+                if let Err(cleanup) = self.credentials.write(VAULT_ACCOUNT, None) {
+                    anyhow::bail!("{error:#}; incomplete credential vault cleanup failed: {cleanup}");
+                }
+                return Err(error);
+            }
+        }
         Ok(Some(vault))
     }
 
@@ -276,9 +299,15 @@ impl Store {
     pub fn resolve_secrets(&self, id: &str, input: &SecretsInput) -> Result<Secrets> {
         let _guard = self.acquire()?;
         let needs_saved = !id.is_empty() && input.as_array().iter().any(|value| value.is_none());
-        let mut secrets = if !needs_saved { Secrets::default() } else if let Some(vault) = self.vault()? {
-            match vault.secrets.get(id) { Some(secrets) => secrets.clone(), None => self.legacy_secrets(id)? }
-        } else { self.legacy_secrets(id)? };
+        let mut secrets = if !needs_saved { Secrets::default() } else {
+            let mut vault = self.vault()?.unwrap_or_else(|| Vault { version: 1, secrets: BTreeMap::new() });
+            if !vault.secrets.contains_key(id) {
+                let saved = self.legacy_secrets(id)?;
+                vault.secrets.insert(id.to_owned(), saved);
+                self.save_vault(&vault)?;
+            }
+            vault.secrets.get(id).cloned().unwrap_or_default()
+        };
         input.apply(&mut secrets);
         Ok(secrets)
     }
@@ -488,6 +517,66 @@ mod tests {
             ("two:password".into(), "second".into()),
         ]);
         (store, credentials, dir)
+    }
+
+    #[test]
+    fn resolving_legacy_credentials_migrates_only_the_requested_connection() {
+        let (store, credentials, dir) = memory_store();
+        let first = store.resolve_secrets("one", &SecretsInput::default()).unwrap();
+        assert_eq!(first.password.as_deref(), Some("first"));
+        assert_eq!(first.ssh_password.as_deref(), Some("ssh"));
+        assert!(!credentials.reads.lock().unwrap().iter().any(|key| key.starts_with("two:")));
+        credentials.reads.lock().unwrap().clear();
+        store.resolve_secrets("one", &SecretsInput::default()).unwrap();
+        assert!(!credentials.reads.lock().unwrap().iter().any(|key| key.starts_with("one:")));
+        assert_eq!(credentials.values.lock().unwrap()["one:password"], "first");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn old_vault_is_copied_once_and_remains_untouched() {
+        let (store, credentials, dir) = memory_store();
+        let raw = serde_json::to_string(&Vault { version: 1, secrets: BTreeMap::from([
+            ("one".into(), Secrets { password: Some("saved".into()), ..Default::default() }),
+        ]) }).unwrap();
+        credentials.values.lock().unwrap().insert(OLD_VAULT_ACCOUNT.into(), raw.clone());
+        assert_eq!(store.resolve_secrets("one", &SecretsInput::default()).unwrap().password.as_deref(), Some("saved"));
+        assert_eq!(credentials.values.lock().unwrap()[OLD_VAULT_ACCOUNT], raw);
+        assert_eq!(credentials.values.lock().unwrap()[VAULT_ACCOUNT], raw);
+        credentials.reads.lock().unwrap().clear();
+        *credentials.fail_read.lock().unwrap() = Some(OLD_VAULT_ACCOUNT.into());
+        assert_eq!(store.resolve_secrets("one", &SecretsInput::default()).unwrap().password.as_deref(), Some("saved"));
+        assert!(!credentials.reads.lock().unwrap().iter().any(|name| name == OLD_VAULT_ACCOUNT));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn vault_copy_failure_never_loses_or_uses_stale_credentials() {
+        let (store, credentials, dir) = memory_store();
+        let raw = serde_json::to_string(&Vault { version: 1, secrets: BTreeMap::from([
+            ("one".into(), Secrets { password: Some("saved".into()), ..Default::default() }),
+        ]) }).unwrap();
+        credentials.values.lock().unwrap().insert(OLD_VAULT_ACCOUNT.into(), raw.clone());
+        *credentials.fail_read.lock().unwrap() = Some(OLD_VAULT_ACCOUNT.into());
+        assert!(store.resolve_secrets("one", &SecretsInput::default()).is_err());
+        *credentials.fail_read.lock().unwrap() = None;
+        *credentials.fail_write.lock().unwrap() = true;
+        assert!(store.resolve_secrets("one", &SecretsInput::default()).is_err());
+        assert_eq!(credentials.values.lock().unwrap()[OLD_VAULT_ACCOUNT], raw);
+        assert!(!credentials.values.lock().unwrap().contains_key(VAULT_ACCOUNT));
+        *credentials.fail_write.lock().unwrap() = false;
+        assert_eq!(store.resolve_secrets("one", &SecretsInput::default()).unwrap().password.as_deref(), Some("saved"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn malformed_old_vault_is_not_migrated() {
+        let (store, credentials, dir) = memory_store();
+        credentials.values.lock().unwrap().insert(OLD_VAULT_ACCOUNT.into(), "invalid".into());
+        assert!(store.resolve_secrets("one", &SecretsInput::default()).is_err());
+        assert!(!credentials.values.lock().unwrap().contains_key(VAULT_ACCOUNT));
+        assert_eq!(credentials.values.lock().unwrap()[OLD_VAULT_ACCOUNT], "invalid");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

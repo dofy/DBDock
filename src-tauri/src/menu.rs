@@ -117,7 +117,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
             &PredefinedMenuItem::hide_others(app, Some(label(language, "Hide Others")))?,
             &PredefinedMenuItem::show_all(app, Some(label(language, "Show All")))?,
             &sep()?,
-            &PredefinedMenuItem::quit(app, Some(label(language, "Quit DBDock")))?,
+            &item(app, "quit-app", label(language, "Quit DBDock"), Some("CmdOrCtrl+Q"))?,
         ],
     )?;
     let file = Submenu::with_items(

@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use redis_db::{KeyValue, RedisConn, ScanPage};
 use sql::{Change, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
@@ -368,6 +368,11 @@ fn open_help(app: tauri::AppHandle, section: Option<String>) -> CmdResult<()> {
 }
 
 #[tauri::command]
+fn confirm_quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
 fn set_menu_language(app: tauri::AppHandle, language: String) -> CmdResult<()> {
     let menu = menu::build(&app, &language).map_err(|e| e.to_string())?;
     app.set_menu(menu).map_err(|e| e.to_string())?;
@@ -680,6 +685,7 @@ pub fn run() {
             open_help,
             open_github,
             set_menu_language,
+            confirm_quit,
             ssh_hosts_list,
             ssh_host_save,
             ssh_host_delete,
@@ -725,8 +731,16 @@ pub fn run() {
             mongo_indexes,
             mongo_shell,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
+                if app.get_webview_window("main").is_some() {
+                    api.prevent_exit();
+                    let _ = app.emit("menu", "quit-app");
+                }
+            }
+        });
 }
 
 /// Integration smoke test against live servers; run with `DBDOCK_IT=1 cargo test -- --nocapture`.

@@ -64,6 +64,7 @@
   table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
   th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; }
+  #shortcuts td:first-child { white-space: nowrap; width: 1%; }
   .note { padding: 10px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; margin: 12px 0; }
   .tags span { display: inline-block; padding: 0 6px; margin-right: 4px; border-radius: 4px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
   .empty { color: var(--muted); padding: 30px 0; display: none; }
@@ -236,28 +237,7 @@ show dbs        show collections        use otherdb</code></pre>
 
   <section id="shortcuts" data-title="Keyboard shortcuts">
     <h2>Keyboard shortcuts</h2>
-    <table>
-      <tr><th>Keys</th><th>Action</th></tr>
-      <tr><td><kbd>⌘</kbd><kbd>N</kbd></td><td>New connection</td></tr>
-      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>N</kbd></td><td>New group</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>O</kbd></td><td>Import…</td></tr>
-      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>I</kbd></td><td>Paste connection URLs…</td></tr>
-      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>E</kbd></td><td>Export…</td></tr>
-      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd></td><td>SSH Hosts</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>,</kbd></td><td>Settings</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>?</kbd></td><td>This help</td></tr>
-      <tr><td><kbd>⌃</kbd><kbd>1</kbd></td><td>Connections list</td></tr>
-      <tr><td><kbd>⌃</kbd><kbd>⇧</kbd>Tab / <kbd>⌃</kbd>Tab</td><td>Previous / next session</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>T</kbd></td><td>Open a SQL tab in the current SQL connection</td></tr>
-      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>W</kbd></td><td>Close the current database tab</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>W</kbd></td><td>Close the current session (confirmation required)</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>F</kbd></td><td>Search connections</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>R</kbd></td><td>Reload the connection list</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>↵</kbd></td><td>Run (SQL editor, Mongo shell)</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>S</kbd></td><td>Commit grid edits · save document / config</td></tr>
-      <tr><td><kbd>Tab</kbd></td><td>Accept a completion</td></tr>
-      <tr><td>Double-click</td><td>Connect (card) · edit (cell, document)</td></tr>
-    </table>
+    <p>Hold Control or Command to show numbered tab hints.</p><table><thead><tr><th scope="col">Keys</th><th scope="col">Action</th></tr></thead><tbody><tr><td><kbd>⌘N</kbd></td><td>New connection</td></tr><tr><td><kbd>⇧⌘N</kbd></td><td>New group</td></tr><tr><td><kbd>⇧⌘P</kbd></td><td>Open command palette</td></tr><tr><td><kbd>⌘O</kbd></td><td>Import connections</td></tr><tr><td><kbd>⇧⌘I</kbd></td><td>Paste connection URLs</td></tr><tr><td><kbd>⇧⌘E</kbd></td><td>Export connections</td></tr><tr><td><kbd>⇧⌘H</kbd></td><td>Open SSH hosts</td></tr><tr><td><kbd>⌘,</kbd></td><td>Open settings</td></tr><tr><td><kbd>⌘?</kbd></td><td>Open help</td></tr><tr><td><kbd>⌃1–9</kbd></td><td>Switch top-level tabs; 1 opens connections</td></tr><tr><td><kbd>⌘1–9</kbd></td><td>Switch database tabs</td></tr><tr><td><kbd>⌃⇧Tab</kbd> / <kbd>⌃Tab</kbd></td><td>Previous / next session</td></tr><tr><td><kbd>⌥⌘←</kbd> / <kbd>⌥⌘→</kbd></td><td>Previous / next database tab</td></tr><tr><td><kbd>⌘T</kbd></td><td>Open a SQL tab in the current SQL connection</td></tr><tr><td><kbd>⇧⌘W</kbd></td><td>Close the current database tab</td></tr><tr><td><kbd>⌘W</kbd></td><td>Close the current session (confirmation required)</td></tr><tr><td><kbd>⌘Q</kbd></td><td>Quit (confirmation required for open work)</td></tr><tr><td><kbd>⌘F</kbd></td><td>Search connections</td></tr><tr><td><kbd>⌘R</kbd></td><td>Reload the connection list</td></tr><tr><td><kbd>⌘↵</kbd></td><td>Run the current line or selection (SQL / Mongo shell)</td></tr><tr><td><kbd>⇧⌘↵</kbd></td><td>Run the whole SQL script</td></tr><tr><td><kbd>⌘S</kbd></td><td>Save SQL or commit grid edits; save document / config</td></tr><tr><td><kbd>Tab</kbd></td><td>Accept a completion</td></tr></tbody></table>
   </section>
 
   <section id="data" data-title="Where your data lives">
@@ -275,7 +255,7 @@ show dbs        show collections        use otherdb</code></pre>
   <section id="trouble" data-title="Troubleshooting">
     <h2>Troubleshooting</h2>
     <h3>macOS keeps asking for Keychain access</h3>
-    <p>Keychain entries trust the signature of the app that saved them. A differently signed build (for example a development build) asks on every read, and <i>Always Allow</i> does not stick. Use the installed app; if entries were written by another build, export your connections with passwords from the build that can read them and import them again.</p>
+    <p>On first access after this update, macOS may ask you to authorize the old Keychain item so DBDock can copy the vault to a new item. The old item is retained as a recovery copy and is not updated afterward. Use the installed app signed with the same identity for later updates; changing or losing that identity can require authorization again.</p>
     <h3>"password authentication failed" after an import</h3>
     <p>TablePlus and DBeaver do not share their passwords. Open <b>Edit</b> on the connection and type the password once.</p>
     <h3>SSH: "host key rejected"</h3>

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import json
+import re
 from pathlib import Path
+from shortcuts import render_shortcuts
 
 # Each entry mirrors one section in public/help.html; technical examples remain in the original HTML.
 content = {
@@ -14,9 +16,9 @@ content = {
 ('Redis', '''<p>使用 SCAN 和匹配模式浏览键，点击“加载更多”继续。选择键可查看 string、hash、list、set、zset 或 stream 的预览、TTL 和大小；JSON 字符串会格式化显示。</p><p>通过数据库下拉框或 SELECT 切换数据库；底部控制台执行命令，↑ / ↓ 浏览历史。删除键前会确认。</p>'''),
 ('MongoDB', '''<p>使用主机和端口，或在主机中输入 mongodb:// / mongodb+srv:// URI。选项支持 authSource、tls 等；SSH 连接需要分别填写主机和端口。</p><h3>集合</h3><p>选择集合后可使用宽松语法填写 filter、sort 和 projection，支持 ObjectId 和 ISODate。切换表格或 JSON，双击文档编辑 Extended JSON，或插入和删除；已有文档的 _id 不可更改。可查看索引。</p><h3>Shell</h3><p>⌘↵ 执行当前行或选中内容。支持 find、aggregate、countDocuments、distinct、插入、更新、删除、db.runCommand、show dbs、show collections 和 use。</p>'''),
 ('Vim 模式与外观', '''<p>在“设置”（⌘,）中选择浅色、深色或跟随系统；语言可选择跟随系统、英文、简体中文、繁体中文和日语。Vim 模式适用于 SQL 编辑器、Mongo Shell、文档及 SSH 配置编辑器。</p><p>Esc 退出插入模式并关闭补全；:w 在文档和配置编辑器中保存，在 SQL 编辑器和 Shell 中运行。编辑器中的 Esc 不会关闭对话框。</p>'''),
-('键盘快捷键', '''<p>⌘N 新建连接；⇧⌘N 新建分组；⌘O 导入；⇧⌘I 粘贴 URL；⇧⌘E 导出；⇧⌘H 打开 SSH 主机；⌘, 打开设置；⌘? 打开帮助。</p><p>⌃1 返回连接列表；⌃⇧Tab / ⌃Tab 切换会话；⌘T 新建 SQL 标签页；⇧⌘W 关闭当前数据库标签页；⌘W 关闭会话（需确认）；⌘F 搜索；⌘R 刷新；⌘↵ 运行查询；⌘S 提交或保存；Tab 接受补全。双击连接卡片连接，双击单元格或文档编辑。</p>'''),
+('键盘快捷键', ''),
 ('数据保存位置', '''<p>连接和分组：<code>~/Library/Application Support/xyz.phpz.app.dbdock/</code>。密码、API 令牌及 SSH 口令：macOS 钥匙串服务 <code>xyz.phpz.app.dbdock</code>。SSH 主机：<code>~/.ssh/config</code>。界面设置保存在应用中。</p><p>应用只连接用户指定的数据库和 SSH 服务器；D1 还会访问 Cloudflare API。</p>'''),
-('故障排查', '''<h3>钥匙串反复请求授权</h3><p>钥匙串条目与写入它们的应用签名绑定。日常使用已安装的应用；如果条目由其他构建写入，可从能读取它的构建导出并重新导入。</p><h3>导入后密码认证失败</h3><p>TablePlus 和 DBeaver 不提供密码，请编辑连接并输入密码。</p><h3>SSH 主机密钥被拒绝</h3><p>确认主机密钥是否可信；首次连接先使用 OpenSSH 验证。如果服务器重建导致密钥变化，核实后用 ssh-keygen -R host 移除旧记录，再使用 OpenSSH 验证新密钥。</p><h3>MySQL 兼容服务无法连接</h3><p>检查端口和用户来源权限。StarRocks / Doris 通常使用 9030。</p><h3>表只读</h3><p>网格编辑需要主键，视图始终只读；可使用 SQL 编辑器。</p>''')],
+('故障排查', '''<h3>钥匙串反复请求授权</h3><p>更新后首次读取时，macOS 可能要求授权旧钥匙串条目，以便 DBDock 复制凭据库。旧条目保留作恢复副本，之后不会同步更新。后续请使用同一签名身份的已安装应用；更换或丢失签名身份可能需要重新授权。</p><h3>导入后密码认证失败</h3><p>TablePlus 和 DBeaver 不提供密码，请编辑连接并输入密码。</p><h3>SSH 主机密钥被拒绝</h3><p>确认主机密钥是否可信；首次连接先使用 OpenSSH 验证。如果服务器重建导致密钥变化，核实后用 ssh-keygen -R host 移除旧记录，再使用 OpenSSH 验证新密钥。</p><h3>MySQL 兼容服务无法连接</h3><p>检查端口和用户来源权限。StarRocks / Doris 通常使用 9030。</p><h3>表只读</h3><p>网格编辑需要主键，视图始终只读；可使用 SQL 编辑器。</p>''')],
 'zh-TW': [
 ('入門', '''<p>DBDock 是一款 macOS 桌面資料庫用戶端，支援 MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1。它整合連線管理、SSH 通道及資料庫工具，並支援 Vim、淺色與深色主題和多種語言。</p><p>按 ⌘N 新增連線，選擇資料庫類型，填寫主機、使用者名稱與密碼後按「測試」。也可按 ⌘O 匯入 TablePlus、DBeaver、URL 或 DBDock 匯出檔。</p><p>按兩下連線卡片或按「連線」開啟工作階段；⌃1 返回連線清單。密碼儲存在 macOS 鑰匙圈中，表單不會顯示已儲存的密碼。</p>'''),
 ('連線與群組', '''<h3>群組與多選</h3><p>在側邊欄建立、重新命名、移動或刪除群組。路徑中的 <code> / </code> 表示巢狀結構；刪除時選擇連線的新位置，不會刪除資料庫內容。將滑鼠移至卡片，把取代資料庫圖示的把手拖到左側群組；目標會反白。也可使用「移至群組」。</p><p>點擊卡片或右上角的選取標記，可選取或取消選取，並支援多選。底部選取列支援批次移動、匯出及刪除；空間不足時可水平捲動。Esc 或「清除選取」取消選取。</p><p>連線編輯視窗中的表單可捲動，「測試」「取消」和「儲存」按鈕固定在底部。</p><h3>環境標籤</h3><p>可標記本機、開發、測試、預發布或正式環境，並依標籤篩選。表單中的環境選項以對應顏色顯示邊框和文字，選取的項目使用實色背景。正式環境連線及工作階段有紅色標示。</p><h3>連線健康檢查</h3><p>按「批次檢查目前清單」，或選取卡片後按「檢查已選」。視窗會檢查必填項目；按「批次測試」後，最多同時測試 4 個設定完整的連線，可能需要鑰匙圈授權。停止會取消等待中的檢查，已開始的檢查會繼續完成。</p><p>視窗顯示成功或失敗原因，卡片以綠色勾號或紅色警告圖示及簡短時間顯示上次結果；將滑鼠移至圖示可查看完整狀態和時間。未進行測試時可在視窗中編輯或刪除連線。取消編輯會保留結果；儲存後只清除該連線的舊結果，可重新測試。SQLite 檔案不存在時會顯示提示，不會建立檔案。</p>'''),
@@ -27,9 +29,9 @@ content = {
 ('Redis', '''<p>使用 SCAN 和比對模式瀏覽鍵，按「載入更多」繼續。選取鍵可檢視 string、hash、list、set、zset 或 stream 的預覽、TTL 和大小；JSON 字串會格式化顯示。</p><p>透過資料庫下拉選單或 SELECT 切換資料庫；底部主控台執行命令，↑ / ↓ 瀏覽歷史。刪除鍵前會要求確認。</p>'''),
 ('MongoDB', '''<p>使用主機與連接埠，或在主機中輸入 mongodb:// / mongodb+srv:// URI。選項支援 authSource、tls 等；SSH 連線需要分別填寫主機和連接埠。</p><h3>集合</h3><p>選擇集合後可使用寬鬆語法填寫 filter、sort 和 projection，支援 ObjectId 和 ISODate。切換表格或 JSON，按兩下文件編輯 Extended JSON，或新增和刪除；現有文件的 _id 不可更改。可查看索引。</p><h3>Shell</h3><p>⌘↵ 執行目前行或選取內容。支援 find、aggregate、countDocuments、distinct、插入、更新、刪除、db.runCommand、show dbs、show collections 和 use。</p>'''),
 ('Vim 模式與外觀', '''<p>在「設定」（⌘,）中選擇淺色、深色或跟隨系統；語言可選跟隨系統、英文、簡體中文、繁體中文和日文。Vim 模式適用於 SQL 編輯器、Mongo Shell、文件與 SSH 設定編輯器。</p><p>Esc 離開插入模式並關閉補全；:w 在文件和設定編輯器中儲存，在 SQL 編輯器和 Shell 中執行。編輯器中的 Esc 不會關閉對話框。</p>'''),
-('鍵盤快捷鍵', '''<p>⌘N 新增連線；⇧⌘N 新增群組；⌘O 匯入；⇧⌘I 貼上 URL；⇧⌘E 匯出；⇧⌘H 開啟 SSH 主機；⌘, 開啟設定；⌘? 開啟說明。</p><p>⌃1 返回連線清單；⌃⇧Tab / ⌃Tab 切換工作階段；⌘T 新增 SQL 分頁；⇧⌘W 關閉目前的資料庫分頁；⌘W 關閉工作階段（需確認）；⌘F 搜尋；⌘R 重新整理；⌘↵ 執行查詢；⌘S 提交或儲存；Tab 接受補全。按兩下連線卡片連線，按兩下儲存格或文件編輯。</p>'''),
+('鍵盤快捷鍵', ''),
 ('資料儲存位置', '''<p>連線與群組：<code>~/Library/Application Support/xyz.phpz.app.dbdock/</code>。密碼、API 權杖與 SSH 密語：macOS 鑰匙圈服務 <code>xyz.phpz.app.dbdock</code>。SSH 主機：<code>~/.ssh/config</code>。介面設定儲存於應用程式中。</p><p>應用程式只連線至使用者指定的資料庫和 SSH 伺服器；D1 亦會存取 Cloudflare API。</p>'''),
-('疑難排解', '''<h3>鑰匙圈反覆要求授權</h3><p>鑰匙圈項目與寫入它們的應用程式簽章綁定。日常使用已安裝的應用程式；若項目由其他建置寫入，可從能讀取的建置匯出再重新匯入。</p><h3>匯入後密碼驗證失敗</h3><p>TablePlus 和 DBeaver 不提供密碼，請編輯連線並輸入密碼。</p><h3>SSH 主機金鑰被拒絕</h3><p>確認主機金鑰是否可信；首次連線先透過 OpenSSH 驗證。若伺服器重建導致金鑰變更，確認後用 ssh-keygen -R host 移除舊紀錄，再以 OpenSSH 驗證新金鑰。</p><h3>MySQL 相容服務無法連線</h3><p>檢查連接埠和使用者來源權限。StarRocks / Doris 通常使用 9030。</p><h3>資料表唯讀</h3><p>表格編輯需要主鍵，檢視表一律唯讀；可使用 SQL 編輯器。</p>''')],
+('疑難排解', '''<h3>鑰匙圈反覆要求授權</h3><p>更新後首次讀取時，macOS 可能要求授權舊鑰匙圈項目，以便 DBDock 複製憑證庫。舊項目保留作還原副本，之後不會同步更新。後續請使用相同簽署身分的已安裝應用程式；更換或遺失身分可能需要重新授權。</p><h3>匯入後密碼驗證失敗</h3><p>TablePlus 和 DBeaver 不提供密碼，請編輯連線並輸入密碼。</p><h3>SSH 主機金鑰被拒絕</h3><p>確認主機金鑰是否可信；首次連線先透過 OpenSSH 驗證。若伺服器重建導致金鑰變更，確認後用 ssh-keygen -R host 移除舊紀錄，再以 OpenSSH 驗證新金鑰。</p><h3>MySQL 相容服務無法連線</h3><p>檢查連接埠和使用者來源權限。StarRocks / Doris 通常使用 9030。</p><h3>資料表唯讀</h3><p>表格編輯需要主鍵，檢視表一律唯讀；可使用 SQL 編輯器。</p>''')],
 'ja': [
 ('はじめに', '''<p>DBDock は MySQL、PostgreSQL、SQLite、Redis、MongoDB、Cloudflare D1 に対応した macOS デスクトップクライアントです。接続管理、SSH トンネル、データベースツールをひとつにまとめ、Vim、ライト・ダークテーマ、複数言語に対応しています。</p><p>⌘N で接続を作成し、データベースの種類、ホスト、ユーザー名、パスワードを入力して「テスト」を押します。⌘O で TablePlus、DBeaver、URL、DBDock のエクスポートもインポートできます。</p><p>接続カードをダブルクリックするか「接続」を押してセッションを開きます。⌃1 で接続一覧に戻ります。パスワードは macOS キーチェーンに保存され、入力欄には表示されません。</p>'''),
 ('接続とグループ', '''<h3>グループと複数選択</h3><p>サイドバーでグループの作成、名前変更、移動、削除ができます。パスの <code> / </code> で階層化します。削除時には接続の移動先を選択し、データベースの内容は削除されません。カードにマウスを重ね、データベースのアイコンに代わって表示されるハンドルを左側のグループへドラッグします。移動先は強調表示されます。「グループに移動」も使えます。</p><p>カードまたは右上のマークをクリックすると選択・解除でき、複数選択にも対応します。画面下の選択バーから一括移動、エクスポート、削除ができます。幅が足りない場合はバーを横にスクロールできます。Esc または「選択を解除」で解除します。</p><p>接続編集画面ではフォームをスクロールでき、「テスト」「キャンセル」「保存」は画面下に固定されます。</p><h3>環境タグ</h3><p>ローカル、開発、テスト、ステージング、本番のタグを付けて絞り込めます。フォームの環境選択肢は枠と文字に各環境の色を使い、選択中の項目は背景を塗りつぶします。本番の接続とセッションは赤く表示されます。</p><h3>接続のヘルスチェック</h3><p>「表示中を一括チェック」を押すか、カードを選択して選択件数のチェックボタンを押します。画面で必須項目を確認し、一括テストで設定が揃った接続を最大 4 件同時にテストします。キーチェーンへのアクセスを求める場合があります。停止すると待機中のチェックを取り消し、実行中のチェックは完了まで続きます。</p><p>画面に成功またはエラーが表示され、カードには緑のチェックまたは赤の警告アイコンと短い時刻で前回の結果が表示されます。マウスを重ねると完全な状態と時刻を確認できます。テスト中以外は画面から接続の編集や削除ができます。編集をキャンセルすると結果は保持され、保存するとその接続の結果だけが消去され、再テストできます。存在しない SQLite ファイルは作成せず、エラーを表示します。</p>'''),
@@ -40,16 +42,25 @@ content = {
 ('Redis', '''<p>SCAN とパターンでキーを参照し、「さらに読み込む」で続行します。キーを選択すると string、hash、list、set、zset、stream のプレビュー、TTL、サイズを表示し、JSON 文字列は整形します。</p><p>データベースのメニューまたは SELECT でデータベースを切り替えます。下部のコンソールでコマンドを実行し、↑ / ↓ で履歴を参照できます。キーの削除前に確認します。</p>'''),
 ('MongoDB', '''<p>ホストとポート、またはホスト欄の mongodb:// / mongodb+srv:// URI で接続します。オプションには authSource、tls などを指定できます。SSH ではホストとポートを別々に入力してください。</p><h3>コレクション</h3><p>コレクションを選び、緩やかな構文で filter、sort、projection を入力できます。ObjectId と ISODate に対応します。テーブルと JSON を切り替え、ドキュメントをダブルクリックして Extended JSON を編集、または挿入・削除できます。既存ドキュメントの _id は変更できません。インデックスも表示できます。</p><h3>シェル</h3><p>⌘↵ で現在行または選択範囲を実行します。find、aggregate、countDocuments、distinct、挿入、更新、削除、db.runCommand、show dbs、show collections、use に対応します。</p>'''),
 ('Vim モードと外観', '''<p>「設定」（⌘,）でライト、ダーク、システムに合わせるを選択できます。言語はシステム、英語、簡体字中国語、繁体字中国語、日本語から選べます。Vim モードは SQL、Mongo シェル、ドキュメント、SSH 設定の各エディターに適用されます。</p><p>Esc で挿入モードを終了し、補完候補を閉じます。:w はドキュメントと設定では保存、SQL とシェルでは実行します。エディター内の Esc はダイアログを閉じません。</p>'''),
-('キーボードショートカット', '''<p>⌘N 接続作成、⇧⌘N グループ作成、⌘O インポート、⇧⌘I URL 貼り付け、⇧⌘E エクスポート、⇧⌘H SSH ホスト、⌘, 設定、⌘? ヘルプ。</p><p>⌃1 接続一覧、⌃⇧Tab / ⌃Tab セッション切替、⌘T SQL タブを新規作成、⇧⌘W 現在のデータベースタブを閉じる、⌘W セッションを閉じる（確認あり）、⌘F 検索、⌘R 更新、⌘↵ 実行、⌘S コミットまたは保存、Tab 補完確定。接続カードはダブルクリックで接続し、セルやドキュメントはダブルクリックで編集します。</p>'''),
+('キーボードショートカット', ''),
 ('データの保存先', '''<p>接続とグループ: <code>~/Library/Application Support/xyz.phpz.app.dbdock/</code>。パスワード、API トークン、SSH パスフレーズ: macOS キーチェーンの <code>xyz.phpz.app.dbdock</code> サービス。SSH ホスト: <code>~/.ssh/config</code>。画面設定はアプリ内に保存します。</p><p>指定したデータベースと SSH サーバー以外には接続しません。D1 では Cloudflare API にも接続します。</p>'''),
-('トラブルシューティング', '''<h3>キーチェーンへのアクセス確認が繰り返される</h3><p>項目は保存したアプリの署名に紐づきます。通常はインストール済みアプリを使ってください。別のビルドで保存した場合は、読み取れるビルドからエクスポートして再インポートできます。</p><h3>インポート後にパスワード認証が失敗する</h3><p>TablePlus と DBeaver はパスワードを共有しません。接続を編集して入力してください。</p><h3>SSH ホスト鍵が拒否される</h3><p>ホスト鍵の信頼性を確認し、初回は OpenSSH で検証してください。サーバー再構築などで鍵が変わった場合は確認後に ssh-keygen -R host で古い記録を削除し、OpenSSH で新しい鍵を検証します。</p><h3>MySQL 互換サービスに接続できない</h3><p>ポートとユーザーの接続元権限を確認してください。StarRocks / Doris は通常 9030 を使います。</p><h3>テーブルが読み取り専用</h3><p>グリッド編集には主キーが必要です。ビューは常に読み取り専用です。SQL エディターを使用してください。</p>''')]
+('トラブルシューティング', '''<h3>キーチェーンへのアクセス確認が繰り返される</h3><p>更新後の初回アクセス時、資格情報を新しい項目にコピーするため、旧項目へのアクセス許可を求められる場合があります。旧項目は復旧用に残り、以降は更新されません。同じ署名 ID でインストールしたアプリを使用してください。署名 ID の変更や紛失後は再度許可が必要な場合があります。</p><h3>インポート後にパスワード認証が失敗する</h3><p>TablePlus と DBeaver はパスワードを共有しません。接続を編集して入力してください。</p><h3>SSH ホスト鍵が拒否される</h3><p>ホスト鍵の信頼性を確認し、初回は OpenSSH で検証してください。サーバー再構築などで鍵が変わった場合は確認後に ssh-keygen -R host で古い記録を削除し、OpenSSH で新しい鍵を検証します。</p><h3>MySQL 互換サービスに接続できない</h3><p>ポートとユーザーの接続元権限を確認してください。StarRocks / Doris は通常 9030 を使います。</p><h3>テーブルが読み取り専用</h3><p>グリッド編集には主キーが必要です。ビューは常に読み取り専用です。SQL エディターを使用してください。</p>''')]
 }
 keys = ['start','connections','import','ssh','ssh-hosts','sql','redis','mongodb','vim','shortcuts','data','trouble']
 labels = {'zh-CN': ['DBDock 帮助','搜索帮助','没有匹配内容。','MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1，内置 SSH。'], 'zh-TW':['DBDock 說明','搜尋說明','沒有符合的內容。','MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1，內建 SSH。'], 'ja':['DBDock ヘルプ','ヘルプを検索','一致する内容はありません。','MySQL、PostgreSQL、SQLite、Redis、MongoDB、Cloudflare D1 に対応。SSH を内蔵。']}
 translations = {}
 for lang, sections in content.items():
  assert len(sections)==len(keys)
+ sections[9] = (sections[9][0], render_shortcuts(lang))
  translations[lang] = {'labels':labels[lang], 'sections':dict(zip(keys, ({'title':title,'html':body} for title,body in sections)))}
  Path(f'public/help.{lang}.json').write_text(json.dumps(translations[lang], ensure_ascii=False, indent=2)+'\n')
 # A classic script also works when help.html is opened directly with file://.
 Path('public/help.translations.js').write_text('window.DBDOCK_HELP_TRANSLATIONS = '+json.dumps(translations, ensure_ascii=False, indent=2)+';\n')
+
+# Keep the English source and translated tables generated from the same rows.
+help_path = Path('public/help.html')
+html = help_path.read_text()
+pattern = r'(<section id="shortcuts"[^>]*>\s*<h2>.*?</h2>).*?(\s*</section>)'
+html, count = re.subn(pattern, lambda match: match.group(1) + '\n    ' + render_shortcuts('en') + match.group(2), html, flags=re.S)
+assert count == 1, "English shortcut section not found"
+help_path.write_text(html)

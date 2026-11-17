@@ -1,5 +1,9 @@
 /** Additional UI messages. Placeholders are interpolated only after translation. */
 export const extraMessages: Record<string, readonly [string, string, string]> = {
+  'Quit DBDock': ['退出 DBDock', '結束 DBDock', 'DBDock を終了'],
+  'Quit': ['退出', '結束', '終了'],
+  'Wait for the commit to finish before quitting.': ['请等待提交完成后再退出。', '請等待提交完成後再結束。', 'コミットが完了してから終了してください。'],
+  'Quit DBDock? Open connections will close and unsaved edits will be lost.': ['退出 DBDock？打开的连接将关闭，未保存的编辑将丢失。', '結束 DBDock？開啟的連線將關閉，尚未儲存的編輯將遺失。', 'DBDock を終了しますか？接続が閉じられ、未保存の編集は失われます。'],
   'Close connection': ['关闭连接', '關閉連線', '接続を閉じる'],
   'Close connection "{name}"?': ['关闭连接“{name}”？', '關閉連線「{name}」？', '接続「{name}」を閉じますか？'],
   'Close connection "{name}" and discard its uncommitted changes?': ['关闭连接“{name}”并放弃尚未提交的更改？', '關閉連線「{name}」並捨棄尚未提交的變更？', '接続「{name}」を閉じ、未確定の変更を破棄しますか？'],
