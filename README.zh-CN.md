@@ -1,10 +1,19 @@
-# DBDock
+<p align="center"><img src="src-tauri/icons/128x128.png" alt="DBDock icon" width="120" /></p>
 
-[English](README.md) · 简体中文 · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md)
+<h1 align="center">DBDock</h1>
 
-**版本 1.0.0** · macOS · Tauri 2 + Rust + React
+<p align="center"><strong>给数据库找个顺手的家。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.0.0</p>
+
+<p align="center"><a href="README.md">English</a> · 简体中文 · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a><br />
+<a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
 
 DBDock 是一款桌面数据库客户端，支持 **MySQL、PostgreSQL、SQLite、Redis、MongoDB 和 Cloudflare D1**，内置 SSH 隧道、连接分组、环境标签和支持 Vim 的编辑器。
+
+<p align="center"><img src="docs/images/connections.png" alt="DBDock connection groups and environment tags" width="900" /></p>
+
+<p align="center"><img src="docs/images/new-connection.png" alt="DBDock new connection dialog" width="720" /></p>
+
+> 截图使用隔离的演示数据，所有连接均为虚构。
 
 ## 功能
 

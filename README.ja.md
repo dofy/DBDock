@@ -1,10 +1,19 @@
-# DBDock
+<p align="center"><img src="src-tauri/icons/128x128.png" alt="DBDock icon" width="120" /></p>
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · 日本語
+<h1 align="center">DBDock</h1>
 
-**バージョン 1.0.0** · macOS · Tauri 2 + Rust + React
+<p align="center"><strong>データベースのための使いやすい作業空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.0.0</p>
+
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · 日本語<br />
+<a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
 
 DBDock は **MySQL、PostgreSQL、SQLite、Redis、MongoDB、Cloudflare D1** に対応するデスクトップデータベースクライアントです。SSH トンネル、接続グループ、環境タグ、Vim 対応エディターを備えています。
+
+<p align="center"><img src="docs/images/connections.png" alt="DBDock connection groups and environment tags" width="900" /></p>
+
+<p align="center"><img src="docs/images/new-connection.png" alt="DBDock new connection dialog" width="720" /></p>
+
+> スクリーンショットの接続はすべて架空のデモデータです。
 
 ## 機能
 

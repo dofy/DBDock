@@ -1,13 +1,20 @@
-# DBDock
+<p align="center"><img src="src-tauri/icons/128x128.png" alt="DBDock icon" width="120" /></p>
 
-English · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md)
+<h1 align="center">DBDock</h1>
 
-**Version 1.0.0** · macOS · Tauri 2 + Rust + React
+<p align="center"><strong>A desktop home for your databases.</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.0.0</p>
 
-A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1**,
-with SSH tunnelling, connection groups, environment tags and a Vim-capable editor.
+<p align="center">English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a><br />
+<a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
 
-Copyright © 2026 phpz.org · MIT License · <https://github.com/dofy/DBDock>
+A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1**, with SSH tunnelling, connection groups, environment tags and a Vim-capable editor.
+
+<p align="center"><img src="docs/images/connections.png" alt="DBDock connection groups and environment tags" width="900" /></p>
+
+<p align="center"><img src="docs/images/new-connection.png" alt="DBDock new connection dialog" width="720" /></p>
+
+> Screenshots show an isolated demo with fictional connections.
+
 
 ## Features
 
