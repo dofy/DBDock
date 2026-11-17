@@ -7,6 +7,13 @@
 <p align="center">English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a><br />
 <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS-354e63?style=flat-square" alt="macOS" />
+  <img src="https://img.shields.io/badge/databases-6-5e7d72?style=flat-square" alt="Six supported databases" />
+  <img src="https://img.shields.io/badge/tunneling-SSH-9c7452?style=flat-square" alt="SSH tunneling" />
+  <img src="https://img.shields.io/badge/editor-Vim%20mode-746b89?style=flat-square" alt="Vim mode" />
+</p>
+
 A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1**, with SSH tunnelling, connection groups, environment tags and a Vim-capable editor.
 
 <p align="center"><img src="docs/images/connections.png" alt="DBDock connection groups and environment tags" width="900" /></p>
