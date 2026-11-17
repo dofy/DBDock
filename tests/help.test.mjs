@@ -66,3 +66,9 @@ test('keyboard shortcuts use matching tables in every language', async () => {
     assert.equal((html.match(/<tr>/g) || []).length, (section.match(/<tr>/g) || []).length);
   }
 });
+
+test('help takes its version from package.json instead of hard-coding it', async () => {
+  const html = await readFile(new URL('../public/help.html', import.meta.url), 'utf8');
+  assert.equal(html.match(/%APP_VERSION%/g)?.length, 2);
+  assert.doesNotMatch(html, /Help · \d|DBDock \d/);
+});
