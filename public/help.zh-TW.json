@@ -24,7 +24,7 @@
     },
     "ssh-hosts": {
       "title": "SSH 主機設定",
-      "html": "<p>「檔案 → SSH 主機」（⇧⌘H）管理 ~/.ssh/config。可新增或刪除主機，編輯 HostName、User、Port、IdentityFile、ProxyJump，並以代理程式或金鑰測試登入。</p><p>其他設定、註解及縮排會保留；原始檔案編輯器支援 Host *、Match 等設定。每次儲存前會建立帶時間戳記的 config.dbdock-*.bak。主機旁的數字代表使用它的 DBDock 連線數量。</p>"
+      "html": "<p>「檔案 → SSH 主機」（⇧⌘H）管理 ~/.ssh/config。可新增或刪除主機，編輯 HostName、User、Port、IdentityFile、ProxyJump，並以代理程式或金鑰測試登入。選擇終端機或 iTerm2 後按「連線」，即可使用 OpenSSH 開啟已儲存的主機；修改後請先儲存。</p><p>其他設定、註解及縮排會保留；原始檔案編輯器支援 Host *、Match 等設定。每次儲存前會建立帶時間戳記的 config.dbdock-*.bak。主機旁的數字代表使用它的 DBDock 連線數量。</p>"
     },
     "sql": {
       "title": "SQL 資料庫",

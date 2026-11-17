@@ -453,7 +453,9 @@ button.link { display: inline-flex; }
 .ssh-hosts-edit .form .port { width: 100px; }
 .kept-lines { margin-top: 12px; }
 .kept-lines pre { margin: 4px 0 0; padding: 8px 10px; background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
-.ssh-hosts-edit .actions { margin-top: auto; padding-top: 12px; }
+.ssh-hosts-edit .actions { margin-top: auto; padding-top: 12px; flex-wrap: wrap; }
+.ssh-terminal-actions { display: flex; align-items: center; gap: 6px; }
+.ssh-terminal-actions select { width: auto; }
 .raw-config { flex: 1; min-height: 300px; width: 100%; padding: 10px; font-size: 12px; line-height: 1.5; border: 1px solid var(--line); border-radius: 6px; background: var(--bg2); color: var(--fg); resize: none; tab-size: 4; }
 
 /* clearer icon buttons (card hover actions, tree, dialogs) */

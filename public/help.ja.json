@@ -24,7 +24,7 @@
     },
     "ssh-hosts": {
       "title": "SSH ホスト設定",
-      "html": "<p>「ファイル → SSH ホスト」（⇧⌘H）で ~/.ssh/config を管理します。ホストの追加・削除、HostName、User、Port、IdentityFile、ProxyJump の編集、エージェントや鍵によるログインテストができます。</p><p>その他の設定、コメント、インデントは保持されます。ファイル直接編集では Host *、Match なども扱えます。保存前に日時付き config.dbdock-*.bak を作成します。ホスト横の数字は使用中の DBDock 接続数です。</p>"
+      "html": "<p>「ファイル → SSH ホスト」（⇧⌘H）で ~/.ssh/config を管理します。ホストの追加・削除、HostName、User、Port、IdentityFile、ProxyJump の編集、エージェントや鍵によるログインテストができます。ターミナルまたは iTerm2 を選び「接続」を押すと、保存済みホストを OpenSSH で開きます。変更は先に保存してください。</p><p>その他の設定、コメント、インデントは保持されます。ファイル直接編集では Host *、Match なども扱えます。保存前に日時付き config.dbdock-*.bak を作成します。ホスト横の数字は使用中の DBDock 接続数です。</p>"
     },
     "sql": {
       "title": "SQL データベース",

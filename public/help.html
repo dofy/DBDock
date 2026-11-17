@@ -162,6 +162,7 @@ jdbc:postgresql://localhost/app</code></pre>
     <p>Open it with <b>File → SSH Hosts…</b> (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd>). It edits <code>~/.ssh/config</code>, the same file <code>ssh</code> uses.</p>
     <ul>
       <li>Pick a host to edit <b>HostName, User, Port, IdentityFile, ProxyJump</b>; <b>New host</b> adds one; <b>Test login</b> signs in with the agent or keys.</li>
+      <li>Select Terminal or iTerm2 and click <b>Connect</b> to open the saved host using OpenSSH. Save edits first; the terminal handles authentication and ProxyJump.</li>
       <li>Only those lines of that block change. Comments, other directives (<code>ForwardAgent</code>, <code>ServerAliveInterval</code>, …) and indentation are kept and listed under <i>Kept as is</i>.</li>
       <li><b>Raw file</b> edits the whole file, for <code>Host *</code>, multi-alias blocks, <code>Match</code> and anything else.</li>
       <li>Every save first writes <code>~/.ssh/config.dbdock-&lt;date&gt;.bak</code>.</li>

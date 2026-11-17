@@ -6,6 +6,8 @@ import { resolveLocale } from "./locale";
 
 // English is the source text. Database values, SQL, identifiers and errors are never translated.
 const messages: Record<string, readonly [string, string, string]> = {
+  "Terminal application": ["终端应用", "終端機應用程式", "ターミナルアプリ"],
+  "Open SSH in terminal": ["在终端中连接 SSH", "在終端機中連線 SSH", "ターミナルで SSH 接続"],
   "Command palette": ["命令面板", "命令面板", "コマンドパレット"],
   "Search commands": ["搜索命令", "搜尋命令", "コマンドを検索"],
   "No matching commands": ["没有匹配的命令", "沒有符合的命令", "一致するコマンドがありません"],

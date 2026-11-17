@@ -2,10 +2,10 @@ import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ask, open } from "@tauri-apps/plugin-dialog";
-import { FileCode, FolderOpen, Plus, RefreshCw, Save, Server, Trash2, X, Zap } from "lucide-react";
+import { FileCode, FolderOpen, Plus, RefreshCw, Save, Server, SquareTerminal, Trash2, X, Zap } from "lucide-react";
 import { errText, type ConnectionConfig } from "../api";
 import { useToast } from "./Toast";
-import { inEditor } from "../settings";
+import { inEditor, updateSettings, useSettings } from "../settings";
 import { CodeEditor } from "./CodeEditor";
 
 interface HostForm {
@@ -35,6 +35,7 @@ interface Props {
 /** Manage ~/.ssh/config: list, edit, add, delete and test Host blocks, or edit the raw file. */
 export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
   const toast = useToast();
+  const settings = useSettings();
   const [hosts, setHosts] = useState<HostBlock[]>([]);
   const [sel, setSel] = useState<string | null>(null); // alias, "" = new
   const [form, setForm] = useState<HostForm>(EMPTY);
@@ -126,6 +127,18 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
       toast("ok", `${sel}: ${t(await invoke<string>("ssh_host_test", { alias: sel }))}`);
     } catch (e) {
       toast("error", `${sel}: ${errText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openTerminal = async () => {
+    if (!current || dirty) return;
+    setBusy(true);
+    try {
+      await invoke("ssh_host_open_terminal", { alias: current.alias, terminal: settings.sshTerminal });
+    } catch (e) {
+      toast("error", errText(e));
     } finally {
       setBusy(false);
     }
@@ -264,6 +277,15 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
                     <button onClick={() => void test()} disabled={busy || dirty} title={dirty ? t("Save first") : t("Log in with agent / key")}>
                       <Zap size={14} />  {t("Test login")} </button>
                   )}
+                  {current && <div className="ssh-terminal-actions">
+                    <select aria-label={t("Terminal application")} value={settings.sshTerminal} onChange={(e) => updateSettings({ sshTerminal: e.target.value as typeof settings.sshTerminal })}>
+                      <option value="terminal">Terminal</option>
+                      <option value="iterm">iTerm2</option>
+                    </select>
+                    <button onClick={() => void openTerminal()} disabled={busy || dirty} title={dirty ? t("Save first") : t("Open SSH in terminal")}>
+                      <SquareTerminal size={14} /> {t("Connect")}
+                    </button>
+                  </div>}
                   <span className="spacer" />
                   <button className="primary" disabled={busy || !dirty || !form.alias.trim()} onClick={() => void save()}>
                     <Save size={14} /> {sel === "" ? t("Add host") : t("Save")}

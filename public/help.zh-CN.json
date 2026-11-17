@@ -24,7 +24,7 @@
     },
     "ssh-hosts": {
       "title": "SSH 主机配置",
-      "html": "<p>“文件 → SSH 主机”（⇧⌘H）管理 ~/.ssh/config。可增删主机，编辑 HostName、User、Port、IdentityFile 和 ProxyJump，并用代理或密钥测试登录。</p><p>其他配置、注释和缩进会保留；原始文件编辑器支持 Host *、Match 等配置。每次保存前会创建带时间戳的 config.dbdock-*.bak。主机旁的数字表示使用它的 DBDock 连接数量。</p>"
+      "html": "<p>“文件 → SSH 主机”（⇧⌘H）管理 ~/.ssh/config。可增删主机，编辑 HostName、User、Port、IdentityFile 和 ProxyJump，并用代理或密钥测试登录。选择终端或 iTerm2 后点击“连接”，可使用 OpenSSH 打开已保存的主机；修改后请先保存。</p><p>其他配置、注释和缩进会保留；原始文件编辑器支持 Host *、Match 等配置。每次保存前会创建带时间戳的 config.dbdock-*.bak。主机旁的数字表示使用它的 DBDock 连接数量。</p>"
     },
     "sql": {
       "title": "SQL 数据库",

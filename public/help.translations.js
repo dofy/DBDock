@@ -25,7 +25,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "ssh-hosts": {
         "title": "SSH 主机配置",
-        "html": "<p>“文件 → SSH 主机”（⇧⌘H）管理 ~/.ssh/config。可增删主机，编辑 HostName、User、Port、IdentityFile 和 ProxyJump，并用代理或密钥测试登录。</p><p>其他配置、注释和缩进会保留；原始文件编辑器支持 Host *、Match 等配置。每次保存前会创建带时间戳的 config.dbdock-*.bak。主机旁的数字表示使用它的 DBDock 连接数量。</p>"
+        "html": "<p>“文件 → SSH 主机”（⇧⌘H）管理 ~/.ssh/config。可增删主机，编辑 HostName、User、Port、IdentityFile 和 ProxyJump，并用代理或密钥测试登录。选择终端或 iTerm2 后点击“连接”，可使用 OpenSSH 打开已保存的主机；修改后请先保存。</p><p>其他配置、注释和缩进会保留；原始文件编辑器支持 Host *、Match 等配置。每次保存前会创建带时间戳的 config.dbdock-*.bak。主机旁的数字表示使用它的 DBDock 连接数量。</p>"
       },
       "sql": {
         "title": "SQL 数据库",
@@ -83,7 +83,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "ssh-hosts": {
         "title": "SSH 主機設定",
-        "html": "<p>「檔案 → SSH 主機」（⇧⌘H）管理 ~/.ssh/config。可新增或刪除主機，編輯 HostName、User、Port、IdentityFile、ProxyJump，並以代理程式或金鑰測試登入。</p><p>其他設定、註解及縮排會保留；原始檔案編輯器支援 Host *、Match 等設定。每次儲存前會建立帶時間戳記的 config.dbdock-*.bak。主機旁的數字代表使用它的 DBDock 連線數量。</p>"
+        "html": "<p>「檔案 → SSH 主機」（⇧⌘H）管理 ~/.ssh/config。可新增或刪除主機，編輯 HostName、User、Port、IdentityFile、ProxyJump，並以代理程式或金鑰測試登入。選擇終端機或 iTerm2 後按「連線」，即可使用 OpenSSH 開啟已儲存的主機；修改後請先儲存。</p><p>其他設定、註解及縮排會保留；原始檔案編輯器支援 Host *、Match 等設定。每次儲存前會建立帶時間戳記的 config.dbdock-*.bak。主機旁的數字代表使用它的 DBDock 連線數量。</p>"
       },
       "sql": {
         "title": "SQL 資料庫",
@@ -141,7 +141,7 @@ window.DBDOCK_HELP_TRANSLATIONS = {
       },
       "ssh-hosts": {
         "title": "SSH ホスト設定",
-        "html": "<p>「ファイル → SSH ホスト」（⇧⌘H）で ~/.ssh/config を管理します。ホストの追加・削除、HostName、User、Port、IdentityFile、ProxyJump の編集、エージェントや鍵によるログインテストができます。</p><p>その他の設定、コメント、インデントは保持されます。ファイル直接編集では Host *、Match なども扱えます。保存前に日時付き config.dbdock-*.bak を作成します。ホスト横の数字は使用中の DBDock 接続数です。</p>"
+        "html": "<p>「ファイル → SSH ホスト」（⇧⌘H）で ~/.ssh/config を管理します。ホストの追加・削除、HostName、User、Port、IdentityFile、ProxyJump の編集、エージェントや鍵によるログインテストができます。ターミナルまたは iTerm2 を選び「接続」を押すと、保存済みホストを OpenSSH で開きます。変更は先に保存してください。</p><p>その他の設定、コメント、インデントは保持されます。ファイル直接編集では Host *、Match なども扱えます。保存前に日時付き config.dbdock-*.bak を作成します。ホスト横の数字は使用中の DBDock 接続数です。</p>"
       },
       "sql": {
         "title": "SQL データベース",

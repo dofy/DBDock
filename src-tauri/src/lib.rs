@@ -9,6 +9,7 @@ mod sources;
 mod ssh;
 mod ssh_config;
 mod ssh_config_edit;
+mod ssh_terminal;
 mod store;
 mod transfer;
 
@@ -341,6 +342,12 @@ fn ssh_host_save(original: Option<String>, form: ssh_config_edit::HostForm) -> C
 #[tauri::command]
 fn ssh_host_delete(alias: String) -> CmdResult<()> {
     ssh_config_edit::delete(&alias).map_err(err)
+}
+
+#[tauri::command]
+async fn ssh_host_open_terminal(alias: String, terminal: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || ssh_terminal::open(&alias, &terminal).map_err(err))
+        .await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -689,6 +696,7 @@ pub fn run() {
             ssh_hosts_list,
             ssh_host_save,
             ssh_host_delete,
+            ssh_host_open_terminal,
             ssh_config_raw,
             ssh_config_write,
             ssh_host_test,

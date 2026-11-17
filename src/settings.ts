@@ -6,10 +6,11 @@ export interface Settings {
   vim: boolean;
   theme: "system" | "light" | "dark";
   language: "system" | "en" | "zh-CN" | "zh-TW" | "ja";
+  sshTerminal: "terminal" | "iterm";
 }
 
 const KEY = "dbdock.settings";
-const DEFAULTS: Settings = { vim: false, theme: "system", language: "system" };
+const DEFAULTS: Settings = { vim: false, theme: "system", language: "system", sshTerminal: "terminal" };
 
 function load(): Settings {
   try {
@@ -18,6 +19,7 @@ function load(): Settings {
       vim: typeof saved.vim === "boolean" ? saved.vim : DEFAULTS.vim,
       theme: ["system", "light", "dark"].includes(saved.theme) ? saved.theme : DEFAULTS.theme,
       language: ["system", "en", "zh-CN", "zh-TW", "ja"].includes(saved.language) ? saved.language : DEFAULTS.language,
+      sshTerminal: saved.sshTerminal === "iterm" ? "iterm" : "terminal",
     };
   } catch {
     return DEFAULTS;
