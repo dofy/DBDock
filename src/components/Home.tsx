@@ -307,13 +307,13 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
         </div>
         {shown.length > 0 && <p className="drag-instruction"><GripVertical size={14} aria-hidden="true" />{t("Hover over a connection card, then drag its handle to a group on the left.")}</p>}
         <div className="env-filter">
-          <button className={`chip ${envFilter === null ? "on" : ""}`} onClick={() => setEnvFilter(null)}>
+          <button className={`chip env-all ${envFilter === null ? "on" : ""}`} aria-pressed={envFilter === null} onClick={() => setEnvFilter(null)}>
              {t("All")} {inGroup.length}
           </button>
           {[...ENVS, ""]
             .filter((e) => envCounts.has(e))
             .map((e) => (
-              <button key={e || "none"} className={`chip env-chip env-${e || "none"} ${envFilter === e ? "on" : ""}`} onClick={() => setEnvFilter(envFilter === e ? null : e)}>
+              <button key={e || "none"} className={`chip env-chip env-${e || "none"} ${envFilter === e ? "on" : ""}`} aria-pressed={envFilter === e} onClick={() => setEnvFilter(envFilter === e ? null : e)}>
                 {e ? t(ENV_LABEL[e]) : t("untagged")} {envCounts.get(e)}
               </button>
             ))}

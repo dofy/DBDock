@@ -251,15 +251,15 @@ pre.value { margin: 0; padding: 10px 12px; flex: 1; overflow: auto; font-family:
 .env-staging { --env: #e08a00; }
 .env-production { --env: #e5484d; }
 .env-none { --env: #8a8f98; }
+.env-development, .env-production { --env-selected: color-mix(in srgb, var(--env) 90%, #1d1d1f); --env-selected-fg: #fff; }
 .env-badge[class*="env-"] { background: var(--env); }
 .conn-list li.is-prod { border-color: color-mix(in srgb, #e5484d 55%, var(--line)); background: color-mix(in srgb, #e5484d 6%, var(--bg2)); }
 .env-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
-.env-chip.on { background: var(--env); border-color: var(--env); color: #fff; }
-.env-chip:not(.on) { box-shadow: inset 3px 0 0 var(--env); }
 .env-picker { display: flex; flex-wrap: wrap; gap: 4px; }
-.env-opt { font-size: 11px; font-weight: 600; padding: 3px 8px; }
-.env-opt:not(.on) { border-color: var(--env); color: color-mix(in srgb, var(--env) 60%, var(--fg)); }
-.env-opt.on { background: var(--env, var(--accent)); border-color: var(--env, var(--accent)); color: #fff; }
+.env-opt, .env-chip, .env-all { padding: 3px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.env-opt:not(.on), .env-chip:not(.on) { border-color: var(--env); color: color-mix(in srgb, var(--env) 60%, var(--fg)); }
+.env-opt.on, .env-chip.on { background: var(--env-selected, var(--env)); border-color: var(--env-selected, var(--env)); color: var(--env-selected-fg, #1d1d1f); }
+.env-all.on { background: var(--fg); border-color: var(--fg); color: var(--bg); }
 .top-tab .env-badge { margin-left: 0; }
 
 /* SSH card */
@@ -565,7 +565,7 @@ button.link { display: inline-flex; }
 .card.picked { background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
 .card-title b { font-weight: 600; }
 .card-sub { font-family: var(--mono); }
-button:not(.icon-btn):not(.link):not(.caret):not(.x):not(.pick):not(.top-tab):not(.chip) { box-shadow: 0 1px 2px rgb(0 0 0 / 0.09); }
+button:not(.icon-btn):not(.link):not(.caret):not(.x):not(.pick):not(.top-tab):not(.chip):not(.env-opt) { box-shadow: 0 1px 2px rgb(0 0 0 / 0.09); }
 button.primary { font-weight: 600; }
 .menu button, .host-menu button, .btn-group > button { box-shadow: none !important; }
 .btn-group { gap: 0; }
