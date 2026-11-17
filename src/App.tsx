@@ -11,6 +11,8 @@ import { MongoWorkspace } from "./components/MongoWorkspace";
 import { DbIcon } from "./components/DbIcon";
 import { ToastProvider, useToast } from "./components/Toast";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { CommandPalette } from "./components/CommandPalette";
+import type { PaletteCommand } from "./commandPalette";
 import { AboutDialog } from "./components/AboutDialog";
 import "./styles.css";
 import { Database, X } from "lucide-react";
@@ -51,6 +53,20 @@ function Shell() {
   const [homeAction, setHomeAction] = useState<MenuAction | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showCommand, setShowCommand] = useState(false);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const pendingCommand = useRef<PaletteCommand | null>(null);
+  const openCommands = () => {
+    if (document.querySelector('.modal-backdrop:not([hidden])') || document.querySelector('.palette-backdrop')) return;
+    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setShowCommand(true);
+  };
+  useEffect(() => {
+    if (showCommand) return;
+    const command = pendingCommand.current; pendingCommand.current = null;
+    if (command) { command.run(); return; }
+    previousFocus.current?.focus(); previousFocus.current = null;
+  }, [showCommand]);
   const [heldTabModifier, setHeldTabModifier] = useState<"cmd" | "ctrl" | null>(null);
   const sqlHistory = useRef(new SqlHistory());
   const dirtyTabs = useRef(new Map<string, Map<string, "dirty" | "busy">>());
@@ -145,6 +161,8 @@ function Shell() {
       return;
     }
     switch (id) {
+      case "command-palette":
+        return openCommands();
       case "new-connection":
         return setEditing({ newInGroup: "" });
       case "settings":
@@ -194,6 +212,13 @@ function Shell() {
       e.preventDefault();
       e.stopPropagation();
     };
+    const paletteKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && !e.isComposing && e.key.toLowerCase() === "p") {
+        if (document.querySelector('.modal-backdrop:not([hidden])') || document.querySelector('.palette-backdrop')) return;
+        e.preventDefault(); e.stopPropagation(); if (!e.repeat) menuRef.current("command-palette");
+      }
+    };
+    window.addEventListener("keydown", paletteKey, true);
     window.addEventListener("keydown", numberedTab, true);
     window.addEventListener("keyup", modifier, true);
     window.addEventListener("blur", clearModifier);
@@ -201,11 +226,36 @@ function Shell() {
       void un.then((f) => f());
       void unModifier.then((f) => f());
       window.removeEventListener("dbdock:menu", local);
+      window.removeEventListener("keydown", paletteKey, true);
       window.removeEventListener("keydown", numberedTab, true);
       window.removeEventListener("keyup", modifier, true);
       window.removeEventListener("blur", clearModifier);
     };
   }, []);
+
+  const activeSession = opened.find((item) => item.session.sessionId === active);
+  const noteCategory = t("Connections"), settingsCategory = t("Settings"), databaseCategory = t("Database");
+  const action = (id: string, label: string, category: string, keywords: string, shortcut?: string): PaletteCommand => ({ id, label: t(label), category, keywords, shortcut, run: () => menuRef.current(id) });
+  const commands: PaletteCommand[] = [
+    action("new-connection", "New connection", noteCategory, "create connection", "⌘N"),
+    action("home", "Connections", noteCategory, "home connections"),
+    action("find", "Search connections", noteCategory, "search find connection", "⌘F"),
+    action("new-group", "New group", noteCategory, "create group", "⌘⇧N"),
+    action("import", "Import connections", noteCategory, "import connections", "⌘O"),
+    action("export", "Export connections", noteCategory, "export connections", "⌘⇧E"),
+    action("ssh-hosts", "SSH Hosts", noteCategory, "ssh hosts", "⌘⇧H"),
+    action("settings", "Open settings", settingsCategory, "preferences settings", "⌘,"),
+    { id:"vim",label:t(settings.vim ? "Disable Vim mode" : "Enable Vim mode"),category:settingsCategory,keywords:"vim editor toggle",run:()=>updateSettings({vim:!settings.vim}) },
+    ...(["system","light","dark"] as const).map((theme): PaletteCommand => ({id:`theme-${theme}`,label:`${t("Theme")}: ${t(theme === "system" ? "System" : theme === "light" ? "Light" : "Dark")}`,category:settingsCategory,keywords:`appearance theme ${theme}`,run:()=>updateSettings({theme})})),
+    ...(["system","en","zh-CN","zh-TW","ja"] as const).map((language): PaletteCommand => ({id:`language-${language}`,label:`${t("Language")}: ${language === "system" ? t("System") : ({en:"English", "zh-CN":"简体中文", "zh-TW":"繁體中文", ja:"日本語"} as Record<string,string>)[language]}`,category:settingsCategory,keywords:`language locale ${language}`,run:()=>updateSettings({language})})),
+    { id:"help",label:t("Help"),category:settingsCategory,keywords:"help documentation",run:()=>{void invoke("open_help").catch((error)=>toast("error",errText(error)));} },
+  ];
+  if (activeSession && !["redis","mongodb"].includes(activeSession.session.kind)) commands.splice(1,0,action("new-sql-tab","New query",databaseCategory,"new sql query", "⌘T"));
+  if (active) commands.push(action("close-tab","Close connection",databaseCategory,"close session"));
+  for (const connection of conns) commands.push({id:`connection-${connection.id}`,label:tf("Connect to {name}",{name:connection.name}),category:noteCategory,keywords:`connect ${connection.kind}`,run:()=>{
+    const existing=opened.find((item)=>item.conn.id===connection.id);
+    if(existing)setActive(existing.session.sessionId);else void connect(connection);
+  }});
 
   return (
     <div className="app">
@@ -262,6 +312,7 @@ function Shell() {
         </div>
       ))}
 
+      {showCommand && <CommandPalette commands={commands} onClose={() => setShowCommand(false)} onRun={(command) => { pendingCommand.current = command; setShowCommand(false); }} />}
       {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
 

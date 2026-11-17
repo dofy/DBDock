@@ -76,6 +76,7 @@ fn label<'a>(language: &str, english: &'a str) -> &'a str {
         "Close Tab" => ["关闭标签页", "關閉分頁", "タブを閉じる"],
         "Edit" => ["编辑", "編輯", "編集"], "View" => ["显示", "顯示", "表示"],
         "Connections" => ["连接", "連線", "接続"],
+        "Command Palette…" => ["命令面板…", "命令面板…", "コマンドパレット…"],
         "Search Connections" => ["搜索连接", "搜尋連線", "接続を検索"],
         "Reload" => ["重新加载", "重新載入", "再読み込み"],
         "Next Session" => ["下一个会话", "下一個工作階段", "次のセッション"],
@@ -157,6 +158,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
         label(language, "View"),
         true,
         &[
+            &item(app, "command-palette", label(language, "Command Palette…"), Some("CmdOrCtrl+Shift+P"))?,
+            &sep()?,
             &item(app, "home", label(language, "Connections"), None)?,
             &item(app, "find", label(language, "Search Connections"), Some("CmdOrCtrl+F"))?,
             &item(app, "reload", label(language, "Reload"), Some("CmdOrCtrl+R"))?,
@@ -192,7 +195,7 @@ pub fn handle<R: Runtime>(app: &AppHandle<R>, id: &str) {
         }
         // ⌘W closes a secondary window (Help) when it has focus; in the main window it
         // closes the current session tab.
-        "new-sql-tab" | "close-database-tab" => {
+        "command-palette" | "new-sql-tab" | "close-database-tab" => {
             use tauri::Manager;
             if app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false)) {
                 let _ = app.emit("menu", id);

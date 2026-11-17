@@ -89,6 +89,7 @@ document edit / insert / delete by `_id`, and indexes. The Shell tab runs
 
 ### Editor and app
 
+- **Command palette** (⇧⌘P): search actions to create connections and groups, open a query, connect to a saved connection, or change theme, language and Vim mode. Use ↑/↓ and Enter to choose.
 - **Settings** (⌘,): choose a light or dark theme and English, Simplified Chinese, Traditional Chinese, or Japanese. Both follow the system by default. Configure Vim mode and find version, copyright, Help and GitHub.
 - **Vim mode** for the SQL editor, Mongo shell, document editor and SSH
   config editor; one Esc also closes an open completion; `:w` saves (runs in the SQL editor

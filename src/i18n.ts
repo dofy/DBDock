@@ -6,6 +6,15 @@ import { resolveLocale } from "./locale";
 
 // English is the source text. Database values, SQL, identifiers and errors are never translated.
 const messages: Record<string, readonly [string, string, string]> = {
+  "Command palette": ["命令面板", "命令面板", "コマンドパレット"],
+  "Search commands": ["搜索命令", "搜尋命令", "コマンドを検索"],
+  "No matching commands": ["没有匹配的命令", "沒有符合的命令", "一致するコマンドがありません"],
+  "Choose a command": ["选择命令", "選擇命令", "コマンドを選択"],
+  "Search connections": ["搜索连接", "搜尋連線", "接続を検索"],
+  "Open settings": ["打开设置", "開啟設定", "設定を開く"],
+  "Disable Vim mode": ["关闭 Vim 模式", "關閉 Vim 模式", "Vim モードを無効化"],
+  "Enable Vim mode": ["开启 Vim 模式", "開啟 Vim 模式", "Vim モードを有効化"],
+  "Connect to {name}": ["连接到 {name}", "連線至 {name}", "{name} に接続"],
   "LOCAL": ["本地", "本機", "ローカル"], "DEV": ["开发", "開發", "開発"], "TEST": ["测试", "測試", "テスト"], "STAGING": ["预发布", "預發布", "ステージング"], "PROD": ["生产", "正式", "本番"], "untagged": ["无标签", "無標籤", "タグなし"],
   "Connecting…": ["正在连接…", "連線中…", "接続中…"], "Select (⌘-click also works)": ["选择（也可按住 ⌘ 点击）", "選取（也可按住 ⌘ 點擊）", "選択（⌘ を押しながらクリックも可能）"],
   "Schema": ["架构", "綱要", "スキーマ"], "Save first": ["请先保存", "請先儲存", "先に保存してください"], "Log in with agent / key": ["使用代理或密钥登录", "使用代理程式或金鑰登入", "エージェントまたは鍵でログイン"], "Add host": ["添加主机", "新增主機", "ホストを追加"], "Pattern block — edit in the raw file": ["模式块 — 请在原始文件中编辑", "模式區塊 — 請在原始檔案中編輯", "パターンブロック — ファイルを直接編集"], "pattern · raw only": ["模式 · 仅原始文件", "模式 · 僅原始檔案", "パターン · 直接編集のみ"],
