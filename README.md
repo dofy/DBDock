@@ -52,9 +52,11 @@ Copyright © 2026 phpz.org · MIT License · <https://github.com/dofy/DBDock>
 
 - Schema / table tree, paged table browser with a WHERE filter (column completion) and
   column sort, structure view.
-- SQL editor: ⌘↵ runs the selection or everything, multiple statements, Tab accepts a
-  suggestion, columns of the tables in the statement are suggested, Cancel stops a running
-  MySQL / PostgreSQL query.
+- SQL editor: ⌘T opens a SQL tab and ⇧⌘W closes the current database tab. ⌘↵ runs the selected text or current line; ⇧⌘↵ runs the whole script. Save or
+  load SQL files with the toolbar; recent statements are kept in memory for each connection
+  and selected database until the app exits. Tab accepts a suggestion; Cancel stops a running
+  MySQL / PostgreSQL query. ⌃1–9 select top-level tabs and ⌘1–9 select database tabs; hold
+  the modifier to show their numbers. ⌥⌘←/→ and ⌃⇧Tab / ⌃Tab cycle tabs.
 - Grid editing for tables with a primary key: double-click a cell, add / delete rows, set
   NULL, preview the SQL, commit with ⌘S. Everything runs in one transaction; an UPDATE or
   DELETE that does not hit exactly one row rolls the whole commit back.
@@ -65,8 +67,9 @@ Copyright © 2026 phpz.org · MIT License · <https://github.com/dofy/DBDock>
   `PRAGMA table_info`, hides `_cf_*` tables, and commits grid edits as one atomic request
   with a guard after each UPDATE / DELETE. Queries cannot be cancelled.
 
-Each session uses a single connection, so `USE`, `SET` and transactions behave like one
-interactive session.
+The SQL editor uses a single connection for `USE`, `SET` and transactions. MySQL and
+PostgreSQL table browsing uses up to two separate connections, shows committed data, and
+does not share the editor session settings or temporary tables.
 
 ### Redis
 

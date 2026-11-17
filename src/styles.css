@@ -137,6 +137,23 @@ fieldset.ssh.off { padding-bottom: 0; }
 
 /* workspace */
 .session { flex: 1; min-height: 0; display: flex; }
+.connecting-workspace { min-width: 0; }
+.connecting-sidebar { width: 220px; flex: none; padding: 16px 12px; border-right: 1px solid var(--line); background: var(--bg2); }
+.connecting-sidebar span { display: block; height: 8px; margin-bottom: 16px; border-radius: 4px; background: var(--line); }
+.connecting-sidebar span:nth-child(2) { width: 80%; }
+.connecting-sidebar span:nth-child(3) { width: 65%; }
+.connecting-sidebar span:nth-child(4) { width: 75%; }
+.connecting-content { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: var(--muted); text-align: center; }
+.connecting-content strong { color: var(--fg); font-size: 14px; overflow-wrap: anywhere; }
+.connecting-icon { position: relative; display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 8px; color: var(--accent); border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
+.connecting-spinner { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: var(--bg); }
+.loading-spinner { display: inline-block; flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-left-color: transparent; border-right-color: transparent; border-radius: 50%; transform-origin: 50% 50%; animation: health-spin 1s linear infinite; }
+.loading-grid { flex: 1; min-height: 0; overflow: hidden; background: var(--bg); }
+.loading-grid-header { height: 28px; border-bottom: 1px solid var(--line); background: var(--bg2); }
+.loading-grid-row { height: 24px; }
+.loading-grid-row:nth-child(even) { background: var(--bg2); }
+.loading-status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } }
 .workspace { flex: 1; display: flex; min-width: 0; min-height: 0; }
 .sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--bg2); border-right: 1px solid var(--line); min-height: 0; }
 .sidebar > select { width: 100%; }
@@ -455,6 +472,10 @@ button.link { display: inline-flex; }
 .raw-config { flex: 1; min-height: 300px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; padding: 0; background: var(--bg); }
 .vim-badge { position: absolute; right: 8px; bottom: 6px; z-index: 3; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 1px 6px; border-radius: 4px; background: var(--accent); color: var(--accent-fg); pointer-events: none; opacity: 0.85; }
 .cm-vim-panel { font-family: var(--mono); font-size: 12px; padding: 2px 6px; }
+.cm-vim-panel > div { display: flex; align-items: baseline; min-width: 0; }
+.cm-vim-panel input { flex: 1; width: auto; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; font: inherit; line-height: inherit; background: transparent; }
+.query .toolbar .query-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.query .toolbar select { flex: none; max-width: 140px; }
 .cm-fat-cursor { background: color-mix(in srgb, var(--accent) 70%, transparent) !important; }
 
 /* settings */
@@ -616,3 +637,5 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
 :hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--fg) 22%, transparent); }
 ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--fg) 38%, transparent); }
+
+.tab-number { flex: none; min-width: 16px; height: 16px; padding: 0 3px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; background: var(--accent); color: var(--accent-fg); font: 600 10px/1 var(--ui); }

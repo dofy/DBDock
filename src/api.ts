@@ -164,15 +164,21 @@ export const api = {
   testConnection: (config: ConnectionConfig, secrets: SecretsInput) =>
     invoke<string>("test_connection", { config, secrets }),
   checkSavedConnection: (id: string) => invoke<void>("check_saved_connection", { id }),
-  connect: (id: string) => invoke<SessionInfo>("connect", { id }),
+  beginConnect: (attemptId: string) => invoke<void>("begin_connect", { attemptId }),
+  cancelConnect: (attemptId: string) => invoke<void>("cancel_connect", { attemptId }),
+  connect: (id: string, attemptId: string) => invoke<SessionInfo>("connect", { id, attemptId }),
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
+
+  readSqlFile: (path: string) => invoke<string>("read_sql_file", { path }),
+  writeSqlFile: (path: string, contents: string) => invoke<void>("write_sql_file", { path, contents }),
 
   schemas: (sessionId: string) => invoke<string[]>("sql_schemas", { sessionId }),
   tables: (sessionId: string, schema: string) => invoke<TableInfo[]>("sql_tables", { sessionId, schema }),
-  structure: (sessionId: string, schema: string, table: string) =>
-    invoke<QueryResult>("sql_structure", { sessionId, schema, table }),
+  structure: (sessionId: string, schema: string, table: string, requestId: string) =>
+    invoke<QueryResult>("sql_structure", { sessionId, schema, table, requestId }),
   tableData: (args: {
     sessionId: string;
+    requestId: string;
     schema: string;
     table: string;
     limit: number;
@@ -221,4 +227,22 @@ export function fmtTtl(ms: number): string {
   if (s < 3600) return `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ""}`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
   return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+}
+
+/** Register before issuing the read so cancellation also works during startup. */
+export function cancellableBrowserRequest<T>(run: (requestId: string) => Promise<T>) {
+  const requestId = crypto.randomUUID();
+  let cancelled = false;
+  const registered = invoke<void>("begin_browser_request", { requestId });
+  const promise = registered.then(async () => {
+    if (cancelled) {
+      await invoke<void>("cancel_browser_request", { requestId });
+      throw new Error("browser request cancelled");
+    }
+    return run(requestId);
+  });
+  return { promise, cancel: () => {
+    cancelled = true;
+    void registered.then(() => invoke<void>("cancel_browser_request", { requestId })).catch(() => {});
+  } };
 }

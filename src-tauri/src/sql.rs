@@ -46,6 +46,8 @@ pub struct TableData {
 pub enum SqlPool {
     My(MySqlPool),
     Pg(PgPool),
+    BrowserMy(MySqlPool),
+    BrowserPg(PgPool),
     Lite(SqlitePool),
     /// SQLite dialect over HTTP; see d1.rs for what D1 does not allow.
     D1(crate::d1::D1Client),
@@ -61,6 +63,7 @@ enum Canceller {
 
 pub struct SqlConn {
     pub pool: SqlPool,
+    pub browser: Option<SqlPool>,
     cancel: Canceller,
 }
 
@@ -88,8 +91,8 @@ impl SqlConn {
     }
 }
 
-/// Pool size 1: the editor and the browser share one session, so `USE`, `SET`
-/// and transactions behave like a single interactive connection.
+/// The editor uses one session for transactions and session settings. Network SQL
+/// browsing uses a separate, bounded pool and therefore sees committed data.
 pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Option<String>) -> Result<SqlConn> {
     let timeout = Duration::from_secs(20);
     let pw = password.unwrap_or_default();
@@ -128,7 +131,7 @@ pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Op
                 })
                 .connect_with(o.clone())
                 .await?;
-            SqlConn { pool: SqlPool::My(pool), cancel: Canceller::My(o, id) }
+            SqlConn { pool: SqlPool::My(pool), browser: Some(SqlPool::BrowserMy(MySqlPoolOptions::new().max_connections(2).acquire_timeout(timeout).connect_lazy_with(o.clone()))), cancel: Canceller::My(o, id) }
         }
         Kind::Postgres => {
             let db = if cfg.database.is_empty() { "postgres" } else { &cfg.database };
@@ -153,7 +156,7 @@ pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Op
                 })
                 .connect_with(o.clone())
                 .await?;
-            SqlConn { pool: SqlPool::Pg(pool), cancel: Canceller::Pg(o, id) }
+            SqlConn { pool: SqlPool::Pg(pool), browser: Some(SqlPool::BrowserPg(PgPoolOptions::new().max_connections(2).acquire_timeout(timeout).connect_lazy_with(o.clone()))), cancel: Canceller::Pg(o, id) }
         }
         Kind::Sqlite => {
             let o = SqliteConnectOptions::new()
@@ -165,11 +168,11 @@ pub async fn connect(cfg: &ConnectionConfig, host: &str, port: u16, password: Op
                 .connect_with(o)
                 .await
                 .with_context(|| format!("open {}", cfg.file))?;
-            SqlConn { pool: SqlPool::Lite(pool), cancel: Canceller::Unsupported }
+            SqlConn { pool: SqlPool::Lite(pool), browser: None, cancel: Canceller::Unsupported }
         }
         Kind::D1 => {
             let client = crate::d1::D1Client::new(&cfg.cf_account_id, &cfg.database, Some(pw.clone()))?;
-            SqlConn { pool: SqlPool::D1(client), cancel: Canceller::Unsupported }
+            SqlConn { pool: SqlPool::D1(client), browser: None, cancel: Canceller::Unsupported }
         }
         Kind::Redis | Kind::Mongodb => unreachable!("handled elsewhere"),
     };
@@ -367,11 +370,38 @@ macro_rules! run_many {
     }};
 }
 
+// Dropping a cancelled or timed-out read must discard the underlying connection.
+struct BrowserLease<DB: sqlx::Database> {
+    conn: sqlx::pool::PoolConnection<DB>,
+    finished: bool,
+}
+
+impl<DB: sqlx::Database> Drop for BrowserLease<DB> {
+    fn drop(&mut self) {
+        if !self.finished { self.conn.close_on_drop(); }
+    }
+}
+
+// A timed-out read must not return a connection with an unfinished query to the pool.
+macro_rules! run_browser {
+    ($pool:expr, $sql:expr, $decode:ident, $timeout:expr) => {{
+        let conn = $pool.acquire().await.map_err(|e| match e {
+            sqlx::Error::PoolTimedOut => anyhow::anyhow!("Database connection wait timed out: connections are busy or a new connection could not be established"),
+            other => other.into(),
+        })?;
+        let mut lease = BrowserLease { conn, finished: false };
+        match tokio::time::timeout($timeout, async { run_many!(&mut *lease.conn, $sql, $decode) }).await {
+            Ok(result) => { lease.finished = true; result },
+            Err(_) => Err(anyhow::anyhow!("Database browsing query timed out after 30 seconds")),
+        }
+    }};
+}
+
 impl SqlPool {
     pub fn dialect(&self) -> Kind {
         match self {
-            SqlPool::My(_) => Kind::Mysql,
-            SqlPool::Pg(_) => Kind::Postgres,
+            SqlPool::My(_) | SqlPool::BrowserMy(_) => Kind::Mysql,
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) => Kind::Postgres,
             SqlPool::Lite(_) | SqlPool::D1(_) => Kind::Sqlite,
         }
     }
@@ -387,7 +417,9 @@ impl SqlPool {
     pub async fn execute(&self, sql: String) -> Result<Vec<QueryResult>> {
         match self {
             SqlPool::My(p) => run_many!(p, sql, decode_my),
+            SqlPool::BrowserMy(p) => run_browser!(p, sql, decode_my, Duration::from_secs(30)),
             SqlPool::Pg(p) => run_many!(p, sql, decode_pg),
+            SqlPool::BrowserPg(p) => run_browser!(p, sql, decode_pg, Duration::from_secs(30)),
             SqlPool::Lite(p) => run_many!(p, sql, decode_lite),
             SqlPool::D1(c) => c.query(&sql).await,
         }
@@ -432,8 +464,8 @@ impl SqlPool {
 
     pub async fn server_version(&self) -> Result<String> {
         match self {
-            SqlPool::My(_) => self.scalar("SELECT VERSION()").await.map(|v| format!("MySQL {v}")),
-            SqlPool::Pg(_) => self.scalar("SHOW server_version").await.map(|v| format!("PostgreSQL {v}")),
+            SqlPool::My(_) | SqlPool::BrowserMy(_) => self.scalar("SELECT VERSION()").await.map(|v| format!("MySQL {v}")),
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) => self.scalar("SHOW server_version").await.map(|v| format!("PostgreSQL {v}")),
             SqlPool::Lite(_) => self.scalar("SELECT sqlite_version()").await.map(|v| format!("SQLite {v}")),
             SqlPool::D1(c) => c.version().await,
         }
@@ -441,8 +473,8 @@ impl SqlPool {
 
     pub async fn current_schema(&self) -> Result<String> {
         match self {
-            SqlPool::My(_) => self.scalar("SELECT DATABASE()").await,
-            SqlPool::Pg(_) => self.scalar("SELECT current_schema()").await,
+            SqlPool::My(_) | SqlPool::BrowserMy(_) => self.scalar("SELECT DATABASE()").await,
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) => self.scalar("SELECT current_schema()").await,
             SqlPool::Lite(_) | SqlPool::D1(_) => Ok("main".into()),
         }
     }
@@ -452,8 +484,8 @@ impl SqlPool {
             return Ok(vec!["main".into()]);
         }
         let sql = match self {
-            SqlPool::My(_) => "SHOW DATABASES",
-            SqlPool::Pg(_) => {
+            SqlPool::My(_) | SqlPool::BrowserMy(_) => "SHOW DATABASES",
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) => {
                 "SELECT nspname FROM pg_catalog.pg_namespace \
                  WHERE nspname NOT IN ('pg_catalog','information_schema') \
                  AND nspname NOT LIKE 'pg\\_toast%' AND nspname NOT LIKE 'pg\\_temp\\_%' \
@@ -473,11 +505,11 @@ impl SqlPool {
     pub async fn tables(&self, schema: &str) -> Result<Vec<TableInfo>> {
         let lit = self.quote_lit(schema);
         let sql = match self {
-            SqlPool::My(_) => format!(
+            SqlPool::My(_) | SqlPool::BrowserMy(_) => format!(
                 "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES \
                  WHERE TABLE_SCHEMA = {lit} ORDER BY TABLE_NAME"
             ),
-            SqlPool::Pg(_) => format!(
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) => format!(
                 "SELECT c.relname, CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' \
                  ELSE 'BASE TABLE' END FROM pg_catalog.pg_class c \
                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
@@ -513,13 +545,13 @@ impl SqlPool {
         }
         let (s, t) = (self.quote_lit(schema), self.quote_lit(table));
         let sql = match self {
-            SqlPool::My(_) => format!(
+            SqlPool::My(_) | SqlPool::BrowserMy(_) => format!(
                 "SELECT COLUMN_NAME AS `column`, COLUMN_TYPE AS `type`, IS_NULLABLE AS `nullable`, \
                  COLUMN_DEFAULT AS `default`, COLUMN_KEY AS `key`, EXTRA AS `extra`, COLUMN_COMMENT AS `comment` \
                  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = {s} AND TABLE_NAME = {t} \
                  ORDER BY ORDINAL_POSITION"
             ),
-            SqlPool::Pg(_) => format!(
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) => format!(
                 "SELECT a.attname AS column, pg_catalog.format_type(a.atttypid, a.atttypmod) AS type, \
                  CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS nullable, \
                  pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default, \
@@ -605,11 +637,11 @@ impl SqlPool {
         }
         let lit = self.quote_lit(schema);
         let sql = match self {
-            SqlPool::My(_) => format!(
+            SqlPool::My(_) | SqlPool::BrowserMy(_) => format!(
                 "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS \
                  WHERE TABLE_SCHEMA = {lit} ORDER BY TABLE_NAME, ORDINAL_POSITION"
             ),
-            SqlPool::Pg(_) => format!(
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) => format!(
                 "SELECT c.relname, a.attname FROM pg_catalog.pg_attribute a \
                  JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
@@ -672,7 +704,7 @@ impl SqlPool {
                     }
                     Change::Delete { key } => format!("DELETE FROM {t} WHERE {}", self.where_key(key)?),
                     Change::Insert { values } if values.is_empty() => match self {
-                        SqlPool::My(_) => format!("INSERT INTO {t} () VALUES ()"),
+                        SqlPool::My(_) | SqlPool::BrowserMy(_) => format!("INSERT INTO {t} () VALUES ()"),
                         _ => format!("INSERT INTO {t} DEFAULT VALUES"),
                     },
                     Change::Insert { values } => format!(
@@ -704,8 +736,8 @@ impl SqlPool {
             }};
         }
         match self {
-            SqlPool::My(p) => run_tx!(p),
-            SqlPool::Pg(p) => run_tx!(p),
+            SqlPool::My(p) | SqlPool::BrowserMy(p) => run_tx!(p),
+            SqlPool::Pg(p) | SqlPool::BrowserPg(p) => run_tx!(p),
             SqlPool::Lite(p) => run_tx!(p),
             SqlPool::D1(c) => {
                 // No BEGIN on D1, but one request is one atomic batch. After each UPDATE /
@@ -791,6 +823,54 @@ mod tests {
         let error = check_sqlite_readonly(invalid.to_str().unwrap()).await.unwrap_err();
         assert_ne!(error.to_string(), "SQLite database file does not exist");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_browser_lease_discards_connection() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let opens = Arc::new(AtomicUsize::new(0));
+        let counter = opens.clone();
+        let pool = SqlitePoolOptions::new().max_connections(1).after_connect(move |_, _| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }).connect("sqlite::memory:").await.unwrap();
+        let conn = pool.acquire().await.unwrap();
+        let lease = BrowserLease { conn, finished: false };
+        let task = tokio::spawn(async move { let _lease = lease; std::future::pending::<()>().await });
+        tokio::task::yield_now().await;
+        task.abort();
+        let _ = task.await;
+        let _new_conn = pool.acquire().await.unwrap();
+        assert_eq!(opens.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn browser_reports_pool_wait_timeout() {
+        let pool = SqlitePoolOptions::new().max_connections(1)
+            .acquire_timeout(Duration::from_millis(40)).connect("sqlite::memory:").await.unwrap();
+        let held = pool.acquire().await.unwrap();
+        let result = async { run_browser!(&pool, "SELECT 1", decode_lite, Duration::from_secs(1)) }.await;
+        assert!(result.unwrap_err().to_string().starts_with("Database connection wait timed out"));
+        drop(held);
+        let result = async { run_browser!(&pool, "SELECT 1", decode_lite, Duration::from_secs(1)) }.await.unwrap();
+        assert_eq!(result[0].rows[0][0], Value::from(1));
+    }
+
+    // Set DBDOCK_TEST_POSTGRES_URL to an isolated disposable PostgreSQL instance.
+    #[tokio::test]
+    async fn postgres_browser_is_independent_and_recovers_after_timeout() {
+        let Ok(url) = std::env::var("DBDOCK_TEST_POSTGRES_URL") else { return };
+        let editor = PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let browser = PgPoolOptions::new().max_connections(1).acquire_timeout(Duration::from_millis(100)).connect(&url).await.unwrap();
+        let mut editor_conn = editor.acquire().await.unwrap();
+        sqlx::query("BEGIN").execute(&mut *editor_conn).await.unwrap();
+        let result = async { run_browser!(&browser, "SELECT 42", decode_pg, Duration::from_secs(1)) }.await.unwrap();
+        assert_eq!(result[0].rows[0][0], Value::from(42));
+        let timeout = async { run_browser!(&browser, "SELECT pg_sleep(2)", decode_pg, Duration::from_millis(50)) }.await.unwrap_err();
+        assert!(timeout.to_string().starts_with("Database browsing query timed out"));
+        let result = async { run_browser!(&browser, "SELECT 43", decode_pg, Duration::from_secs(1)) }.await.unwrap();
+        assert_eq!(result[0].rows[0][0], Value::from(43));
+        sqlx::query("ROLLBACK").execute(&mut *editor_conn).await.unwrap();
     }
 
     #[tokio::test]

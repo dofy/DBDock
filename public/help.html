@@ -94,7 +94,7 @@
     <ol>
       <li><b>Add a connection</b>: <kbd>⌘</kbd><kbd>N</kbd>, or <b>+ New connection</b>. Pick the database type, fill host, user and password, and press <b>Test</b>.</li>
       <li><b>Or import</b> the ones you already have: <kbd>⌘</kbd><kbd>O</kbd> (TablePlus, DBeaver, connection URLs, a DBDock export).</li>
-      <li><b>Connect</b>: double-click a card, or hover it and press <b>Connect</b>. Each connection opens as a tab at the top; <kbd>⌘</kbd><kbd>1</kbd> goes back to the list.</li>
+      <li><b>Connect</b>: double-click a card, or hover it and press <b>Connect</b>. Each connection opens as a tab at the top; <kbd>⌃</kbd><kbd>1</kbd> goes back to the list.</li>
     </ol>
     <p>Saved passwords are stored in the macOS Keychain, and the form shows <i>unchanged (saved in Keychain)</i> instead of the value. Exports can include passwords; use a passphrase to encrypt them.</p>
   </section>
@@ -171,13 +171,15 @@ jdbc:postgresql://localhost/app</code></pre>
   <section id="sql" data-title="SQL databases">
     <h2>MySQL, PostgreSQL, SQLite, D1</h2>
     <h3>Browsing</h3>
-    <p>Pick a database / schema in the sidebar, then a table. The <b>Data</b> view pages through rows; type a <code>WHERE</code> condition (column names complete, <kbd>Enter</kbd> applies) and click a column header to sort. <b>Structure</b> lists columns, types, defaults and keys.</p>
+    <p>Pick a database / schema in the sidebar, then a table. The <b>Data</b> view initially loads 5 rows per page; choose another page size when needed. Type a <code>WHERE</code> condition (column names complete, <kbd>Enter</kbd> applies) and click a column header to sort. <b>Structure</b> lists columns, types, defaults and keys.</p>
     <h3>SQL editor</h3>
     <ul>
-      <li><kbd>⌘</kbd><kbd>↵</kbd> runs the selection, or everything. Several statements give several result tabs.</li>
+      <li><kbd>⌘</kbd><kbd>↵</kbd> runs the selection or current line; <kbd>⇧</kbd><kbd>⌘</kbd><kbd>↵</kbd> runs the whole script. Several statements give several result tabs.</li>
+      <li>Save or load SQL files from the toolbar. Recent SQL is kept in memory per connection and selected database until the app exits; it is not saved to disk.</li>
+      <li><kbd>⌃</kbd>1–9 selects top-level tabs (1 is Connections); <kbd>⌘</kbd>1–9 selects database tabs. Hold the modifier to display the numbers. <kbd>⌥</kbd><kbd>⌘</kbd>←/→ and <kbd>⌃</kbd><kbd>⇧</kbd>Tab / <kbd>⌃</kbd>Tab cycle tabs.</li>
       <li>Completion knows tables, and the columns of the tables in the statement; <kbd>Tab</kbd> or <kbd>Enter</kbd> accepts.</li>
       <li><b>Cancel</b> stops a running MySQL or PostgreSQL query. SQLite and D1 cannot be cancelled.</li>
-      <li>One session is one connection, so <code>USE</code>, <code>SET</code> and transactions behave like an interactive console.</li>
+      <li>The SQL editor uses one connection, so <code>USE</code>, <code>SET</code> and transactions remain in that session. MySQL and PostgreSQL table browsing uses separate connections and shows committed data; editor session settings and temporary tables are not shared.</li>
     </ul>
     <h3>Editing rows</h3>
     <p>Tables with a primary key can be edited in the grid: double-click a cell (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels), <b>+ Row</b>, <b>− Row</b>, <b>NULL</b>. Changes stay pending (yellow, struck-through, green) until you <b>Commit</b> (<kbd>⌘</kbd><kbd>S</kbd>). <b>Preview SQL</b> shows exactly what will run.</p>
@@ -244,9 +246,11 @@ show dbs        show collections        use otherdb</code></pre>
       <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd></td><td>SSH Hosts</td></tr>
       <tr><td><kbd>⌘</kbd><kbd>,</kbd></td><td>Settings</td></tr>
       <tr><td><kbd>⌘</kbd><kbd>?</kbd></td><td>This help</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>1</kbd></td><td>Connections list</td></tr>
-      <tr><td><kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd> / <kbd>→</kbd></td><td>Previous / next session</td></tr>
-      <tr><td><kbd>⌘</kbd><kbd>W</kbd></td><td>Close the current session</td></tr>
+      <tr><td><kbd>⌃</kbd><kbd>1</kbd></td><td>Connections list</td></tr>
+      <tr><td><kbd>⌃</kbd><kbd>⇧</kbd>Tab / <kbd>⌃</kbd>Tab</td><td>Previous / next session</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>T</kbd></td><td>Open a SQL tab in the current SQL connection</td></tr>
+      <tr><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>W</kbd></td><td>Close the current database tab</td></tr>
+      <tr><td><kbd>⌘</kbd><kbd>W</kbd></td><td>Close the current session (confirmation required)</td></tr>
       <tr><td><kbd>⌘</kbd><kbd>F</kbd></td><td>Search connections</td></tr>
       <tr><td><kbd>⌘</kbd><kbd>R</kbd></td><td>Reload the connection list</td></tr>
       <tr><td><kbd>⌘</kbd><kbd>↵</kbd></td><td>Run (SQL editor, Mongo shell)</td></tr>

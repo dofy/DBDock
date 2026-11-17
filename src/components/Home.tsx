@@ -53,7 +53,7 @@ interface Props {
   conns: ConnectionConfig[];
   groups: string[];
   reload: () => Promise<void>;
-  connecting: string | null;
+  connecting: string[];
   onConnect: (c: ConnectionConfig) => void;
   onEdit: (c: ConnectionConfig | { newInGroup: string }) => void;
 }
@@ -421,16 +421,16 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                         </div>
                       ); })()}
                     </div>
-                    <div className={`btn-group card-actions ${connecting === c.id ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                    <div className={`btn-group card-actions ${connecting.includes(c.id) ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                       <button title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(c)}>
                         <Pencil size={13} />
                       </button>
                       <button title={t("More")} aria-label={t("More")} onClick={(e) => setMenu({ id: c.id, x: e.clientX, y: e.clientY })}>
                         <MoreHorizontal size={13} />
                       </button>
-                      <button className="primary" disabled={connecting === c.id} onClick={() => onConnect(c)}>
+                      <button className="primary" disabled={connecting.includes(c.id)} onClick={() => onConnect(c)}>
                         <Plug size={13} />
-                        {connecting === c.id ? t("Connecting…") : t("Connect")}
+                        {connecting.includes(c.id) ? t("Connecting…") : t("Connect")}
                       </button>
                     </div>
                   </div>

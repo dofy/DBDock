@@ -1,5 +1,28 @@
 /** Additional UI messages. Placeholders are interpolated only after translation. */
 export const extraMessages: Record<string, readonly [string, string, string]> = {
+  'Close connection': ['关闭连接', '關閉連線', '接続を閉じる'],
+  'Close connection "{name}"?': ['关闭连接“{name}”？', '關閉連線「{name}」？', '接続「{name}」を閉じますか？'],
+  'Close connection "{name}" and discard its uncommitted changes?': ['关闭连接“{name}”并放弃尚未提交的更改？', '關閉連線「{name}」並捨棄尚未提交的變更？', '接続「{name}」を閉じ、未確定の変更を破棄しますか？'],
+  'Run all': ['全部执行', '全部執行', 'すべて実行'],
+  'Run all SQL (⇧⌘↵)': ['执行全部 SQL（⇧⌘↵）', '執行全部 SQL（⇧⌘↵）', 'すべての SQL を実行（⇧⌘↵）'],
+  'Save SQL to file': ['将 SQL 保存到文件', '將 SQL 儲存至檔案', 'SQL をファイルに保存'],
+  'Load SQL from file': ['从文件载入 SQL', '從檔案載入 SQL', 'ファイルから SQL を読み込む'],
+  'Load SQL': ['载入 SQL', '載入 SQL', 'SQL を読み込む'],
+  'Replace the current SQL text?': ['替换当前 SQL 内容？', '取代目前的 SQL 內容？', '現在の SQL を置き換えますか？'],
+  'Recent SQL': ['最近执行', '最近執行', '最近の SQL'],
+  'Recent SQL (this app session)': ['最近执行的 SQL（仅本次应用运行期间）', '最近執行的 SQL（僅本次應用程式執行期間）', '最近実行した SQL（アプリの実行中のみ）'],
+  '⌘↵ runs the current line or selection · ⇧⌘↵ runs all': ['⌘↵ 执行当前行或选区 · ⇧⌘↵ 全部执行', '⌘↵ 執行目前行或選取內容 · ⇧⌘↵ 全部執行', '⌘↵ で現在行または選択範囲を実行 · ⇧⌘↵ ですべて実行'],
+  'Connecting to {name}…': ['正在连接 {name}…', '正在連線至 {name}…', '{name} に接続中…'],
+  'Waiting for the connection or Keychain authorization…': ['正在等待连接或钥匙串授权…', '正在等待連線或鑰匙圈授權…', '接続またはキーチェーンの認証を待っています…'],
+  'Table browsing uses a separate connection and shows committed data.': ['表格使用独立连接，仅显示已提交的数据。', '資料表使用獨立連線，僅顯示已提交的資料。', 'テーブル表示は別の接続を使用し、コミット済みのデータを表示します。'],
+  'Cancel connection': ['取消连接', '取消連線', '接続をキャンセル'],
+  'Rows per page': ['每页行数', '每頁列數', 'ページあたりの行数'],
+  'Unable to load table structure; editing is unavailable.': ['无法加载表结构，暂时不能编辑。', '無法載入資料表結構，暫時無法編輯。', 'テーブル構造を読み込めないため、編集できません。'],
+  'Loading tables…': ['正在加载数据表…', '正在載入資料表…', 'テーブルを読み込み中…'],
+  'No matching tables': ['没有匹配的数据表', '沒有符合的資料表', '一致するテーブルがありません'],
+  'No schemas': ['没有可用的数据库或 schema', '沒有可用的資料庫或 schema', '利用可能なデータベースまたはスキーマがありません'],
+  'Loading rows…': ['正在加载数据…', '正在載入資料…', '行を読み込み中…'],
+  'Loading structure…': ['正在加载结构…', '正在載入結構…', '構造を読み込み中…'],
   'Check health': ['健康检查', '健康檢查', 'ヘルスチェック'],
   'Batch check shown ({count})': ['批量检查当前列表（{count}）', '批次檢查目前清單（{count}）', '表示中を一括チェック（{count}）'],
   'Check selected ({count})': ['检查已选（{count}）', '檢查已選（{count}）', '選択した {count} 件をチェック'],
@@ -81,6 +104,9 @@ export const extraMessages: Record<string, readonly [string, string, string]> = 
 
 /** Messages owned by DBDock; driver and server details stay verbatim. */
 export const backendMessages: Record<string, readonly [string, string, string]> = {
+  'Database connection wait timed out': ['等待数据库连接超时：连接正忙，或无法建立新连接。请稍后重试并检查网络。', '等待資料庫連線逾時：連線忙碌中，或無法建立新連線。請稍後重試並檢查網路。', 'データベース接続の待機がタイムアウトしました。接続が使用中か、新しい接続を確立できません。ネットワークを確認して再試行してください。'],
+  'Database browsing query timed out after 30 seconds': ['读取表格超时（30 秒）。请检查网络或缩小查询范围后重试。', '讀取資料表逾時（30 秒）。請檢查網路或縮小查詢範圍後重試。', 'テーブルの読み込みがタイムアウトしました（30 秒）。ネットワークを確認するか、検索範囲を絞って再試行してください。'],
+  'pool timed out while waiting for an open connection': ['等待数据库连接超时。其他查询可能仍在运行，或数据库连接暂时不可用。', '等待資料庫連線逾時。其他查詢可能仍在執行，或資料庫連線暫時無法使用。', 'データベース接続の待機がタイムアウトしました。他のクエリが実行中か、接続が一時的に利用できません。'],
   'SSH connect to': ['SSH 连接失败：请使用 OpenSSH 验证主机密钥并加入 known_hosts；暂不支持主机证书', 'SSH 連線失敗：請使用 OpenSSH 驗證主機金鑰並加入 known_hosts；暫不支援主機憑證', 'SSH 接続に失敗しました。OpenSSH でホスト鍵を確認して known_hosts に登録してください。ホスト証明書は未対応です'],
   'SSH authentication failed for': ['SSH 认证失败', 'SSH 驗證失敗', 'SSH 認証に失敗しました'],
   'SSH key auth failed': ['SSH 密钥认证失败', 'SSH 金鑰驗證失敗', 'SSH 鍵認証に失敗しました'],

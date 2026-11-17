@@ -58,3 +58,29 @@ test('parallel health check guidance includes the limit in each language', () =>
     if (language !== 'en') assert.notEqual(translated, message.replace('{count}', '4'));
   }
 });
+
+
+test('database wait and browsing timeouts have distinct localized explanations', () => {
+  for (const language of ['zh-CN', 'zh-TW', 'ja']) {
+    updateSettings({ language });
+    for (const raw of [
+      'Database connection wait timed out: connections are busy or a new connection could not be established',
+      'Database browsing query timed out after 30 seconds',
+      'pool timed out while waiting for an open connection',
+    ]) {
+      const message = localizeError(raw);
+      assert.ok(message.includes(raw));
+      assert.ok(!message.startsWith('Operation failed'));
+      assert.notEqual(message.split('\n')[0], raw);
+    }
+  }
+});
+
+test('session-close confirmation names the connection in each language', () => {
+  for (const language of ['en', 'zh-CN', 'zh-TW', 'ja']) {
+    updateSettings({ language });
+    assert.ok(tf('Close connection "{name}"?', { name: 'Example DB' }).includes('Example DB'));
+    assert.ok(tf('Close connection "{name}" and discard its uncommitted changes?', { name: 'Example DB' }).includes('Example DB'));
+    assert.notEqual(t('Close connection'), language === 'en' ? '' : 'Close connection');
+  }
+});

@@ -1,10 +1,10 @@
 import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { api, errText, type Cell, type Change, type Kind, type QueryResult, type TableData } from "../api";
+import { api, cancellableBrowserRequest, errText, type Cell, type Change, type Kind, type QueryResult, type TableData } from "../api";
 import { DataGrid, type GridEditing, type Selection } from "./DataGrid";
 import { SqlInput } from "./SqlInput";
-import { Check, CircleSlash, Copy, Eye, Minus, Plus, RefreshCw, Undo2, X } from "lucide-react";
+import { Check, CircleSlash, Copy, Eye, Info, Minus, Plus, RefreshCw, Undo2, X } from "lucide-react";
 
 interface Props {
   sessionId: string;
@@ -16,16 +16,19 @@ interface Props {
   onDirtyChange: (dirty: boolean, busy: boolean) => void;
 }
 
-const PAGE_SIZES = [100, 300, 1000];
+const PAGE_SIZES = [5, 25, 100, 300, 1000];
 const BINARY = /blob|binary|bytea|bit\b|geometry|point|polygon/i;
 
 export function TableView({ sessionId, kind, schema, table, isView, dark, onDirtyChange }: Props) {
   const [mode, setMode] = useState<"data" | "structure">("data");
   const [data, setData] = useState<TableData | null>(null);
   const [structure, setStructure] = useState<QueryResult | null>(null);
+  const [structureLoading, setStructureLoading] = useState(true);
+  const [structureReload, setStructureReload] = useState(0);
+  const [structureError, setStructureError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [limit, setLimit] = useState(300);
+  const [loading, setLoading] = useState(true);
+  const [limit, setLimit] = useState(5);
   const [page, setPage] = useState(0);
   const [orderBy, setOrderBy] = useState<string | undefined>();
   const [orderDesc, setOrderDesc] = useState(false);
@@ -41,6 +44,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
   const [busy, setBusy] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const request = useRef(0);
+  const currentRead = useRef<{ cancel: () => void } | null>(null);
 
   const clearPending = () => {
     setEdits({});
@@ -50,30 +54,43 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
 
   const load = useCallback(async () => {
     const current = ++request.current;
+    currentRead.current?.cancel();
+    const read = cancellableBrowserRequest((requestId) => api.tableData({ sessionId, requestId, schema, table, limit, offset: page * limit, orderBy, orderDesc, filter: filter || undefined }));
+    currentRead.current = read;
     setLoading(true);
     setError(null);
     try {
-      const [d, s] = await Promise.all([
-        api.tableData({ sessionId, schema, table, limit, offset: page * limit, orderBy, orderDesc, filter: filter || undefined }),
-        structure ? Promise.resolve(structure) : api.structure(sessionId, schema, table),
-      ]);
+      const d = await read.promise;
       if (current !== request.current) return;
       setData(d);
-      setStructure(s);
       clearPending();
     } catch (e) {
       if (current === request.current) setError(errText(e));
     } finally {
-      if (current === request.current) setLoading(false);
+      if (current === request.current) { currentRead.current = null; setLoading(false); }
     }
-    // structure is cached once loaded
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, schema, table, limit, page, orderBy, orderDesc, filter]);
 
   useEffect(() => {
     void load();
-    return () => { request.current++; };
+    return () => { request.current++; currentRead.current?.cancel(); currentRead.current = null; };
   }, [load]);
+
+  useEffect(() => {
+    let current = true;
+    setStructure(null);
+    setStructureError(null);
+    setStructureLoading(true);
+    const read = cancellableBrowserRequest((requestId) => api.structure(sessionId, schema, table, requestId));
+    read.promise.then((result) => {
+      if (current) setStructure(result);
+    }).catch((e) => {
+      if (current) setStructureError(errText(e));
+    }).finally(() => {
+      if (current) setStructureLoading(false);
+    });
+    return () => { current = false; read.cancel(); };
+  }, [sessionId, schema, table, structureReload]);
 
   const colNames = useMemo(() => structure?.rows.map((r) => String(r[0])) ?? [], [structure]);
   const columns = data?.result.columns.length ? data.result.columns : colNames;
@@ -249,12 +266,15 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
             </button>
           </>
         )}
-        {mode === "data" && !editable && data && (
+        {mode === "data" && !editable && data && structure && (
           <span className="muted small" title={t("Editing needs a primary key")}>
             {isView ? t("view · read-only") : t("no primary key · read-only")}
           </span>
         )}
-        <button onClick={() => void guard(() => void load())} disabled={loading || busy} title={t("Refresh")}>
+        {!data && mode === "data" && <select value={limit} aria-label={t("Rows per page")} onChange={(e) => { setPage(0); setLimit(Number(e.target.value)); }}>
+          {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} {t("/ page")}</option>)}
+        </select>}
+        <button onClick={() => void guard(() => { if (!structure) setStructureReload((n) => n + 1); void load(); })} disabled={loading || busy} title={t("Refresh")}>
           <RefreshCw size={14} />
         </button>
       </div>
@@ -275,6 +295,18 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
       )}
 
       {error && <pre className="error">{error}</pre>}
+      {structureError && <pre className="error">{t("Unable to load table structure; editing is unavailable.")} {structureError}</pre>}
+
+      {((mode === "data" && loading && !display) || (mode === "structure" && structureLoading && !structure)) && <>
+        <div className="loading-grid" aria-hidden="true">
+          <div className="loading-grid-header" />
+          {Array.from({ length: 40 }, (_, i) => <div className="loading-grid-row" key={i} />)}
+        </div>
+        <div className="statusbar loading-status" role="status" aria-live="polite">
+          <span className="loading-spinner" aria-hidden="true" />
+          {t(mode === "data" ? "Loading rows…" : "Loading structure…")}
+        </div>
+      </>}
 
       {mode === "data" && display && (
         <>
@@ -314,10 +346,11 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
                   {n}  {t("/ page")} </option>
               ))}
             </select>
+            {(kind === "postgres" || kind === "mysql") && <span className="muted" title={t("Table browsing uses a separate connection and shows committed data.")} aria-label={t("Table browsing uses a separate connection and shows committed data.")}><Info size={14} /></span>}
             {editable && <span className="muted">{t("double-click to edit · Enter saves · Esc cancels")}</span>}
             <span className="spacer" />
             <code className="muted sql-line">{data?.sql}</code>
-            <span className="muted">{data?.result.elapsedMs} ms</span>
+            {loading ? <span className="loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading rows…")}</span> : <span className="muted">{data?.result.elapsedMs} ms</span>}
           </div>
         </>
       )}

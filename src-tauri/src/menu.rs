@@ -6,6 +6,56 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 pub const GITHUB: &str = "https://github.com/dofy/DBDock";
 
+#[cfg(target_os = "macos")]
+fn numbered_tab_action(key_code: u16, command: bool, control: bool, shift: bool, option: bool) -> Option<String> {
+    if shift || option || command == control { return None; }
+    let slot = match key_code {
+        18 => 1, 19 => 2, 20 => 3, 21 => 4, 23 => 5, 22 => 6, 26 => 7, 28 => 8, 25 => 9,
+        _ => return None,
+    };
+    Some(format!("{}-slot-{slot}", if control { "session" } else { "database" }))
+}
+
+/// Observe modifier flags and numbered shortcuts before AppKit dispatches them.
+/// WKWebView may not receive modifier events or key presses when focus changes.
+#[cfg(target_os = "macos")]
+pub fn observe_tab_modifiers<R: Runtime>(app: &AppHandle<R>) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSEventType};
+    use std::ptr::NonNull;
+    use tauri::Manager;
+
+    let app = app.clone();
+    let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        let e = unsafe { event.as_ref() };
+        let flags = e.modifierFlags();
+        let command = flags.contains(NSEventModifierFlags::Command);
+        let control = flags.contains(NSEventModifierFlags::Control);
+        if e.r#type() == NSEventType::FlagsChanged {
+            let modifier = match (command, control) {
+                (true, false) => "cmd",
+                (false, true) => "ctrl",
+                _ => "none",
+            };
+            let _ = app.emit("tab-modifier", modifier);
+        } else if e.r#type() == NSEventType::KeyDown
+            && app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false))
+        {
+            let action = numbered_tab_action(e.keyCode(), command, control,
+                flags.contains(NSEventModifierFlags::Shift), flags.contains(NSEventModifierFlags::Option));
+            if let Some(action) = action {
+                let _ = app.emit("menu", action);
+                return std::ptr::null_mut();
+            }
+        }
+        event.as_ptr()
+    });
+    // AppKit copies the block and keeps the monitor active until app exit.
+    if let Some(monitor) = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::FlagsChanged | NSEventMask::KeyDown, &block) } {
+        std::mem::forget(monitor);
+    }
+}
+
 fn item<R: Runtime>(app: &AppHandle<R>, id: &str, text: &str, accel: Option<&str>) -> tauri::Result<MenuItem<R>> {
     MenuItem::with_id(app, id, text, true, accel)
 }
@@ -16,6 +66,8 @@ fn label<'a>(language: &str, english: &'a str) -> &'a str {
         "Settings…" => ["设置…", "設定…", "設定…"],
         "File" => ["文件", "檔案", "ファイル"],
         "New Connection…" => ["新建连接…", "新增連線…", "新規接続…"],
+        "New SQL Tab" => ["新建 SQL 标签页", "新增 SQL 分頁", "SQL タブを新規作成"],
+        "Close Database Tab" => ["关闭数据库标签页", "關閉資料庫分頁", "データベースタブを閉じる"],
         "New Group…" => ["新建分组…", "新增群組…", "新規グループ…"],
         "Import…" => ["导入…", "匯入…", "インポート…"],
         "Paste Connection URLs…" => ["粘贴连接 URL…", "貼上連線 URL…", "接続 URL を貼り付け…"],
@@ -27,6 +79,8 @@ fn label<'a>(language: &str, english: &'a str) -> &'a str {
         "Search Connections" => ["搜索连接", "搜尋連線", "接続を検索"],
         "Reload" => ["重新加载", "重新載入", "再読み込み"],
         "Next Session" => ["下一个会话", "下一個工作階段", "次のセッション"],
+        "Next Database Tab" => ["下一个数据库标签页", "下一個資料庫分頁", "次のデータベースタブ"],
+        "Previous Database Tab" => ["上一个数据库标签页", "上一個資料庫分頁", "前のデータベースタブ"],
         "Previous Session" => ["上一个会话", "上一個工作階段", "前のセッション"],
         "Window" => ["窗口", "視窗", "ウインドウ"],
         "Close Window" => ["关闭窗口", "關閉視窗", "ウインドウを閉じる"],
@@ -72,6 +126,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
         &[
             &item(app, "new-connection", label(language, "New Connection…"), Some("CmdOrCtrl+N"))?,
             &item(app, "new-group", label(language, "New Group…"), Some("CmdOrCtrl+Shift+N"))?,
+            &item(app, "new-sql-tab", label(language, "New SQL Tab"), Some("CmdOrCtrl+T"))?,
+            &item(app, "close-database-tab", label(language, "Close Database Tab"), Some("CmdOrCtrl+Shift+W"))?,
             &sep()?,
             &item(app, "import", label(language, "Import…"), Some("CmdOrCtrl+O"))?,
             &item(app, "import-urls", label(language, "Paste Connection URLs…"), Some("CmdOrCtrl+Shift+I"))?,
@@ -101,12 +157,14 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
         label(language, "View"),
         true,
         &[
-            &item(app, "home", label(language, "Connections"), Some("CmdOrCtrl+1"))?,
+            &item(app, "home", label(language, "Connections"), None)?,
             &item(app, "find", label(language, "Search Connections"), Some("CmdOrCtrl+F"))?,
             &item(app, "reload", label(language, "Reload"), Some("CmdOrCtrl+R"))?,
             &sep()?,
-            &item(app, "next-tab", label(language, "Next Session"), Some("CmdOrCtrl+Alt+Right"))?,
-            &item(app, "prev-tab", label(language, "Previous Session"), Some("CmdOrCtrl+Alt+Left"))?,
+            &item(app, "next-tab", label(language, "Next Session"), Some("Ctrl+Tab"))?,
+            &item(app, "prev-tab", label(language, "Previous Session"), Some("Ctrl+Shift+Tab"))?,
+            &item(app, "next-database-tab", label(language, "Next Database Tab"), Some("CmdOrCtrl+Alt+Right"))?,
+            &item(app, "prev-database-tab", label(language, "Previous Database Tab"), Some("CmdOrCtrl+Alt+Left"))?,
             &sep()?,
             &PredefinedMenuItem::fullscreen(app, Some(label(language, "Enter Full Screen")))?,
         ],
@@ -134,6 +192,12 @@ pub fn handle<R: Runtime>(app: &AppHandle<R>, id: &str) {
         }
         // ⌘W closes a secondary window (Help) when it has focus; in the main window it
         // closes the current session tab.
+        "new-sql-tab" | "close-database-tab" => {
+            use tauri::Manager;
+            if app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false)) {
+                let _ = app.emit("menu", id);
+            }
+        }
         "close-tab" => {
             use tauri::Manager;
             if let Some(w) = app.webview_windows().into_values().find(|w| w.label() != "main" && w.is_focused().unwrap_or(false)) {
@@ -186,5 +250,17 @@ mod tests {
         assert_eq!(label("ja", "File"), "ファイル");
         assert_eq!(label("unknown", "File"), "File");
         assert_eq!(label("ja", "custom"), "custom");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn numbered_shortcuts_use_only_the_requested_modifier() {
+        use super::numbered_tab_action;
+        assert_eq!(numbered_tab_action(18, false, true, false, false).as_deref(), Some("session-slot-1"));
+        assert_eq!(numbered_tab_action(19, true, false, false, false).as_deref(), Some("database-slot-2"));
+        assert_eq!(numbered_tab_action(25, false, true, false, false).as_deref(), Some("session-slot-9"));
+        assert_eq!(numbered_tab_action(18, true, false, true, false), None);
+        assert_eq!(numbered_tab_action(18, true, true, false, false), None);
+        assert_eq!(numbered_tab_action(0, true, false, false, false), None);
     }
 }
