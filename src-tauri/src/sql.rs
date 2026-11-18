@@ -49,6 +49,14 @@ pub struct CompletionColumn {
     pub name: String,
     pub data_type: String,
     pub nullable: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub enum_values: Vec<CompletionEnumValue>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+pub struct CompletionEnumValue {
+    pub label: String,
+    pub literal: String,
 }
 
 #[derive(Default, Serialize, Debug, PartialEq, Eq)]
@@ -445,7 +453,7 @@ impl SqlPool {
         self.query_rows(sql, MAX_ROWS).await
     }
 
-    async fn query_rows(&self, sql: String, row_limit: usize) -> Result<Vec<QueryResult>> {
+    pub(crate) async fn query_rows(&self, sql: String, row_limit: usize) -> Result<Vec<QueryResult>> {
         match self {
             SqlPool::My(p) => run_many!(p, sql, decode_my, row_limit),
             SqlPool::BrowserMy(p) => run_browser!(p, sql, decode_my, Duration::from_secs(30), row_limit),
@@ -753,6 +761,7 @@ impl SqlPool {
                             name: row.first()?.as_str()?.into(),
                             data_type: row.get(1).and_then(Value::as_str).unwrap_or_default().into(),
                             nullable: row.get(2).and_then(Value::as_str) == Some("YES"),
+                            enum_values: Vec::new(),
                         })
                     }).collect();
                     (t.name, columns)
@@ -762,12 +771,17 @@ impl SqlPool {
         let lit = self.quote_lit(schema);
         let sql = match self {
             SqlPool::My(_) | SqlPool::BrowserMy(_) => format!(
-                "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS \
+                "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, '' FROM information_schema.COLUMNS \
                  WHERE TABLE_SCHEMA = {lit} ORDER BY TABLE_NAME, ORDINAL_POSITION"
             ),
             SqlPool::Pg(_) | SqlPool::BrowserPg(_) => format!(
                 "SELECT c.relname, a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), \
-                 CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END FROM pg_catalog.pg_attribute a \
+                 CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END, \
+                 CASE WHEN t.typtype = 'e' THEN pg_catalog.array_to_json(ARRAY( \
+                    SELECT e.enumlabel::text FROM pg_catalog.pg_enum e \
+                    WHERE e.enumtypid = t.oid ORDER BY e.enumsortorder))::text END \
+                 FROM pg_catalog.pg_attribute a \
+                 JOIN pg_catalog.pg_type t ON t.oid = a.atttypid \
                  JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
                  WHERE (n.nspname = {lit} OR ({lit} = 'pg_temp' AND n.oid = pg_catalog.pg_my_temp_schema())) \
@@ -777,7 +791,7 @@ impl SqlPool {
                  AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum"
             ),
             SqlPool::Lite(_) => format!(
-                "SELECT m.name, p.name, p.type, CASE WHEN p.\"notnull\" THEN 'NO' ELSE 'YES' END \
+                "SELECT m.name, p.name, p.type, CASE WHEN p.\"notnull\" THEN 'NO' ELSE 'YES' END, '' \
                  FROM {}.sqlite_master m JOIN pragma_table_info(m.name, {lit}) p \
                  WHERE m.type IN ('table','view') ORDER BY m.name, p.cid",
                 self.quote_ident(schema)
@@ -788,11 +802,21 @@ impl SqlPool {
         // These are schema catalog rows. The grid's result limit would silently
         // drop fields (or entire tables) from large catalogs.
         for row in string_rows(self.query_rows(sql, usize::MAX).await?) {
-            if let Ok([table, name, data_type, nullable]) = <[String; 4]>::try_from(row) {
+            if let Ok([table, name, data_type, nullable, enum_json]) = <[String; 5]>::try_from(row) {
+                let labels = match self.dialect() {
+                    Kind::Mysql => mysql_enum_labels(&data_type).unwrap_or_default(),
+                    Kind::Postgres if !enum_json.is_empty() => serde_json::from_str(&enum_json)?,
+                    _ => Vec::new(),
+                };
+                let enum_values = labels.into_iter().map(|label| CompletionEnumValue {
+                    literal: self.quote_lit(&label),
+                    label,
+                }).collect();
                 out.entry(table).or_default().push(CompletionColumn {
                     name,
                     data_type,
                     nullable: nullable.eq_ignore_ascii_case("YES"),
+                    enum_values,
                 });
             }
         }
@@ -960,6 +984,35 @@ fn string_rows(results: Vec<QueryResult>) -> Vec<Vec<String>> {
     rows.into_iter().map(|r| r.into_iter().map(value_to_string).collect()).collect()
 }
 
+// MySQL renders COLUMN_TYPE as a canonical definition, including backslash
+// escapes even with NO_BACKSLASH_ESCAPES enabled on the session.
+fn mysql_enum_labels(data_type: &str) -> Option<Vec<String>> {
+    let mut input = data_type.strip_prefix("enum(")?.strip_suffix(')')?.chars().peekable();
+    let mut labels = Vec::new();
+    loop {
+        if input.next()? != '\'' { return None; }
+        let mut label = String::new();
+        loop {
+            match input.next()? {
+                '\'' if input.peek() == Some(&'\'') => { input.next(); label.push('\''); }
+                '\'' => break,
+                '\\' => label.push(match input.next()? {
+                    '0' => '\0', 'b' => '\x08', 'n' => '\n', 'r' => '\r', 't' => '\t',
+                    'Z' => '\x1a', ch @ ('\\' | '\'' | '"') => ch,
+                    _ => return None,
+                }),
+                ch => label.push(ch),
+            }
+        }
+        labels.push(label);
+        match input.next() {
+            None => return Some(labels),
+            Some(',') => {}
+            _ => return None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -971,10 +1024,88 @@ mod tests {
         sql.execute("CREATE TABLE books (published BOOLEAN NOT NULL, title TEXT); CREATE VIEW book_view AS SELECT title FROM books".into()).await.unwrap();
         let columns = sql.columns("main").await.unwrap();
         assert_eq!(columns["books"], [
-            CompletionColumn { name: "published".into(), data_type: "BOOLEAN".into(), nullable: false },
-            CompletionColumn { name: "title".into(), data_type: "TEXT".into(), nullable: true },
+            CompletionColumn { name: "published".into(), data_type: "BOOLEAN".into(), nullable: false, enum_values: Vec::new() },
+            CompletionColumn { name: "title".into(), data_type: "TEXT".into(), nullable: true, enum_values: Vec::new() },
         ]);
         assert_eq!(columns["book_view"][0].name, "title");
+    }
+
+    #[test]
+    fn mysql_enum_metadata_decodes_quotes_commas_and_backslashes() {
+        assert_eq!(mysql_enum_labels(r"enum('','a,b','it''s','a\\b','line\nnext','坏')").unwrap(),
+            ["", "a,b", "it's", "a\u{5c}b", "line\nnext", "坏"]);
+        assert!(mysql_enum_labels("set('value')").is_none());
+        assert!(mysql_enum_labels("enum('broken)").is_none());
+        assert!(mysql_enum_labels("enum('a',)").is_none());
+    }
+
+    #[tokio::test]
+    async fn completion_foreign_keys_expand_sqlite_implicit_composite_primary_key() {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        let db = SqlPool::Lite(pool);
+        db.execute("CREATE TABLE parent (code TEXT, tenant INTEGER, PRIMARY KEY (tenant, code)); \
+                    CREATE TABLE child (account INTEGER, reference TEXT, FOREIGN KEY (account, reference) REFERENCES parent)"
+            .into()).await.unwrap();
+        let keys = db.completion_foreign_keys("main", "child").await.unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].referenced_schema, "main");
+        assert_eq!(keys[0].referenced_table, "parent");
+        assert_eq!(keys[0].columns.iter().map(|col| (col.column.as_str(), col.referenced_column.as_str())).collect::<Vec<_>>(),
+            [("account", "tenant"), ("reference", "code")]);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated PostgreSQL test database"]
+    async fn completion_catalog_postgres_foreign_keys_and_enums() {
+        let url = std::env::var("DBDOCK_TEST_POSTGRES_URL").unwrap();
+        let db = SqlPool::Pg(PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap());
+        db.execute(r#"CREATE SCHEMA report; CREATE SCHEMA billing;
+            CREATE TYPE report.state AS ENUM ('draft', 'it''s ready', E'one\\two', '', 'a,b');
+            CREATE TABLE billing.account (code TEXT, tenant INTEGER, PRIMARY KEY (tenant, code));
+            CREATE TABLE report.orders (account_id INTEGER, account_code TEXT, status report.state,
+                CONSTRAINT order_account FOREIGN KEY (account_id, account_code) REFERENCES billing.account (tenant, code));
+            SET standard_conforming_strings = off"#.into()).await.unwrap();
+        let keys = db.completion_foreign_keys("report", "orders").await.unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].name, "order_account");
+        assert_eq!(keys[0].referenced_schema, "billing");
+        assert_eq!(keys[0].columns.iter().map(|col| (col.column.as_str(), col.referenced_column.as_str())).collect::<Vec<_>>(),
+            [("account_id", "tenant"), ("account_code", "code")]);
+        let columns = db.columns("report").await.unwrap();
+        let values = &columns["orders"][2].enum_values;
+        let labels = values.iter().map(|value| value.label.as_str()).collect::<Vec<_>>();
+        assert_eq!(labels, ["draft", "it's ready", "one\\two", "", "a,b"]);
+        for value in values {
+            let result = db.scalar(&format!("SELECT ({})::report.state::text", value.literal)).await.unwrap();
+            assert_eq!(result, value.label);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated MySQL test instance"]
+    async fn completion_catalog_mysql_foreign_keys_and_enums() {
+        let url = std::env::var("DBDOCK_TEST_MYSQL_URL").unwrap();
+        let db = SqlPool::My(MySqlPoolOptions::new().max_connections(1).connect(&url).await.unwrap());
+        db.execute(r#"CREATE DATABASE report; CREATE DATABASE billing;
+            CREATE TABLE billing.account (code VARCHAR(50), tenant INT, PRIMARY KEY (tenant, code));
+            CREATE TABLE report.orders (account_id INT, account_code VARCHAR(50),
+                status ENUM ('draft', 'it''s ready', 'one\\two', '', 'a,b', 'line\nnext', '待处理'),
+                CONSTRAINT order_account FOREIGN KEY (account_id, account_code) REFERENCES billing.account (tenant, code));
+            SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'"#.into()).await.unwrap();
+        let keys = db.completion_foreign_keys("report", "orders").await.unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].name, "order_account");
+        assert_eq!(keys[0].referenced_schema, "billing");
+        assert_eq!(keys[0].columns.iter().map(|col| (col.column.as_str(), col.referenced_column.as_str())).collect::<Vec<_>>(),
+            [("account_id", "tenant"), ("account_code", "code")]);
+        let columns = db.columns("report").await.unwrap();
+        let values = &columns["orders"][2].enum_values;
+        let labels = values.iter().map(|value| value.label.as_str()).collect::<Vec<_>>();
+        assert_eq!(labels, ["draft", "it's ready", "one\\two", "", "a,b", "line\nnext", "待处理"]);
+        for value in values {
+            let result = db.scalar(&format!("SELECT {}", value.literal)).await.unwrap();
+            assert_eq!(result, value.label);
+        }
     }
 
     #[tokio::test]
@@ -989,7 +1120,7 @@ mod tests {
         let attached = sql.columns("Sales App").await.unwrap();
         assert_eq!(primary["books"][0].name, "title");
         assert_eq!(attached["books"], [
-            CompletionColumn { name: "archived".into(), data_type: "BOOLEAN".into(), nullable: false },
+            CompletionColumn { name: "archived".into(), data_type: "BOOLEAN".into(), nullable: false, enum_values: Vec::new() },
         ]);
         assert_eq!(sql.completion_session().await.unwrap().search_path, ["main", "Sales App"]);
         sql.execute("CREATE TEMP TABLE books (temporary TEXT)".into()).await.unwrap();

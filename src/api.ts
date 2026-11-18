@@ -71,6 +71,14 @@ export interface CompletionColumn {
   name: string;
   dataType: string;
   nullable: boolean;
+  enumValues?: { label: string; literal: string }[];
+}
+
+export interface CompletionForeignKey {
+  name: string;
+  referencedSchema: string;
+  referencedTable: string;
+  columns: { column: string; referencedColumn: string }[];
 }
 
 export type CompletionSchema = Record<string, CompletionColumn[]>;
@@ -243,6 +251,8 @@ export const api = {
   cancel: (sessionId: string) => invoke<void>("sql_cancel", { sessionId }),
   completionSession: (sessionId: string) => invoke<CompletionSession>("sql_completion_session", { sessionId }),
   columns: (sessionId: string, schema: string) => invoke<CompletionSchema>("sql_columns", { sessionId, schema }),
+  completionForeignKeys: (sessionId: string, schema: string, table: string) =>
+    invoke<CompletionForeignKey[]>("sql_completion_foreign_keys", { sessionId, schema, table }),
   previewChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<string[]>("sql_preview_changes", { sessionId, schema, table, changes }),
   applyChanges: (sessionId: string, schema: string, table: string, changes: Change[], confirmed: boolean) =>

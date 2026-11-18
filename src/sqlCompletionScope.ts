@@ -24,7 +24,16 @@ interface Relation {
   columns: () => readonly CompletionColumn[] | undefined;
 }
 
-interface Source extends Relation {
+interface BaseTable {
+  schema: string;
+  table: string;
+  columns: readonly CompletionColumn[];
+}
+
+export interface Source extends Relation {
+  at: number;
+  introducer: string;
+  baseTable: () => BaseTable | undefined;
   group?: Token;
   lateral: boolean;
   updateTarget: boolean;
@@ -96,7 +105,16 @@ export function lexerTokens(doc: Text, dialect: SQLDialect, kind: Kind) {
   dialect.language.parser.parse(sql).iterate({ enter(node) {
     const bracketName = (kind === "sqlite" || kind === "d1") && node.name === "Brackets";
     if (node.to > node.from && (bracketName || !node.node.firstChild)) {
-      tokens.push({ from: node.from, to: node.to, text: sql.slice(node.from, node.to), type: node.name });
+      const text = sql.slice(node.from, node.to);
+      const previous = tokens[tokens.length - 1];
+      if (node.name === "String" && text.startsWith("'") && previous?.type === "String" &&
+          previous.to === node.from && previous.text.endsWith("'")) {
+        // The lexer splits a doubled quote into adjacent string tokens.
+        previous.text += text;
+        previous.to = node.to;
+      } else {
+        tokens.push({ from: node.from, to: node.to, text, type: node.name });
+      }
       return false;
     }
   } });
@@ -166,11 +184,11 @@ export function actualName(token: Token, kind: Kind) {
   return kind === "postgres" && !quoted(token) ? name.replace(/[A-Z]/g, (letter) => letter.toLowerCase()) : name;
 }
 
-function findName<T>(entries: Record<string, T>, token: Token, kind: Kind): T | undefined {
+function findTable(entries: CompletionSchema, token: Token, kind: Kind): string | undefined {
   const name = actualName(token, kind);
-  if (Object.prototype.hasOwnProperty.call(entries, name)) return entries[name];
+  if (Object.prototype.hasOwnProperty.call(entries, name)) return name;
   const matches = Object.keys(entries).filter((key) => resolves(token, key, kind));
-  return matches.length === 1 ? entries[matches[0]] : undefined;
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 export function catalogName(token: Token, catalog: CatalogLookup) {
@@ -180,16 +198,14 @@ export function catalogName(token: Token, catalog: CatalogLookup) {
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-function tableColumns(table: Token, schema: Token | undefined, ctes: Cte[], catalog: CatalogLookup) {
-  const cte = !schema && ctes.find((entry) => sameReference(table, entry.name, catalog.kind));
-  if (cte) return cte.columns();
+function resolveTable(table: Token, schema: Token | undefined, catalog: CatalogLookup): BaseTable | undefined {
   const schemaName = schema ? catalogName(schema, catalog) : undefined;
   const path = schema ? (schemaName ? [schemaName] : []) : catalog.searchPath;
   for (const name of path) {
     const entries = catalog.readSchema(name);
     if (!entries) return; // An earlier, unknown schema may shadow all later matches.
-    const columns = findName(entries, table, catalog.kind);
-    if (columns !== undefined) return columns;
+    const match = findTable(entries, table, catalog.kind);
+    if (match !== undefined) return { schema: name, table: match, columns: entries[match] };
   }
 }
 
@@ -217,15 +233,15 @@ function renameColumns(names: Token[], columns: readonly (CompletionColumn | und
   });
 }
 
-function memoColumns(resolve: Relation["columns"]): Relation["columns"] {
+function memo<T>(resolve: () => T): () => T {
   let resolved = false;
-  let columns: ReturnType<Relation["columns"]>;
+  let value: T;
   return () => {
     if (!resolved) {
-      columns = resolve();
+      value = resolve();
       resolved = true;
     }
-    return columns;
+    return value;
   };
 }
 
@@ -284,17 +300,24 @@ function tableRefs(tokens: Token[], ctes: Cte[], catalog: CatalogLookup, outer: 
     const alias = nameToken(tokens[cursor]) ? tokens[cursor++] : undefined;
     const names = alias ? columnNames(tokens[cursor]) : [];
     const visibleOuter = lateral ? [refs.slice(), ...outer] : [];
+    const cte = !derived && !functionSource && !schema
+      ? ctes.find((entry) => sameReference(table, entry.name, catalog.kind))
+      : undefined;
+    const baseTable = memo(() => derived || functionSource || cte ? undefined : resolveTable(table, schema, catalog));
     refs.push({
+      at: tokens[i].from,
+      introducer: command || tokens[i].text,
+      baseTable,
       name: alias ?? (derived ? undefined : table),
       schema: alias ? undefined : schema,
       group: derived ? first : undefined,
       lateral,
       updateTarget: command === "UPDATE" && i === 0,
-      columns: memoColumns(() => {
+      columns: memo(() => {
         if (functionSource) return names.length ? renameColumns(names, undefined, catalog.kind) : undefined;
         const projected = derived
           ? queryOutput(first.children!, ctes, catalog, visibleOuter, budget - 1)
-          : tableColumns(table, schema, ctes, catalog);
+          : cte ? cte.columns() : baseTable()?.columns;
         if (!names.length) return projected?.filter((item): item is CompletionColumn => !!item);
         const renamed = renameColumns(names, projected, catalog.kind);
         // In a derived column list, any remaining output keeps its original name.
@@ -382,12 +405,12 @@ export function queryScope(tokens: Token[], inherited: Cte[], catalog: CatalogLo
   for (const { name, names, query } of definitions) {
     const earlier = ctes;
     const resolve = (scope: Cte[]) => queryOutput(query.children!, scope, catalog, [], budget - 1);
-    const anchor = { name, columns: memoColumns(() => names.length
+    const anchor = { name, columns: memo(() => names.length
       ? renameColumns(names, resolve(earlier), catalog.kind)
       : resolve(earlier)?.filter((item): item is CompletionColumn => !!item)) };
     const visible = recursive ? [anchor, ...earlier] : earlier;
     if (within(query, pos)) return queryScope(query.children!, visible, catalog, [], pos, budget - 1);
-    ctes = [{ name, columns: memoColumns(() => {
+    ctes = [{ name, columns: memo(() => {
       const items = resolve(visible);
       return names.length
         ? renameColumns(names, items, catalog.kind)

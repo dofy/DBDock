@@ -28,16 +28,27 @@ export function querySqlExtensions(kind: Kind, catalog: CompletionCatalog): Exte
     const generation = catalog.generation();
     const session = await catalog.session() ?? emptySession;
     const attempted = new Set<string>();
+    const attemptedKeys = new Set<string>();
     while (!ctx.aborted && generation === catalog.generation()) {
       const missing = new Set<string>();
+      const missingKeys = new Map<string, [string, string]>();
       const result = contextSource(ctx, session, (name) => {
         const columns = catalog.read(name);
         if (!columns && !attempted.has(name)) missing.add(name);
         return columns;
+      }, (schema, table) => {
+        const keys = catalog.readForeignKeys(schema, table);
+        const id = JSON.stringify([schema, table]);
+        if (!keys && !attemptedKeys.has(id)) missingKeys.set(id, [schema, table]);
+        return keys;
       });
-      if (!missing.size) return { result, session };
+      if (!missing.size && !missingKeys.size) return { result, session };
       missing.forEach((name) => attempted.add(name));
-      await Promise.all([...missing].map(catalog.load));
+      missingKeys.forEach((_, id) => attemptedKeys.add(id));
+      await Promise.all([
+        ...[...missing].map(catalog.load),
+        ...[...missingKeys.values()].map(([schema, table]) => catalog.loadForeignKeys(schema, table)),
+      ]);
     }
   };
   const contextual = (ctx: CompletionContext) => {

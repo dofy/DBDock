@@ -93,3 +93,26 @@ test('a session lookup that fails does not fall back to the sidebar or a stale p
   catalog.invalidate(true);
   assert.deepEqual((await catalog.session()).searchPath, ['main']);
 });
+
+test('foreign key lookups coalesce by schema and table and invalidate after metadata changes', async () => {
+  const reads = [];
+  const catalog = createCompletionCatalog(async () => ({}), emptySession, async (schema, table) => {
+    reads.push([schema, table]);
+    return [];
+  });
+  await catalog.load('sales');
+  assert.deepEqual(reads, []);
+  const first = catalog.loadForeignKeys('sales', 'orders');
+  assert.equal(catalog.loadForeignKeys('sales', 'orders'), first);
+  await Promise.all([first, catalog.loadForeignKeys('archive', 'orders')]);
+  assert.deepEqual(reads, [['sales', 'orders'], ['archive', 'orders']]);
+  assert.deepEqual(catalog.readForeignKeys('sales', 'orders'), []);
+  catalog.invalidate(false);
+  await catalog.loadForeignKeys('sales', 'orders');
+  assert.equal(reads.length, 2);
+  catalog.forget('billing');
+  assert.equal(catalog.readForeignKeys('sales', 'orders'), undefined);
+  await catalog.loadForeignKeys('sales', 'orders');
+  catalog.invalidate(true);
+  assert.equal(catalog.readForeignKeys('sales', 'orders'), undefined);
+});

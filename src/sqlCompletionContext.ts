@@ -7,6 +7,7 @@ import {
   pathEndingAt, qualifiedSources, queryScope, quote, quoted, resolveField, resolves, sameReference, tableIntroducers, word,
   type CatalogLookup, type Token,
 } from "./sqlCompletionScope.ts";
+import { joinOptions, type ReadForeignKeys } from "./sqlCompletionJoin.ts";
 
 const prefix = /^[\p{L}\p{M}\p{N}_$]*$/u;
 const predicateClauses = new Set(["WHERE", "HAVING", "ON"]);
@@ -62,14 +63,39 @@ function valueOptions(column: CompletionColumn, operator: string, assignment: bo
   // NULL is valid in assignments and IS predicates. Equality to NULL does not test for missing values.
   if (column.nullable && (assignment || is)) options.push("NULL");
   if (column.nullable && operator === "IS") options.push("NOT NULL");
-  return options.map((label) => ({ label, type: "keyword" }));
+  return [
+    ...(compare.has(operator) ? enumOptions(column) : []),
+    ...options.map((label) => ({ label, type: "keyword" })),
+  ];
+}
+
+function enumOptions(column: CompletionColumn): Completion[] {
+  return (column.enumValues ?? []).map(({ label, literal }) => ({
+    label: label || "''", apply: literal, type: "constant", detail: "ENUM", boost: 5,
+  }));
+}
+
+function stringPrefix(sql: string, kind: Kind) {
+  const start = /^[eE]'/.test(sql) && kind === "postgres" ? 2 : sql.startsWith("'") ? 1 : 0;
+  if (!start) return;
+  let value = "";
+  for (let i = start; i < sql.length; i++) {
+    const ch = sql[i];
+    if (ch === "'") {
+      if (sql[i + 1] !== "'") return; // Cursor is past the end of this literal.
+      i++;
+    }
+    value += ch;
+  }
+  return value;
 }
 
 /** Returns null outside known SQL slots, and an empty result for a known slot with no candidates. */
 export function sqlContextSource(dialect: SQLDialect, kind: Kind) {
   let lastDoc: Text | undefined;
   let tokens: Token[] = [];
-  return (ctx: CompletionContext, session: CompletionSession, readSchema: (name: string) => CompletionSchema | undefined): CompletionResult | null => {
+  return (ctx: CompletionContext, session: CompletionSession, readSchema: (name: string) => CompletionSchema | undefined,
+    readForeignKeys: ReadForeignKeys = () => []): CompletionResult | null => {
     const { state, pos } = ctx;
     if (lastDoc !== state.doc) {
       tokens = lexerTokens(state.doc, dialect, kind);
@@ -77,10 +103,11 @@ export function sqlContextSource(dialect: SQLDialect, kind: Kind) {
     }
     const statement = currentStatement(tokens, pos);
     const at = statement.find((token) => token.from < pos && pos <= token.to);
-    if (at?.type === "String" || at?.type.endsWith("Comment")) return { from: pos, options: [] };
+    if (at?.type.endsWith("Comment")) return { from: pos, options: [] };
+    const literal = at?.type === "String" ? at : undefined;
     const opening = at && quoted(at) ? at.text[0] : undefined;
-    const from = opening ? at!.from : ctx.matchBefore(/[\p{L}\p{M}\p{N}_$]*/u)?.from ?? pos;
-    const to = at?.from === from && isName(at) ? at.to : pos;
+    const from = literal ? literal.from : opening ? at!.from : ctx.matchBefore(/[\p{L}\p{M}\p{N}_$]*/u)?.from ?? pos;
+    const to = literal?.to ?? (at?.from === from && isName(at) ? at.to : pos);
     const { searchPath, schemas } = session;
     const catalog: CatalogLookup = { kind, searchPath, schemas, readSchema };
     const tree = groupTokens(statement, Math.max(pos, statement[statement.length - 1]?.to ?? 0));
@@ -93,11 +120,18 @@ export function sqlContextSource(dialect: SQLDialect, kind: Kind) {
       if (clauseWords.has(word(left[i]))) { clause = left[i]; break; }
     }
     const slot = word(clause);
-    const result = (options: Completion[]): CompletionResult => opening
-      ? { from, to, filter: false, options: options.filter((item) => item.label.toLowerCase().startsWith(
+    const result = (options: Completion[]): CompletionResult => {
+      if (literal) {
+        const typed = stringPrefix(state.sliceDoc(from, pos), kind)?.toLowerCase();
+        return { from, to, filter: false, options: typed === undefined ? [] :
+          options.filter((item) => item.detail === "ENUM" && item.label.toLowerCase().startsWith(typed)) };
+      }
+      return opening
+        ? { from, to, filter: false, options: options.filter((item) => item.label.toLowerCase().startsWith(
         ctx.state.sliceDoc(from + 1, pos).toLowerCase().replace(/["\]`]$/, ""),
-      )) }
-      : { from, to, options, validFor: prefix };
+        )) }
+        : { from, to, options, validFor: prefix };
+    };
 
     const path = last?.text === "." ? pathEndingAt(left, left.length - 1) : undefined;
     let tableMarker = path && !path.qualifier ? left[path.start - 1] : last;
@@ -106,7 +140,7 @@ export function sqlContextSource(dialect: SQLDialect, kind: Kind) {
     }
     const tableSlot = tableIntroducers.has(word(tableMarker)) ||
       (tableMarker?.text === "," && ["FROM", "JOIN"].includes(slot));
-    if (tableSlot) {
+    if (tableSlot && !literal) {
       const selected = path ? catalogName(path.name, catalog) : undefined;
       const visibleCtes = path || word(tableMarker) === "INTO" || word(tableMarker) === "UPDATE" ? [] : scope.ctes;
       const ctes = visibleCtes.filter((cte, i, all) => all.findIndex((item) => sameReference(item.name, cte.name, kind)) === i);
@@ -139,10 +173,24 @@ export function sqlContextSource(dialect: SQLDialect, kind: Kind) {
     }
 
     const assignment = slot === "SET" && word(scope.tokens[0]) === "UPDATE";
-    if (slot === "SET" && !assignment) return null;
-    if (!fieldClauses.has(slot) || !last) return null;
+    if (slot === "SET" && !assignment) return literal ? result([]) : null;
+    if (!fieldClauses.has(slot) || !last) return literal ? result([]) : null;
     const levels = [scope.sources.filter((ref) => !assignment || ref.updateTarget), ...scope.outer];
     if (path) return result(fieldOptions(levels, kind, path, opening));
+
+    if (predicateClauses.has(slot)) {
+      const listIndex = scope.tokens.findIndex((token, index) => token.children && token.from < pos &&
+        (token.closed ? pos < token.to : pos <= token.to) && word(scope.tokens[index - 1]) === "IN");
+      if (listIndex >= 0) {
+        const list = scope.tokens[listIndex].children!.filter((token) => token.to <= from);
+        if (!list.length || list[list.length - 1].text === ",") {
+          const end = word(scope.tokens[listIndex - 2]) === "NOT" ? listIndex - 2 : listIndex - 1;
+          const operand = pathEndingAt(scope.tokens, end);
+          const column = operand && resolveField(operand, levels, kind);
+          if (column?.enumValues) return result(enumOptions(column));
+        }
+      }
+    }
 
     if ((predicateClauses.has(slot) || assignment) && !opening) {
       const isNot = word(last) === "NOT" && word(previous) === "IS";
@@ -152,15 +200,18 @@ export function sqlContextSource(dialect: SQLDialect, kind: Kind) {
       const field = operand && resolveField(operand, levels, kind);
       if (comparison) {
         const values = field ? valueOptions(field, operator, assignment, kind) : [];
+        if (literal) return result(values);
         const fields = from < pos && operator !== "IS" && !isNot ? fieldOptions(levels, kind) : [];
         return result([...values, ...fields]);
       }
       if (field && last.to < from) return result(operatorOptions(field, assignment));
     }
 
+    if (literal) return result([]);
     if (last === clause || last.text === "," || last.type === "Operator" ||
         ["ALL", "DISTINCT", "AND", "OR", "BY", "NOT"].includes(word(last))) {
-      return result(fieldOptions(levels, kind, undefined, opening));
+      const joins = slot === "ON" && last === clause && !opening ? joinOptions(scope.sources, clause.from, kind, readForeignKeys) : [];
+      return result([...joins, ...fieldOptions(levels, kind, undefined, opening)]);
     }
     return null;
   };

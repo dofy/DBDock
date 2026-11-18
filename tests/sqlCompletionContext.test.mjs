@@ -211,3 +211,94 @@ test('does not falsely resolve a table from a later schema while an earlier sche
   assert.deepEqual(sources.postgres(ctx, session, (name) => catalogs.postgres[name]).options, []);
   assert.ok(sources.postgres(ctx, session, (name) => catalogs.postgres[name] ?? {}).options.some(({ label }) => label === 'published'));
 });
+
+const fk = (name, referencedSchema, referencedTable, ...pairs) => ({
+  name, referencedSchema, referencedTable,
+  columns: pairs.map(([column, referencedColumn]) => ({ column, referencedColumn })),
+});
+const status = {
+  name: 'status', dataType: 'status_type', nullable: true,
+  enumValues: [
+    { label: 'draft', literal: "'draft'" },
+    { label: "it's open", literal: "'it''s open'" },
+    { label: 'ready, pending', literal: "'ready, pending'" },
+    { label: '', literal: "''" },
+  ],
+};
+const completionCatalog = {
+  sales: { orders: [col('account', 'integer'), col('account key', 'text'), status] },
+  billing: { accounts: [col('tenant', 'integer'), col('key', 'text')], staff: [col('id', 'integer'), col('manager', 'integer')] },
+};
+const orderedSession = { searchPath: ['sales', 'billing'], schemas: ['sales', 'billing'] };
+const relationship = fk('orders_account', 'billing', 'accounts', ['account', 'tenant'], ['account key', 'key']);
+const foreignKeys = (schema, table) => schema === 'sales' && table === 'orders' ? [relationship] :
+  schema === 'billing' && table === 'staff' ? [fk('staff_manager', 'billing', 'staff', ['manager', 'id'])] : [];
+function metadataComplete(input, kind = 'postgres', readKeys = foreignKeys) {
+  const pos = input.indexOf('|');
+  const state = EditorState.create({ doc: input.replace('|', '') });
+  return sources[kind](new CompletionContext(state, pos, false), orderedSession, (name) => completionCatalog[name], readKeys);
+}
+const relations = (input, kind, fetch) => metadataComplete(input, kind, fetch)?.options.filter(({ boost }) => boost === 20).map(({ label }) => label) ?? [];
+const enumChoices = (input, kind) => metadataComplete(input, kind)?.options.filter(({ detail }) => detail === 'ENUM').map(({ apply }) => apply) ?? [];
+
+test('suggests the complete composite foreign key using aliases and dialect quoting', () => {
+  const pg = 'SELECT * FROM sales.orders AS o JOIN billing.accounts AS a ON |';
+  assert.deepEqual(relations(pg), ['o."account" = a."tenant" AND o."account key" = a."key"']);
+  assert.deepEqual(relations(pg, 'mysql'), ['o.`account` = a.`tenant` AND o.`account key` = a.`key`']);
+  assert.deepEqual(relations('SELECT * FROM billing.accounts a LEFT JOIN sales.orders AS "order alias" ON |'),
+    ['"order alias"."account" = a."tenant" AND "order alias"."account key" = a."key"']);
+  assert.deepEqual(relations('SELECT * FROM sales.orders o(acct, key_col) JOIN billing.accounts a ON |'),
+    ['o."acct" = a."tenant" AND o."key_col" = a."key"']);
+});
+
+test('offers each declared relationship and matches self-joins by their aliases', () => {
+  assert.deepEqual(relations('SELECT * FROM staff s1 JOIN staff s2 ON |'), [
+    's2."manager" = s1."id"', 's1."manager" = s2."id"',
+  ]);
+  assert.deepEqual(relations('SELECT * FROM orders o JOIN accounts a ON |', 'postgres', (schema, table) =>
+    schema === 'sales' && table === 'orders'
+      ? [relationship, fk('secondary', 'billing', 'accounts', ['account', 'tenant'])]
+      : []),
+  ['o."account" = a."tenant" AND o."account key" = a."key"', 'o."account" = a."tenant"']);
+});
+
+test('does not invent foreign keys for CTEs, other join operands or incomplete mappings', () => {
+  assert.deepEqual(relations('WITH orders AS (SELECT 1 AS account) SELECT * FROM orders o JOIN billing.accounts a ON |'), []);
+  assert.deepEqual(relations('SELECT * FROM (SELECT * FROM sales.orders) o JOIN billing.accounts a ON |'), []);
+  assert.deepEqual(relations('SELECT * FROM orders o JOIN staff s ON | JOIN accounts a ON true'), []);
+  assert.deepEqual(relations('SELECT * FROM orders o, staff s JOIN accounts a ON |'), []);
+  assert.deepEqual(relations('SELECT * FROM orders o JOIN accounts a ON o.|'), []);
+  assert.deepEqual(relations('SELECT * FROM orders o JOIN accounts a ON |', 'postgres', (schema) =>
+    schema === 'sales' ? [fk('incomplete', 'billing', 'accounts', ['account', 'tenant'], ['account key', 'missing'])] : []), []);
+  const reads = [];
+  metadataComplete('SELECT * FROM orders o JOIN accounts a ON true WHERE |', 'postgres', (...args) => { reads.push(args); return []; });
+  assert.deepEqual(reads, []);
+});
+
+test('suggests declared enum literals for comparisons, assignments, and IN lists', () => {
+  const all = status.enumValues.map(({ literal }) => literal);
+  for (const kind of ['postgres', 'mysql']) {
+    assert.deepEqual(enumChoices('SELECT * FROM orders o WHERE o.status = |', kind), all);
+    assert.deepEqual(enumChoices('UPDATE orders SET status = |', kind), all);
+    assert.deepEqual(enumChoices('SELECT * FROM orders WHERE status <> |', kind), all);
+    assert.deepEqual(enumChoices('SELECT * FROM orders WHERE status IN (|)', kind), all);
+    assert.deepEqual(enumChoices("SELECT * FROM orders WHERE status NOT IN ('draft', |", kind), all);
+    assert.deepEqual(enumChoices("SELECT * FROM orders WHERE status IN ('ready|')", kind), ["'ready, pending'"]);
+    assert.deepEqual(enumChoices('SELECT * FROM orders WHERE status IS |', kind), []);
+    assert.deepEqual(enumChoices('SELECT * FROM orders WHERE status IN (SELECT | FROM orders)', kind), []);
+    assert.deepEqual(enumChoices('SELECT * FROM orders WHERE account = |', kind), []);
+  }
+});
+
+test('filters typed literals and preserves enum metadata through CTE and derived column aliases', () => {
+  const pg = "SELECT * FROM orders WHERE status = 'it''s |x'";
+  const result = metadataComplete(pg);
+  assert.deepEqual(result.options.map(({ apply }) => apply), ["'it''s open'"]);
+  assert.equal(pg.replace('|', '').slice(result.from, result.to), "'it''s x'");
+  assert.deepEqual(enumChoices("UPDATE orders SET status = 'dr|"), ["'draft'"]);
+  assert.deepEqual(enumChoices("UPDATE orders SET status = 'draft'|"), []);
+  assert.deepEqual(enumChoices('WITH selection AS (SELECT status AS current_state FROM orders) SELECT * FROM selection WHERE current_state = |'),
+    status.enumValues.map(({ literal }) => literal));
+  assert.deepEqual(enumChoices('SELECT * FROM (SELECT status FROM orders) o(current_state) WHERE o.current_state = |'),
+    status.enumValues.map(({ literal }) => literal));
+});

@@ -26,7 +26,7 @@ use tauri::{Emitter, Manager, State};
 
 use redis_db::{KeyValue, RedisConn, ScanPage};
 use sql::{Change, CompletionColumn, CompletionSession, QueryExecution, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
-use sql_browser::{TableFilter, TableMetadata};
+use sql_browser::{CompletionForeignKey, TableFilter, TableMetadata};
 use sql_schema::SchemaChange;
 use sql_transfer::ExportFormat;
 use ssh::Tunnel;
@@ -593,6 +593,12 @@ async fn sql_columns(state: State<'_, AppState>, session_id: String, schema: Str
 }
 
 #[tauri::command]
+async fn sql_completion_foreign_keys(state: State<'_, AppState>, session_id: String, schema: String, table: String) -> CmdResult<Vec<CompletionForeignKey>> {
+    let s = state.sql(&session_id)?;
+    pool(&s).completion_foreign_keys(&schema, &table).await.map_err(err)
+}
+
+#[tauri::command]
 async fn sql_preview_changes(state: State<'_, AppState>, session_id: String, schema: String, table: String, changes: Vec<Change>) -> CmdResult<Vec<String>> {
     let s = state.sql(&session_id)?;
     browser_pool(&s).change_sql(&schema, &table, &changes).await.map_err(err)
@@ -832,6 +838,7 @@ pub fn run() {
             sql_completion_session,
             sql_cancel,
             sql_columns,
+            sql_completion_foreign_keys,
             sql_preview_changes,
             sql_apply_changes,
             sql_preview_schema,

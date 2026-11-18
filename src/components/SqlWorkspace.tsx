@@ -71,6 +71,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
   const completionCatalog = useMemo(() => createCompletionCatalog(
     (name) => api.columns(sid, name),
     () => api.completionSession(sid),
+    (schema, table) => api.completionForeignKeys(sid, schema, table),
   ), [sid]);
   const [completionRevision, setCompletionRevision] = useState(0);
   const refreshCompletion = useCallback((clearColumns: boolean) => {
