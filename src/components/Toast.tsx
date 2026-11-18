@@ -1,51 +1,88 @@
-import { t as translate } from "../i18n";
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
-import { Copy, X } from "lucide-react";
+import { t } from "../i18n";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, Copy, X } from "lucide-react";
+import { FeedbackIcon, type FeedbackKind } from "./FeedbackIcon";
 
-type Kind = "ok" | "error" | "info";
-interface Toast {
+interface ToastEntry {
   id: number;
-  kind: Kind;
+  kind: FeedbackKind;
   text: string;
 }
 
-const Ctx = createContext<(kind: Kind, text: string) => void>(() => {});
+const isUrgent = (kind: FeedbackKind) => kind === "error" || kind === "danger";
 
-/** `toast("ok" | "error" | "info", text)`; errors stay longer and can be copied. */
+const Ctx = createContext<(kind: FeedbackKind, text: string) => void>(() => {});
 export const useToast = () => useContext(Ctx);
 
-export function ToastProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<Toast[]>([]);
-  const seq = useRef(0);
+function ToastCard({ item, dismiss }: { item: ToastEntry; dismiss: (id: number) => void }) {
+  const { id, kind, text } = item;
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const urgent = isUrgent(kind);
+  const duration = urgent ? 10000 : kind === "warning" ? 6500 : 4000;
+  const paused = hovered || focused;
 
-  const dismiss = useCallback((id: number) => setItems((t) => t.filter((x) => x.id !== id)), []);
+  useEffect(() => {
+    if (paused) return;
+    const timeout = window.setTimeout(() => dismiss(id), duration);
+    return () => window.clearTimeout(timeout);
+  }, [dismiss, duration, id, paused]);
 
-  const push = useCallback(
-    (kind: Kind, text: string) => {
-      const id = ++seq.current;
-      setItems((t) => [...t.slice(-4), { id, kind, text }]);
-      setTimeout(() => dismiss(id), kind === "error" ? 10000 : 4000);
-    },
-    [dismiss],
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div
+      className="toast"
+      data-feedback-kind={kind}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
+    >
+      <FeedbackIcon kind={kind} size={16} />
+      <div className="toast-text">{text}</div>
+      <div className="toast-actions">
+        {urgent && <button type="button" onClick={() => void copy()} aria-label={t(copied ? "Copied" : "Copy")} title={t(copied ? "Copied" : "Copy")}>
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>}
+        <button type="button" onClick={() => dismiss(id)} aria-label={t("Dismiss")} title={t("Dismiss")}>
+          <X size={14} />
+        </button>
+      </div>
+    </div>
   );
+}
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [items, setItems] = useState<ToastEntry[]>([]);
+  const [announcement, setAnnouncement] = useState<ToastEntry>();
+  const sequence = useRef(0);
+  const dismiss = useCallback((id: number) => setItems((current) => current.filter((item) => item.id !== id)), []);
+  const push = useCallback((kind: FeedbackKind, text: string) => {
+    const item = { id: ++sequence.current, kind, text };
+    setItems((current) => [...current.slice(-4), item]);
+    setAnnouncement(item);
+  }, []);
 
   return (
     <Ctx.Provider value={push}>
       {children}
-      <div className="toasts" role="status" aria-live="polite">
-        {items.map((t) => (
-          <div key={t.id} className={`toast toast-${t.kind}`}>
-            <span className="toast-icon">{t.kind === "ok" ? "✓" : t.kind === "error" ? "!" : "i"}</span>
-            <span className="toast-text">{t.text}</span>
-            {t.kind === "error" && (
-              <button className="link" onClick={() => navigator.clipboard.writeText(t.text)} title={translate("Copy")}>
-                <Copy size={14} />{translate("Copy")} </button>
-            )}
-            <button className="x" onClick={() => dismiss(t.id)} aria-label={translate("Dismiss")}>
-              <X size={12} />
-            </button>
-          </div>
-        ))}
+      <div className="toast-announcement" role="status" aria-atomic="true">
+        {announcement && !isUrgent(announcement.kind) && <span key={announcement.id}>{announcement.text}</span>}
+      </div>
+      <div className="toast-announcement" role="alert" aria-atomic="true">
+        {announcement && isUrgent(announcement.kind) && <span key={announcement.id}>{announcement.text}</span>}
+      </div>
+      <div className="toasts">
+        {items.map((item) => <ToastCard key={item.id} item={item} dismiss={dismiss} />)}
       </div>
     </Ctx.Provider>
   );

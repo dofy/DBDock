@@ -2,11 +2,12 @@ import { t, tf } from "../i18n";
 import { tableListStatus } from "../tableListStatus";
 import { SqlHistory } from "../sqlHistory";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errText, type SessionInfo, type TableInfo } from "../api";
+import { api, errText, type CompletionSchema, type SessionInfo, type TableInfo } from "../api";
 import { TableView } from "./TableView";
 import { QueryView } from "./QueryView";
+import { ResultEmpty } from "./DataGrid";
 import { Database, FileCode, LockKeyhole, Plus, RefreshCw, ShieldAlert, X } from "lucide-react";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { SchemaEditor } from "./SchemaEditor";
 import { EnvBadge } from "./Home";
 import { useToast } from "./Toast";
@@ -45,6 +46,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
   const isMysql = session.kind === "mysql";
   const isPostgres = session.kind === "postgres";
   const toast = useToast();
+  const { ask, message } = useFeedbackDialog();
   const [schemas, setSchemas] = useState<string[]>([]);
   const [schema, setSchema] = useState(session.defaultSchema || "");
   const [postgresDatabases, setPostgresDatabases] = useState<string[]>([]);
@@ -57,15 +59,15 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
   const navigationEpoch = useRef(0);
   const [filter, setFilter] = useState("");
   const [creating, setCreating] = useState(false);
-  const [tabs, setTabs] = useState<Tab[]>([{ id: newId(), type: "query", title: "Query 1", sql: "" }]);
-  const [active, setActive] = useState(tabs[0].id);
+  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: newId(), type: "query", title: "Query 1", sql: "" }]);
+  const [active, setActive] = useState<string | null>(() => tabs[0].id);
   const [focusRequest, setFocusRequest] = useState(0);
-  const lastQueryId = useRef(tabs[0].id);
+  const lastQueryId = useRef(active);
   const selectTab = useCallback((id: string) => {
     setActive(id);
     setFocusRequest((request) => request + 1);
   }, []);
-  const [columns, setColumns] = useState<Record<string, string[]>>({});
+  const [columns, setColumns] = useState<CompletionSchema>({});
   const [, setHistoryVersion] = useState(0);
 
   useEffect(() => {
@@ -131,9 +133,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
   }, [sid, tabs, selectTab]);
 
   const completion = useMemo(() => {
-    const out: Record<string, string[]> = {};
-    for (const t of tables) out[t.name] = columns[t.name] ?? [];
-    return out;
+    return Object.fromEntries(tables.map((table) => [table.name, columns[table.name] ?? []]));
   }, [tables, columns]);
 
   const selectSchema = useCallback((name: string) => {
@@ -240,19 +240,19 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
   const focusSqlEditor = () => {
     const queryTabs = tabs.filter((tab) => tab.type === "query");
     const target = activeQueryId ?? queryTabs.find((tab) => tab.id === lastQueryId.current)?.id ?? queryTabs[0]?.id;
-    if (!target) { newQuery(); return; }
+    if (!target) return;
     navigationEpoch.current++;
     selectTab(target);
   };
 
   const closeTab = async (id: string) => {
     const state = dirtyTabs.current.get(sid)?.get(id);
-    if (state === "busy") { await message(t("Wait for the commit to finish before closing this tab.")); return; }
-    if (state === "dirty" && !(await ask(t("Discard uncommitted changes in this tab?"), { title: t("Discard changes"), kind: "warning" }))) return;
+    if (state === "busy") { await message(t("Wait for the commit to finish before closing this tab."), { kind: "warning" }); return; }
+    if (state === "dirty" && !(await ask(t("Discard uncommitted changes in this tab?"), { title: t("Discard changes"), kind: "warning", okLabel: t("Discard") }))) return;
     setTabs((ts) => {
       const i = ts.findIndex((t) => t.id === id);
       const next = ts.filter((t) => t.id !== id);
-      if (id === active && next.length) setActive(next[Math.max(0, i - 1)].id);
+      if (id === active) setActive(next[Math.max(0, i - 1)]?.id ?? null);
       return next;
     });
   };
@@ -263,7 +263,11 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
       if (sessionId !== sid) return;
       if (action === "new-sql-tab") newQuery();
       else if (action === "focus-sql-editor") focusSqlEditor();
-      else if (action === "close-database-tab" && active) void closeTab(active);
+      else if (action === "close-database-tab" && tabs.length) {
+        // Claim the shortcut before any asynchronous discard confirmation.
+        event.preventDefault();
+        void closeTab((tabs.find((tab) => tab.id === active) ?? tabs[0]).id);
+      }
     };
     window.addEventListener("dbdock:database-action", onAction);
     return () => window.removeEventListener("dbdock:database-action", onAction);
@@ -394,13 +398,23 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
                   onExecuted={(sql) => { history.add(connectionId, database, sql); setHistoryVersion((n) => n + 1); }}
                   value={t.sql}
                   onChange={(v) => setTabs((ts) => ts.map((x) => (x.id === t.id && x.type === "query" ? { ...x, sql: v } : x)))}
+                  schemaName={schema}
                   schema={completion}
                   dark={dark}
                 />
               )}
             </div>
           ))}
-          {!tabs.length && <div className="grid-empty muted">{t("Pick a table, or open a new SQL tab.")}</div>}
+          {!tabs.length && <ResultEmpty
+            illustrated
+            title={t("No open tabs")}
+            detail={t("Open a table from the sidebar to view data.")}
+            action={session.sqlProtection !== "browseOnly" && (
+              <button type="button" onClick={newQuery} title={`${t("New query")} (⌘T)`}>
+                <FileCode size={14} aria-hidden="true" />{t("New query")}
+              </button>
+            )}
+          />}
         </div>
         {creating && <SchemaEditor sessionId={sid} schema={schema} connectionName={connectionName} env={env} kind={session.kind} protection={session.sqlProtection}
           onClose={() => setCreating(false)}

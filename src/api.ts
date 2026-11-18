@@ -67,6 +67,14 @@ export interface QueryResult {
   elapsedMs: number;
 }
 
+export interface CompletionColumn {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+}
+
+export type CompletionSchema = Record<string, CompletionColumn[]>;
+
 export interface TableInfo {
   name: string;
   kind: "table" | "view";
@@ -223,7 +231,7 @@ export const api = {
     invoke<boolean>("sql_needs_confirmation", { sessionId, sql }),
   execute: (sessionId: string, sql: string, confirmed: boolean) => invoke<QueryResult[]>("sql_execute", { sessionId, sql, confirmed }),
   cancel: (sessionId: string) => invoke<void>("sql_cancel", { sessionId }),
-  columns: (sessionId: string, schema: string) => invoke<Record<string, string[]>>("sql_columns", { sessionId, schema }),
+  columns: (sessionId: string, schema: string) => invoke<CompletionSchema>("sql_columns", { sessionId, schema }),
   previewChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<string[]>("sql_preview_changes", { sessionId, schema, table, changes }),
   applyChanges: (sessionId: string, schema: string, table: string, changes: Change[], confirmed: boolean) =>

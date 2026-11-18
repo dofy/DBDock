@@ -66,15 +66,16 @@ fn label<'a>(language: &str, english: &'a str) -> &'a str {
         "Settings…" => ["设置…", "設定…", "設定…"],
         "File" => ["文件", "檔案", "ファイル"],
         "New Connection…" => ["新建连接…", "新增連線…", "新規接続…"],
+        "Format SQL" => ["格式化 SQL", "格式化 SQL", "SQL を整形"],
         "Focus SQL Editor" => ["聚焦 SQL 编辑器", "聚焦 SQL 編輯器", "SQL エディターにフォーカス"],
         "New SQL Tab" => ["新建 SQL 标签页", "新增 SQL 分頁", "SQL タブを新規作成"],
-        "Close Database Tab" => ["关闭数据库标签页", "關閉資料庫分頁", "データベースタブを閉じる"],
+        "Close Tab or Connection" => ["关闭标签页或连接", "關閉分頁或連線", "タブまたは接続を閉じる"],
         "New Group…" => ["新建分组…", "新增群組…", "新規グループ…"],
         "Import…" => ["导入…", "匯入…", "インポート…"],
         "Paste Connection URLs…" => ["粘贴连接 URL…", "貼上連線 URL…", "接続 URL を貼り付け…"],
         "Export…" => ["导出…", "匯出…", "エクスポート…"],
         "SSH Hosts…" => ["SSH 主机…", "SSH 主機…", "SSH ホスト…"],
-        "Close Tab" => ["关闭标签页", "關閉分頁", "タブを閉じる"],
+        "Close Connection" => ["关闭连接", "關閉連線", "接続を閉じる"],
         "Edit" => ["编辑", "編輯", "編集"], "View" => ["显示", "顯示", "表示"],
         "Connections" => ["连接", "連線", "接続"],
         "Quick Switch…" => ["快速切换…", "快速切換…", "クイック切替…"],
@@ -131,7 +132,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
             &item(app, "new-group", label(language, "New Group…"), Some("CmdOrCtrl+Shift+N"))?,
             &item(app, "new-sql-tab", label(language, "New SQL Tab"), Some("CmdOrCtrl+T"))?,
             &item(app, "focus-sql-editor", label(language, "Focus SQL Editor"), Some("CmdOrCtrl+L"))?,
-            &item(app, "close-database-tab", label(language, "Close Database Tab"), Some("CmdOrCtrl+Shift+W"))?,
+            &item(app, "close-database-tab", label(language, "Close Tab or Connection"), Some("CmdOrCtrl+W"))?,
             &sep()?,
             &item(app, "import", label(language, "Import…"), Some("CmdOrCtrl+O"))?,
             &item(app, "import-urls", label(language, "Paste Connection URLs…"), Some("CmdOrCtrl+Shift+I"))?,
@@ -139,7 +140,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
             &sep()?,
             &item(app, "ssh-hosts", label(language, "SSH Hosts…"), Some("CmdOrCtrl+Shift+H"))?,
             &sep()?,
-            &item(app, "close-tab", label(language, "Close Tab"), Some("CmdOrCtrl+W"))?,
+            &item(app, "close-tab", label(language, "Close Connection"), Some("CmdOrCtrl+Alt+W"))?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -154,6 +155,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
             &PredefinedMenuItem::copy(app, Some(label(language, "Copy")))?,
             &PredefinedMenuItem::paste(app, Some(label(language, "Paste")))?,
             &PredefinedMenuItem::select_all(app, Some(label(language, "Select All")))?,
+            &sep()?,
+            &item(app, "format-sql", label(language, "Format SQL"), Some("CmdOrCtrl+I"))?,
         ],
     )?;
     let view = Submenu::with_items(
@@ -197,15 +200,14 @@ pub fn handle<R: Runtime>(app: &AppHandle<R>, id: &str) {
         "help" => {
             let _ = open_help(app, None);
         }
-        // ⌘W closes a secondary window (Help) when it has focus; in the main window it
-        // closes the current session tab.
-        "command-palette" | "quick-switch" | "new-sql-tab" | "focus-sql-editor" | "close-database-tab" => {
+        "command-palette" | "quick-switch" | "new-sql-tab" | "focus-sql-editor" | "format-sql" | "close-tab" => {
             use tauri::Manager;
             if app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false)) {
                 let _ = app.emit("menu", id);
             }
         }
-        "close-tab" => {
+        // ⌘W closes a focused secondary window or delegates to the main workspace.
+        "close-database-tab" => {
             use tauri::Manager;
             if let Some(w) = app.webview_windows().into_values().find(|w| w.label() != "main" && w.is_focused().unwrap_or(false)) {
                 let _ = w.close();

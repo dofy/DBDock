@@ -1,54 +1,41 @@
-import { acceptCompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
-import { MySQL, PostgreSQL, SQLite, sql } from "@codemirror/lang-sql";
+import { acceptCompletion, autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { MySQL, PostgreSQL, SQLite, sql, schemaCompletionSource, keywordCompletionSource } from "@codemirror/lang-sql";
 import { Prec, type Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import type { Kind } from "./api";
+import type { CompletionSchema, Kind } from "./api";
+import { sqlContextSource } from "./sqlCompletionContext";
 
-const unquote = (s: string) => s.replace(/^[`"[]|[`"\]]$/g, "").split(".").pop() ?? s;
+const sqlDialect = (kind: Kind) => kind === "mysql" ? MySQL : kind === "postgres" ? PostgreSQL : SQLite;
+const acceptWithTab = Prec.highest(keymap.of([{ key: "Tab", run: acceptCompletion }]));
 
-/** Tables named after FROM / JOIN / UPDATE / INTO, including comma lists after FROM. */
-export function referencedTables(text: string): string[] {
-  const out = new Set<string>();
-  const ident = String.raw`[\`"\[]?[\w$.]+[\`"\]]?`;
-  for (const m of text.matchAll(new RegExp(String.raw`\b(?:join|update|into)\s+(${ident})`, "gi"))) out.add(unquote(m[1]));
-  for (const m of text.matchAll(/\bfrom\s+([\s\S]*?)(?=\bwhere\b|\bjoin\b|\bleft\b|\binner\b|\bgroup\b|\border\b|\blimit\b|\bhaving\b|;|\)|$)/gi)) {
-    for (const part of m[1].split(",")) {
-      const name = part.trim().split(/\s+/)[0];
-      if (name) out.add(unquote(name));
-    }
-  }
-  return [...out];
+/** Column and keyword completion in the table grid's single-line SQL field. */
+export function sqlExtensions(kind: Kind, schema: Record<string, string[]>, fixedTable: string): Extension[] {
+  return [sql({ dialect: sqlDialect(kind), schema, defaultTable: fixedTable, upperCaseKeywords: true }), acceptWithTab];
 }
 
-/**
- * Columns of the tables the statement refers to, offered without a `table.` prefix
- * (lang-sql only completes columns after `table.`).
- */
-export function columnSource(schema: Record<string, string[]>) {
-  const lower = new Map(Object.keys(schema).map((t) => [t.toLowerCase(), t]));
-  return (ctx: CompletionContext): CompletionResult | null => {
-    const word = ctx.matchBefore(/[\w$]*/);
-    if (!word || (word.from === word.to && !ctx.explicit)) return null;
-    if (ctx.state.sliceDoc(word.from - 1, word.from) === ".") return null;
-    const tables = referencedTables(ctx.state.doc.toString());
-    const options = [];
-    for (const t of tables) {
-      const real = schema[t] ? t : lower.get(t.toLowerCase());
-      for (const col of real ? schema[real] : []) options.push({ label: col, type: "property", detail: real, boost: 50 });
+/** Use context-specific candidates in recognized SQL slots, and CodeMirror's usual sources elsewhere. */
+export function querySqlExtensions(kind: Kind, schemaName: string, columns: CompletionSchema): Extension[] {
+  const dialect = sqlDialect(kind);
+  const schema = Object.fromEntries(Object.entries(columns).map(([table, items]) => [table, items.map(({ name }) => name)]));
+  const config = { dialect, schema, upperCaseKeywords: true };
+  const contextSource = sqlContextSource(dialect, kind, schemaName, columns);
+  const completeSchema = schemaCompletionSource(config);
+  const completeKeyword = keywordCompletionSource(dialect, true);
+  let previous: CompletionContext | undefined;
+  let result: CompletionResult | null = null;
+  const contextual = (ctx: CompletionContext) => {
+    if (previous?.state !== ctx.state || previous.pos !== ctx.pos || previous.explicit !== ctx.explicit) {
+      previous = ctx;
+      result = contextSource(ctx);
     }
-    return options.length ? { from: word.from, options, validFor: /^[\w$]*$/ } : null;
+    return result;
   };
-}
-
-/** SQL language, schema completion, column completion, and Tab to accept a suggestion. */
-export function sqlExtensions(kind: Kind, schema: Record<string, string[]>, fixedTable?: string): Extension[] {
-  const lang = sql({
-    dialect: kind === "mysql" ? MySQL : kind === "postgres" ? PostgreSQL : SQLite,
-    schema,
-    defaultTable: fixedTable,
-    upperCaseKeywords: true,
-  });
-  const tab = Prec.highest(keymap.of([{ key: "Tab", run: acceptCompletion }]));
-  // With a fixed table, lang-sql's defaultTable already offers its columns unqualified.
-  return fixedTable ? [lang, tab] : [lang, lang.language.data.of({ autocomplete: columnSource(schema) }), tab];
+  return [sql(config), acceptWithTab, autocompletion({
+    override: [
+      contextual,
+      (ctx) => contextual(ctx) === null ? completeSchema(ctx) : null,
+      (ctx) => contextual(ctx) === null ? completeKeyword(ctx) : null,
+    ],
+    activateOnCompletion: (completion) => completion.type === "operator",
+  })];
 }

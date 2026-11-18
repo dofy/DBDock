@@ -25,7 +25,7 @@ use serde_json::Value;
 use tauri::{Emitter, Manager, State};
 
 use redis_db::{KeyValue, RedisConn, ScanPage};
-use sql::{Change, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
+use sql::{Change, CompletionColumn, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
 use sql_browser::{TableFilter, TableMetadata};
 use sql_schema::SchemaChange;
 use sql_transfer::ExportFormat;
@@ -578,7 +578,7 @@ async fn sql_cancel(state: State<'_, AppState>, session_id: String) -> CmdResult
 }
 
 #[tauri::command]
-async fn sql_columns(state: State<'_, AppState>, session_id: String, schema: String) -> CmdResult<std::collections::BTreeMap<String, Vec<String>>> {
+async fn sql_columns(state: State<'_, AppState>, session_id: String, schema: String) -> CmdResult<std::collections::BTreeMap<String, Vec<CompletionColumn>>> {
     let s = state.sql(&session_id)?;
     browser_pool(&s).columns(&schema).await.map_err(err)
 }

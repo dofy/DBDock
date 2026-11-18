@@ -36,6 +36,14 @@ pub struct TableInfo {
     pub kind: String,
 }
 
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionColumn {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+}
+
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TableData {
@@ -680,7 +688,7 @@ pub enum Change {
 }
 
 impl SqlPool {
-    pub async fn columns(&self, schema: &str) -> Result<BTreeMap<String, Vec<String>>> {
+    pub async fn columns(&self, schema: &str) -> Result<BTreeMap<String, Vec<CompletionColumn>>> {
         if let SqlPool::D1(_) = self {
             // One request: a PRAGMA per table (table-valued pragmas are not allowed).
             let tables = self.tables(schema).await?;
@@ -693,36 +701,48 @@ impl SqlPool {
                 .into_iter()
                 .zip(res)
                 .map(|(t, r)| {
-                    let idx = r.columns.iter().position(|c| c == "name").unwrap_or(1);
-                    (t.name, r.rows.into_iter().map(|row| value_to_string(row.get(idx).cloned().unwrap_or(Value::Null))).collect())
+                    let structure = d1_structure(r);
+                    let columns = structure.rows.into_iter().filter_map(|row| {
+                        Some(CompletionColumn {
+                            name: row.first()?.as_str()?.into(),
+                            data_type: row.get(1).and_then(Value::as_str).unwrap_or_default().into(),
+                            nullable: row.get(2).and_then(Value::as_str) == Some("YES"),
+                        })
+                    }).collect();
+                    (t.name, columns)
                 })
                 .collect());
         }
         let lit = self.quote_lit(schema);
         let sql = match self {
             SqlPool::My(_) | SqlPool::BrowserMy(_) => format!(
-                "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS \
+                "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS \
                  WHERE TABLE_SCHEMA = {lit} ORDER BY TABLE_NAME, ORDINAL_POSITION"
             ),
             SqlPool::Pg(_) | SqlPool::BrowserPg(_) => format!(
-                "SELECT c.relname, a.attname FROM pg_catalog.pg_attribute a \
+                "SELECT c.relname, a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), \
+                 CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END FROM pg_catalog.pg_attribute a \
                  JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
                  WHERE n.nspname = {lit} AND c.relkind IN ('r','p','v','m','f') \
                  AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum"
             ),
             SqlPool::Lite(_) => format!(
-                "SELECT m.name, p.name FROM {}.sqlite_master m JOIN pragma_table_info(m.name, {lit}) p \
+                "SELECT m.name, p.name, p.type, CASE WHEN p.\"notnull\" THEN 'NO' ELSE 'YES' END \
+                 FROM {}.sqlite_master m JOIN pragma_table_info(m.name, {lit}) p \
                  WHERE m.type IN ('table','view') ORDER BY m.name, p.cid",
                 self.quote_ident(schema)
             ),
             SqlPool::D1(_) => unreachable!(),
         };
-        let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for r in self.strings(sql).await? {
-            let mut it = r.into_iter();
-            if let (Some(t), Some(c)) = (it.next(), it.next()) {
-                out.entry(t).or_default().push(c);
+        let mut out: BTreeMap<String, Vec<CompletionColumn>> = BTreeMap::new();
+        for row in self.strings(sql).await? {
+            if let Ok([table, name, data_type, nullable]) = <[String; 4]>::try_from(row) {
+                out.entry(table).or_default().push(CompletionColumn {
+                    name,
+                    data_type,
+                    nullable: nullable.eq_ignore_ascii_case("YES"),
+                });
             }
         }
         Ok(out)
@@ -887,6 +907,19 @@ pub fn value_to_string(v: Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn completion_columns_include_declared_types_and_nullability() {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        let sql = SqlPool::Lite(pool);
+        sql.execute("CREATE TABLE books (published BOOLEAN NOT NULL, title TEXT); CREATE VIEW book_view AS SELECT title FROM books".into()).await.unwrap();
+        let columns = sql.columns("main").await.unwrap();
+        assert_eq!(columns["books"], [
+            CompletionColumn { name: "published".into(), data_type: "BOOLEAN".into(), nullable: false },
+            CompletionColumn { name: "title".into(), data_type: "TEXT".into(), nullable: true },
+        ]);
+        assert_eq!(columns["book_view"][0].name, "title");
+    }
 
     #[tokio::test]
     async fn sqlite_health_check_does_not_create_or_modify_files() {

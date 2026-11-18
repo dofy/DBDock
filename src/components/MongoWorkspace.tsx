@@ -4,7 +4,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { keymap } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { api, errText, type Doc, type SessionInfo } from "../api";
 import { useToast } from "./Toast";
 import { CodeEditor, vimExtension } from "./CodeEditor";
@@ -138,6 +138,7 @@ function DocEditor({ initial, isNew, onSave, onDelete, onClose }: { initial: Doc
 
 function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string; coll: string }) {
   const toast = useToast();
+  const { ask } = useFeedbackDialog();
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState("");
   const [projection, setProjection] = useState("");
@@ -186,7 +187,7 @@ function CollectionView({ sessionId, db, coll }: { sessionId: string; db: string
   };
 
   const del = async (d: Doc) => {
-    if (!(await ask(`${t("Delete this document?")}\n\n_id: ${cellText(d._id)}`, { title: t("Delete document"), kind: "warning" }))) return;
+    if (!(await ask(t("Delete this document?"), { title: t("Delete document"), kind: "danger", okLabel: t("Delete"), target: `_id: ${cellText(d._id)}` }))) return;
     try {
       await api.mongoDelete(sessionId, db, coll, [d._id]);
       toast("ok", t("Deleted 1 document"));
@@ -422,8 +423,8 @@ export function MongoWorkspace({ session, dark }: { session: SessionInfo; dark: 
   const [db, setDb] = useState(session.defaultSchema || "admin");
   const [colls, setColls] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
-  const [tabs, setTabs] = useState<Tab[]>([{ id: newId(), type: "shell" }]);
-  const [active, setActive] = useState(tabs[0].id);
+  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: newId(), type: "shell" }]);
+  const [active, setActive] = useState(() => tabs[0].id);
 
   useEffect(() => {
     api
@@ -468,9 +469,20 @@ export function MongoWorkspace({ session, dark }: { session: SessionInfo; dark: 
     setTabs((ts) => {
       const i = ts.findIndex((t) => t.id === id);
       const next = ts.filter((t) => t.id !== id);
-      if (id === active && next.length) setActive(next[Math.max(0, i - 1)].id);
+      if (id === active) setActive(next[Math.max(0, i - 1)]?.id ?? "");
       return next;
     });
+
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const { sessionId, action } = (event as CustomEvent<{ sessionId: string; action: string }>).detail;
+      if (sessionId !== sid || action !== "close-database-tab" || !tabs.length) return;
+      event.preventDefault();
+      closeTab((tabs.find((tab) => tab.id === active) ?? tabs[0]).id);
+    };
+    window.addEventListener("dbdock:database-action", onAction);
+    return () => window.removeEventListener("dbdock:database-action", onAction);
+  });
 
   const shown = colls.filter((c) => c.toLowerCase().includes(filter.toLowerCase()));
 

@@ -53,10 +53,13 @@ test('keyboard shortcuts use matching tables in every language', async () => {
   assert.ok(section);
   const keys = (html) => [...html.matchAll(/<kbd>([^<]+)<\/kbd>/g)].map((match) => match[1]);
   const expected = keys(section);
+  assert.match(section, /<kbd>⌘W<\/kbd><\/td><td>Close the current tab, or confirm closing the connection when no tabs remain/);
+  assert.match(section, /<kbd>⌥⌘W<\/kbd><\/td><td>Close the current connection directly/);
   assert.ok(expected.includes('⇧⌘P'));
   assert.ok(expected.includes('⌃1–9'));
   assert.ok(expected.includes('⌘1–9'));
-  assert.ok(expected.includes('⌘L'));
+  assert.match(section, /<kbd>⌘L<\/kbd><\/td><td>Focus an existing SQL editor/);
+  assert.ok(expected.includes('⌘I'));
   assert.ok(expected.includes('⇧⌘↵'));
   for (const locale of ['zh-CN', 'zh-TW', 'ja']) {
     const help = JSON.parse(await readFile(new URL(`../public/help.${locale}.json`, import.meta.url), 'utf8'));

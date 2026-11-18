@@ -16,7 +16,7 @@ import type { PaletteCommand } from "./commandPalette";
 import { AboutDialog } from "./components/AboutDialog";
 import "./styles.css";
 import { Database, Search, X } from "lucide-react";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { FeedbackDialogProvider, useFeedbackDialog } from "./components/FeedbackDialog";
 import { updateSettings, useDarkMode, useSettings } from "./settings";
 import { resolveLocale } from "./i18n";
 import { clearHealth } from "./healthHistory";
@@ -58,6 +58,7 @@ function Shell() {
     return () => window.removeEventListener("languagechange", changed);
   }, []);
   const toast = useToast();
+  const { ask, message } = useFeedbackDialog();
   const [conns, setConns] = useState<ConnectionConfig[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
   const [opened, setOpened] = useState<Open[]>([]);
@@ -186,15 +187,15 @@ function Shell() {
     closingSessions.current.add(sessionId);
     try {
       const tabs = dirtyTabs.current.get(sessionId);
-      if (tabs && [...tabs.values()].includes("busy")) { await message(t("Wait for the commit to finish before closing this connection.")); return; }
+      if (tabs && [...tabs.values()].includes("busy")) { await message(t("Wait for the commit to finish before closing this connection."), { kind: "warning" }); return; }
       if (confirmClose) {
         const item = opened.find((entry) => entry.session.sessionId === sessionId);
         const name = item?.alternate ? `${item.conn.name} / ${item.database}` : item?.conn.name ?? "";
         const question = tabs?.size
           ? tf('Close connection "{name}" and discard its uncommitted changes?', { name })
           : tf('Close connection "{name}"?', { name });
-        if (!(await ask(question, { title: t("Close connection"), kind: "warning", okLabel: t("Close connection"), cancelLabel: t("Cancel") }))) return;
-      } else if (tabs?.size && !(await ask(t("Discard uncommitted changes in this connection?"), { title: t("Discard changes"), kind: "warning" }))) return;
+        if (!(await ask(question, { title: t("Close connection"), kind: tabs?.size ? "warning" : "question", okLabel: t("Close connection") }))) return;
+      } else if (tabs?.size && !(await ask(t("Discard uncommitted changes in this connection?"), { title: t("Discard changes"), kind: "warning", okLabel: t("Discard") }))) return;
       dirtyTabs.current.delete(sessionId);
       void api.disconnect(sessionId);
       setOpened((o) => o.filter((x) => x.session.sessionId !== sessionId));
@@ -210,9 +211,9 @@ function Shell() {
     try {
       const busy = [...dirtyTabs.current.values()].some((tabs) => [...tabs.values()].includes("busy"));
       const decision = quitDecision(opened.length, connecting.length, !!document.querySelector('.modal-backdrop:not([hidden])'), busy);
-      if (decision === "blocked") { await message(t("Wait for the commit to finish before quitting.")); return; }
+      if (decision === "blocked") { await message(t("Wait for the commit to finish before quitting."), { kind: "warning" }); return; }
       if (decision === "confirm" && !(await ask(t("Quit DBDock? Open connections will close and unsaved edits will be lost."), {
-        title: t("Quit DBDock"), kind: "warning", okLabel: t("Quit"), cancelLabel: t("Cancel"),
+        title: t("Quit DBDock"), kind: "warning", okLabel: t("Quit"),
       }))) return;
       await invoke("confirm_quit");
     } catch (e) {
@@ -225,6 +226,7 @@ function Shell() {
   // Native menu: session-level items here, the rest go to the home screen.
   const menuRef = useRef<(id: string) => void>(() => {});
   menuRef.current = (id: string) => {
+    if (document.querySelector(".feedback-dialog[open]")) return;
     const ids = [null, ...connecting.map(({ key }) => `connecting:${key}`), ...opened.map((o) => o.session.sessionId)];
     const cycle = (d: number) => setActive(ids[(ids.indexOf(active) + d + ids.length) % ids.length]);
     if ((id.includes("-slot-") || ["next-tab", "prev-tab", "next-database-tab", "prev-database-tab"].includes(id))
@@ -255,17 +257,22 @@ function Shell() {
       case "home":
         return setActive(null);
       case "close-tab":
-        if (active?.startsWith("connecting:")) cancelPending(active.slice("connecting:".length));
-        else if (active) void close(active, true);
-        return;
       case "new-sql-tab":
       case "focus-sql-editor":
-      case "close-database-tab":
-        if (active && !Array.from(document.querySelectorAll(".modal-backdrop, .palette-backdrop"))
-          .some((overlay) => !overlay.closest("[hidden]"))) {
-          window.dispatchEvent(new CustomEvent("dbdock:database-action", { detail: { sessionId: active, action: id } }));
+      case "format-sql":
+      case "close-database-tab": {
+        if (!active || Array.from(document.querySelectorAll(".modal-backdrop, .palette-backdrop"))
+          .some((overlay) => !overlay.closest("[hidden]"))) return;
+        const unhandled = id === "close-tab" || window.dispatchEvent(new CustomEvent("dbdock:database-action", {
+          detail: { sessionId: active, action: id },
+          cancelable: true,
+        }));
+        if (unhandled && (id === "close-tab" || id === "close-database-tab")) {
+          if (active.startsWith("connecting:")) cancelPending(active.slice("connecting:".length));
+          else void close(active, true);
         }
         return;
+      }
       case "next-database-tab":
       case "prev-database-tab":
         if (active) window.dispatchEvent(new CustomEvent("dbdock:cycle-database-tab", { detail: { sessionId: active, direction: id === "next-database-tab" ? 1 : -1 } }));
@@ -351,9 +358,13 @@ function Shell() {
     commands.splice(1, 0,
       action("new-sql-tab", "New query", databaseCategory, "new sql query", "⌘T"),
       action("focus-sql-editor", "Focus SQL editor", databaseCategory, "focus input editor query", "⌘L"),
+      action("format-sql", "Format SQL", databaseCategory, "beautify format indent query", "⌘I"),
     );
   }
-  if (active) commands.push(action("close-tab","Close connection",databaseCategory,"close session"));
+  if (active) commands.push(
+    action("close-database-tab", "Close tab or connection", databaseCategory, "close table query tab session", "⌘W"),
+    action("close-tab", "Close connection", databaseCategory, "close session", "⌥⌘W"),
+  );
   for (const connection of conns) commands.push({id:`connection-${connection.id}`,label:tf("Connect to {name}",{name:connection.name}),category:noteCategory,keywords:`connect ${connection.kind}`,run:()=>{
     void connect(connection);
   }});
@@ -445,8 +456,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <Shell />
-    </ToastProvider>
+    <FeedbackDialogProvider>
+      <ToastProvider>
+        <Shell />
+      </ToastProvider>
+    </FeedbackDialogProvider>
   );
 }

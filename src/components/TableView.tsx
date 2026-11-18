@@ -1,6 +1,6 @@
 import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { api, cancellableBrowserRequest, errText, type Cell, type Change, type Kind, type MetadataKind, type QueryResult, type SqlProtection, type TableData, type TableFilter } from "../api";
 import { DataGrid, ResultEmpty, type GridEditing, type Selection } from "./DataGrid";
 import { SqlInput } from "./SqlInput";
@@ -28,6 +28,7 @@ const PAGE_SIZES = [5, 25, 100, 300, 1000];
 const BINARY = /blob|binary|bytea|bit\b|geometry|point|polygon/i;
 
 export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, env, dark, onSchemaChanged, onDirtyChange }: Props) {
+  const { ask } = useFeedbackDialog();
   const [mode, setMode] = useState<"data" | "structure" | MetadataKind>("data");
   const [data, setData] = useState<TableData | null>(null);
   const [structure, setStructure] = useState<QueryResult | null>(null);
@@ -199,7 +200,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
         const counts = { insert: 0, update: 0, delete: 0 };
         for (const change of changes) counts[change.op]++;
         const sql = await api.previewChanges(sessionId, schema, table, changes.slice(0, 5));
-        if (!(await confirmSqlWrite({
+        if (!(await confirmSqlWrite(ask, {
           connectionName, env, object: `${schema}.${table}`,
           title: t("Confirm table changes"), action: t("Commit"),
           summary: tf("{insert} inserted · {update} updated · {delete} deleted", counts),
@@ -236,7 +237,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
 
   const guard = async (fn: () => void) => {
     if (busy || loading) return;
-    if (pendingCount && !(await ask(tf("Discard {count} uncommitted change(s)?", { count: pendingCount }), { title: t("Discard changes"), kind: "warning", okLabel: t("Discard"), cancelLabel: t("Cancel") }))) return;
+    if (pendingCount && !(await ask(tf("Discard {count} uncommitted change(s)?", { count: pendingCount }), { title: t("Discard changes"), kind: "warning", okLabel: t("Discard") }))) return;
     fn();
   };
 

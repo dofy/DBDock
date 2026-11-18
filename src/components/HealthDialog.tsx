@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Activity, CheckCircle2, Circle, AlertCircle, LoaderCircle, X } from "lucide-react";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { api, ENV_LABEL, errText, type ConnectionConfig } from "../api";
 import { configurationIssues, summarizeHealth, type ConnectionCheckResult } from "../connectionHealth";
 import { beginHealthCheck, clearHealth, finishHealthCheck } from "../healthHistory";
@@ -11,6 +11,7 @@ import { ConnectionForm } from "./ConnectionForm";
 
 type Result = ConnectionCheckResult;
 export function HealthDialog({ connections, groups, onClose, onSaved, onDelete }: { connections: ConnectionConfig[]; groups: string[]; onClose: () => void; onSaved: (c: ConnectionConfig) => void; onDelete: (c: ConnectionConfig) => Promise<void> }) {
+  const { ask } = useFeedbackDialog();
   const [items, setItems] = useState(connections);
   const [results, setResults] = useState<Record<string, Result>>({});
   const [editing, setEditing] = useState<ConnectionConfig | null>(null);
@@ -64,7 +65,7 @@ export function HealthDialog({ connections, groups, onClose, onSaved, onDelete }
     setDeleting(true);
     setDeleteError(null);
     try {
-      const confirmed = await ask(tf('Delete connection "{name}"? The database is not deleted. Legacy Keychain copies may remain.', { name: c.name }), { title: t("Delete"), kind: "warning" });
+      const confirmed = await ask(tf('Delete connection "{name}"? The database is not deleted. Legacy Keychain copies may remain.', { name: c.name }), { title: t("Delete"), kind: "danger", okLabel: t("Delete") });
       if (!confirmed || !mounted.current) return;
       await onDelete(c);
       if (!mounted.current) return;

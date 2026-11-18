@@ -1,3 +1,4 @@
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { FileDown, FileUp, X } from "lucide-react";
@@ -29,6 +30,7 @@ export function TableTransfer({ sessionId, schema, table, connectionName, env, c
   const [canStop, setCanStop] = useState(false);
   const cancel = useRef<(() => void) | null>(null);
   const toast = useToast();
+  const { ask } = useFeedbackDialog();
   const mapped = mapping.filter(Boolean);
   const valid = mapped.length > 0 && new Set(mapped).size === mapped.length;
   const target = `${schema}.${table}`;
@@ -55,7 +57,7 @@ export function TableTransfer({ sessionId, schema, table, connectionName, env, c
     onBusy(true);
     setError("");
     try {
-      if (!(await confirmSqlWrite({
+      if (!(await confirmSqlWrite(ask, {
         connectionName, env, object: target,
         title: t("Confirm import"), action: t("Import"),
         summary: tf("Append {count} row(s) from {file} into {columns} column(s).", { count: loaded.data.rows.length, file: loaded.name, columns: mapped.length }),

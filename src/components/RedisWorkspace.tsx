@@ -1,6 +1,6 @@
 import { t, tf } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { api, errText, fmtTtl, type KeyInfo, type KeyValue, type SessionInfo } from "../api";
 import { RefreshCw, Trash2 } from "lucide-react";
 
@@ -97,6 +97,7 @@ function KV({ rows, head }: { rows: string[][]; head: string[] }) {
 }
 
 export function RedisWorkspace({ session }: Props) {
+  const { ask } = useFeedbackDialog();
   const sid = session.sessionId;
   const [db, setDb] = useState(Number(session.defaultSchema) || 0);
   const [dbsize, setDbsize] = useState<number | null>(null);
@@ -179,7 +180,7 @@ export function RedisWorkspace({ session }: Props) {
 
   const del = async () => {
     if (!selected) return;
-    if (!(await ask(tf('Delete key "{name}"? This cannot be undone.', { name: selected.key }), { title: t("Delete key"), kind: "warning" }))) return;
+    if (!(await ask(tf('Delete key "{name}"? This cannot be undone.', { name: selected.key }), { title: t("Delete key"), kind: "danger", okLabel: t("Delete") }))) return;
     try {
       await api.redisDelete(sid, selected.id);
       setKeys((k) => k.filter((x) => x.id !== selected.id));

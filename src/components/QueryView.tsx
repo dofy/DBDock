@@ -1,15 +1,16 @@
 import { backendErrorSummary, t, tf } from "../i18n";
-import { ChevronDown, CircleAlert, Copy, FileDown, FileUp, History, Play, Square } from "lucide-react";
-import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
+import { AlignLeft, ChevronDown, CircleAlert, Copy, FileDown, FileUp, History, Play, Square } from "lucide-react";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { selectedOrCurrentStatement } from "../sqlStatement";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
 import { getCM, Vim } from "@replit/codemirror-vim";
-import { Prec } from "@codemirror/state";
-import { api, errorDiagnostic, errText, type Kind, type QueryResult, type SqlProtection } from "../api";
+import { EditorSelection, Prec } from "@codemirror/state";
+import { api, errorDiagnostic, errText, type CompletionSchema, type Kind, type QueryResult, type SqlProtection } from "../api";
 import { DataGrid, ResultEmpty } from "./DataGrid";
-import { sqlExtensions } from "../sqlComplete";
+import { querySqlExtensions } from "../sqlComplete";
 import { clampSqlEditorShare, DEFAULT_SQL_EDITOR_SHARE, MAX_SQL_EDITOR_SHARE, MIN_SQL_EDITOR_SHARE, updateSettings, useSettings } from "../settings";
 import { vimExtension } from "./CodeEditor";
 import { serializeResult, type ExportFormat } from "../sqlResultExport";
@@ -30,12 +31,12 @@ interface Props {
   onExecuted: (sql: string) => void;
   value: string;
   onChange: (v: string) => void;
-  /** table name -> columns, for autocomplete */
-  schema: Record<string, string[]>;
+  schemaName: string;
+  schema: CompletionSchema;
   dark: boolean;
 }
 
-export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, schema, dark }: Props) {
+export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, schemaName, schema, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   const [showHistory, setShowHistory] = useState(false);
   const historyButton = useRef<HTMLButtonElement>(null);
   const toast = useToast();
+  const { ask, message } = useFeedbackDialog();
   const executing = useRef(false);
   const ref = useRef<ReactCodeMirrorRef>(null);
   const runOptionsButton = useRef<HTMLButtonElement>(null);
@@ -64,7 +66,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     const frame = requestAnimationFrame(() => {
       const view = ref.current?.view;
       if (!view || view.dom.closest("[hidden]")) return;
-      const overlays = document.querySelectorAll(".modal-backdrop, .palette-backdrop");
+      const overlays = document.querySelectorAll(".modal-backdrop, .palette-backdrop, .feedback-dialog[open]");
       if (Array.from(overlays).some((overlay) => !overlay.closest("[hidden]"))) return;
 
       view.focus();
@@ -87,7 +89,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     if (executing.current || protection === "browseOnly") return;
     const current = all ? { status: "sql" as const, text: doc } : selectedOrCurrentStatement(doc, selection?.from ?? 0, selection?.to ?? 0, kind);
     if (current.status === "ambiguous") {
-      toast("info", t("Select the SQL you want to run, or use Run all"));
+      toast("warning", t("Select the SQL you want to run, or use Run all"));
       return;
     }
     if (current.status !== "sql" || !current.text.trim()) return;
@@ -96,7 +98,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     let t0: number | undefined;
     try {
       const confirmed = protection === "confirm" && await api.sqlNeedsConfirmation(sessionId, text);
-      if (confirmed && !(await confirmSqlWrite({
+      if (confirmed && !(await confirmSqlWrite(ask, {
         connectionName, env, object: database, sql: text,
         title: t("Confirm SQL execution"), action: t("Run"),
         summary: t(all ? "Run all SQL (⇧⌘↵)" : selection?.empty === false ? "Run selected SQL" : "Run current statement"),
@@ -131,7 +133,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       if (!path || typeof path !== "string") return;
       const text = await api.readSqlFile(path);
       const current = ref.current?.view?.state.doc.toString() ?? value;
-      if (current.trim() && text !== current && !(await ask(t("Replace the current SQL text?"), { title: t("Load SQL"), kind: "warning" }))) return;
+      if (current.trim() && text !== current && !(await ask(t("Replace the current SQL text?"), { title: t("Load SQL"), kind: "warning", okLabel: t("Load SQL") }))) return;
       onChange(text);
     } catch (e) { toast("error", errText(e)); }
   };
@@ -143,11 +145,44 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     closeHistory();
     const current = ref.current?.view?.state.doc.toString() ?? value;
     if (current !== text) {
-      if (current.trim() && !(await ask(t("Replace the current SQL text?"), { title: t("Query history"), kind: "warning" }))) return;
+      if (current.trim() && !(await ask(t("Replace the current SQL text?"), { title: t("Query history"), kind: "warning", okLabel: t("Load into editor") }))) return;
       onChange(text);
     }
     ref.current?.view?.focus();
   };
+  const formatEditor = async () => {
+    const view = ref.current?.view;
+    if (!view) return;
+    const { doc, selection } = view.state;
+    try {
+      const { formatSqlEdit } = await import("../sqlFormat");
+      if (view !== ref.current?.view || view.dom.closest("[hidden]") ||
+          view.state.doc !== doc || !view.state.selection.eq(selection)) return;
+      const { anchor, head } = selection.main;
+      const edit = formatSqlEdit(doc.toString(), anchor, head, kind);
+      if (edit) view.dispatch({
+        changes: { from: edit.from, to: edit.to, insert: edit.text },
+        selection: EditorSelection.single(edit.anchor, edit.head),
+        scrollIntoView: true,
+        userEvent: "format.sql",
+      });
+      view.focus();
+    } catch {
+      toast("warning", t("Could not format this SQL"));
+    }
+  };
+  const formatRef = useRef(formatEditor);
+  formatRef.current = formatEditor;
+  useEffect(() => {
+    if (!visible) return;
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId: string; action: string }>).detail;
+      if (detail.sessionId === sessionId && detail.action === "format-sql") void formatRef.current();
+    };
+    window.addEventListener("dbdock:database-action", onAction);
+    return () => window.removeEventListener("dbdock:database-action", onAction);
+  }, [visible, sessionId]);
+
   const cancel = () => {
     api.cancel(sessionId).catch((e) => toast("error", errText(e)));
   };
@@ -165,9 +200,18 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   const editorLabel = t("SQL editor");
   const extensions = useMemo(
     () => [
-      // Vim first; `:w` runs the query.
+      // Handle ⌘I before Vim can consume it as an editor command.
+      Prec.highest(EditorView.domEventHandlers({
+        keydown(event) {
+          if (event.isComposing || !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ||
+              event.key.toLowerCase() !== "i") return false;
+          if (!event.repeat) void formatRef.current();
+          return true;
+        },
+      })),
+      // Vim handles `:w` and its editing commands.
       ...(vimOn ? [vimExtension(() => void runRef.current())] : []),
-      ...sqlExtensions(kind, schema),
+      ...querySqlExtensions(kind, schemaName, schema),
       EditorView.contentAttributes.of({ "aria-label": editorLabel }),
       Prec.highest(
         keymap.of([
@@ -190,7 +234,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         ]),
       ),
     ],
-    [kind, schema, vimOn, editorLabel],
+    [kind, schemaName, schema, vimOn, editorLabel],
   );
 
   const cur = results[active];
@@ -266,6 +310,10 @@ export function QueryView({ sessionId, protection, connectionName, database, env
             </div>}
           </div>
         )}
+        <button type="button" disabled={!value.trim()} onClick={() => void formatEditor()}
+          title={`${t("Beautify selection or all SQL")} (⌘I)`}>
+          <AlignLeft size={14} aria-hidden="true" />{t("Format SQL")}
+        </button>
         <div className="workspace-tools" role="group" aria-label={t("SQL files and history")}>
           <button onClick={() => void saveFile()} title={t("Save SQL to file")} aria-label={t("Save SQL to file")}><FileDown size={14} /></button>
           <button onClick={() => void loadFile()} title={t("Load SQL from file")} aria-label={t("Load SQL from file")}><FileUp size={14} /></button>

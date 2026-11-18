@@ -1,7 +1,8 @@
 import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ask, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { FileCode, FolderOpen, Plus, RefreshCw, Save, Server, SquareTerminal, Trash2, X, Zap } from "lucide-react";
 import { errText, type ConnectionConfig } from "../api";
 import { useToast } from "./Toast";
@@ -35,6 +36,7 @@ interface Props {
 /** Manage ~/.ssh/config: list, edit, add, delete and test Host blocks, or edit the raw file. */
 export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
   const toast = useToast();
+  const { ask } = useFeedbackDialog();
   const settings = useSettings();
   const [hosts, setHosts] = useState<HostBlock[]>([]);
   const [sel, setSel] = useState<string | null>(null); // alias, "" = new
@@ -103,7 +105,7 @@ export function SshHostsDialog({ conns, onClose, onChanged }: Props) {
     if (!current) return;
     const users = usedBy.get(current.alias)?.length ?? 0;
     const msg = tf("Delete Host {name} from ~/.ssh/config?", { name: current.alias }) + (users ? `\n\n${tf("{count} DBDock connections use it and will stop resolving.", { count: users })}` : "") + `\n\n${t("A backup of the file is kept.")}`;
-    if (!(await ask(msg, { title: t("Delete SSH host"), kind: "warning" }))) return;
+    if (!(await ask(msg, { title: t("Delete SSH host"), kind: "danger", okLabel: t("Delete") }))) return;
     try {
       await invoke("ssh_host_delete", { alias: current.alias });
       toast("ok", tf("Deleted {name}", { name: current.alias }));

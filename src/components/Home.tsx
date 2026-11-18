@@ -1,6 +1,6 @@
 import { t, tf } from "../i18n";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { api, ENV_LABEL, ENVS, errText, type ConnectionConfig } from "../api";
 import { DbIcon } from "./DbIcon";
 import { PromptDialog } from "./Dialogs";
@@ -60,6 +60,7 @@ interface Props {
 
 export function Home({ conns, groups, reload, connecting, onConnect, onEdit, action }: Props) {
   const toast = useToast();
+  const { ask } = useFeedbackDialog();
   const health = useSyncExternalStore(subscribeHealth, healthSnapshot);
   const [query, setQuery] = useState("");
   const [envFilter, setEnvFilter] = useState<string | null>(null);
@@ -165,7 +166,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
   const deleteConnections = async (ids: string[]) => {
     const names = conns.filter((c) => ids.includes(c.id)).map((c) => c.name);
     const msg = ids.length === 1 ? tf('Delete connection "{name}" and its saved passwords?', { name: names[0] }) : `${tf("Delete {count} connections and their saved passwords?", { count: ids.length })}\n\n${names.join(", ")}`;
-    if (!(await ask(msg, { title: t("Delete"), kind: "warning" }))) return;
+    if (!(await ask(msg, { title: t("Delete"), kind: "danger", okLabel: t("Delete") }))) return;
     await run(async () => { await api.deleteConnections(ids); clearHealth(ids); }, ids.length === 1 ? tf("Deleted {name}", { name: names[0] }) : tf("Deleted {count} connections", { count: ids.length }));
     setPicked(new Set());
   };
@@ -381,20 +382,6 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                       setMenu({ id: c.id, x: e.clientX, y: e.clientY });
                     }}
                   >
-                    <button
-                      className="pick"
-                      role="checkbox"
-                      aria-checked={picked.has(c.id)}
-                      aria-label={`Select ${c.name}`}
-                      title={picked.has(c.id) ? t("Deselect") : t("Select (⌘-click also works)")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        togglePick(c.id);
-                      }}
-                      onDoubleClick={(e) => e.stopPropagation()}
-                    >
-                      <Check size={12} strokeWidth={3} />
-                    </button>
                     <span className="card-icon-slot">
                       <DbIcon kind={c.kind} size={36} />
                       <span className="card-drag-handle" title={t("Drag this connection to a group")} aria-label={t("Drag this connection to a group")} role="img"><GripVertical size={16} aria-hidden="true" /></span>
@@ -421,15 +408,41 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
                         </div>
                       ); })()}
                     </div>
-                    <div className={`btn-group card-actions ${connecting.includes(c.id) ? "busy" : ""}`} role="group" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-                      <button title={t("Edit")} aria-label={t("Edit")} onClick={() => onEdit(c)}>
-                        <Pencil size={13} />
-                      </button>
-                      <button title={t("More")} aria-label={t("More")} onClick={(e) => setMenu({ id: c.id, x: e.clientX, y: e.clientY })}>
-                        <MoreHorizontal size={13} />
-                      </button>
-                      <button className="primary" disabled={connecting.includes(c.id)} onClick={() => onConnect(c)}>
-                        <Plug size={13} />
+                    <div className="card-actions" role="group" onDoubleClick={(e) => {
+                      if ((e.target as Element).closest("button")) e.stopPropagation();
+                    }}>
+                      <div className="card-secondary">
+                        <button type="button" className="icon-btn" title={t("Edit")} aria-label={t("Edit")}
+                          onClick={(e) => { e.stopPropagation(); onEdit(c); }}>
+                          <Pencil size={14} aria-hidden="true" />
+                        </button>
+                        <button type="button" className="icon-btn" title={t("More")} aria-label={t("More")}
+                          aria-expanded={menu !== null && "id" in menu && menu.id === c.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const anchor = e.currentTarget.getBoundingClientRect();
+                            setMenu({ id: c.id, x: anchor.right - 190, y: anchor.bottom + 4 });
+                          }}>
+                          <MoreHorizontal size={15} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="pick"
+                          role="checkbox"
+                          aria-checked={picked.has(c.id)}
+                          aria-label={`Select ${c.name}`}
+                          title={picked.has(c.id) ? t("Deselect") : t("Select (⌘-click also works)")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePick(c.id);
+                          }}
+                        >
+                          <Check size={12} strokeWidth={3} aria-hidden="true" />
+                        </button>
+                      </div>
+                      <button type="button" className="card-connect" disabled={connecting.includes(c.id)}
+                        onClick={(e) => { e.stopPropagation(); onConnect(c); }}>
+                        <Plug size={13} aria-hidden="true" />
                         {connecting.includes(c.id) ? t("Connecting…") : t("Connect")}
                       </button>
                     </div>

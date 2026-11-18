@@ -1,6 +1,7 @@
+import { useFeedbackDialog } from "./FeedbackDialog";
 import { useState } from "react";
 import { confirmSqlWrite } from "../sqlWriteConfirmation";
-import { Eye, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, Eye, Plus, Trash2, X } from "lucide-react";
 import { api, errText, type ColumnDraft, type ColumnType, type Kind, type SchemaChange, type SqlProtection } from "../api";
 import { t, tf } from "../i18n";
 
@@ -62,6 +63,7 @@ interface Props extends TableActionTarget {
 type Alter = Exclude<SchemaChange["op"], "create">;
 
 export function SchemaEditor({ sessionId, schema, connectionName, env, kind, protection, table, columns = [], onClose, onBusy, onApplied }: Props) {
+  const { ask } = useFeedbackDialog();
   const create = table === undefined;
   const [name, setName] = useState(table ?? "");
   const [drafts, setDrafts] = useState<ColumnDraft[]>([blank()]);
@@ -115,9 +117,9 @@ export function SchemaEditor({ sessionId, schema, connectionName, env, kind, pro
         const summary = preview.change.op === "drop"
           ? tf("Drop {column} and its data from {table}?", { column: preview.change.column, table: `${schema}.${preview.target}` })
           : t(preview.change.op === "create" ? "New table" : actions.find(([key]) => key === preview.change.op)?.[1] ?? "Edit structure");
-        if (!(await confirmSqlWrite({
+        if (!(await confirmSqlWrite(ask, {
           connectionName, env, object: `${schema}.${preview.target}`, summary, sql: preview.sql,
-          title: t("Confirm schema change"), action: t("Apply"),
+          title: t("Confirm schema change"), action: t(destructive ? "Drop column" : "Apply"), destructive,
         }))) return;
       }
       await api.applySchema(sessionId, schema, preview.target, preview.change, confirmed);
@@ -139,9 +141,14 @@ export function SchemaEditor({ sessionId, schema, connectionName, env, kind, pro
       {preview ? <>
         <pre className="sql-preview">{preview.sql};</pre>
         <div className="actions">
-          <button disabled={busy} onClick={() => setPreview(undefined)}>{t("Back")}</button>
+          <button type="button" disabled={busy} onClick={() => setPreview(undefined)}>
+            <ArrowLeft size={14} aria-hidden="true" />{t("Back")}
+          </button>
           <span className="spacer" />
-          <button className={preview.change.op === "drop" ? "danger" : "primary"} disabled={busy} onClick={() => void apply()}>{t(busy ? "Applying…" : "Apply")}</button>
+          <button type="button" className={preview.change.op === "drop" ? "danger" : "primary"} disabled={busy} onClick={() => void apply()}>
+            {preview.change.op === "drop" ? <Trash2 size={14} aria-hidden="true" /> : <Check size={14} aria-hidden="true" />}
+            {t(busy ? "Applying…" : "Apply")}
+          </button>
         </div>
       </> : <form onSubmit={(e) => { e.preventDefault(); if (!busy) void showPreview(); }}>
         <fieldset disabled={busy}>
