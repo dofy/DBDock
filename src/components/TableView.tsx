@@ -1,10 +1,11 @@
 import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { api, cancellableBrowserRequest, errText, type Cell, type Change, type Kind, type QueryResult, type TableData } from "../api";
+import { api, cancellableBrowserRequest, errText, type Cell, type Change, type Kind, type MetadataKind, type QueryResult, type SqlProtection, type TableData, type TableFilter } from "../api";
 import { DataGrid, type GridEditing, type Selection } from "./DataGrid";
 import { SqlInput } from "./SqlInput";
-import { Check, CircleSlash, Copy, Eye, Info, Minus, Plus, RefreshCw, Undo2, X } from "lucide-react";
+import { VisualFilter } from "./VisualFilter";
+import { Check, CircleSlash, Copy, Eye, Filter, Info, Minus, Plus, RefreshCw, Undo2, X } from "lucide-react";
 
 interface Props {
   sessionId: string;
@@ -12,6 +13,8 @@ interface Props {
   schema: string;
   table: string;
   isView: boolean;
+  protection: SqlProtection;
+  connectionName: string;
   dark: boolean;
   onDirtyChange: (dirty: boolean, busy: boolean) => void;
 }
@@ -19,8 +22,8 @@ interface Props {
 const PAGE_SIZES = [5, 25, 100, 300, 1000];
 const BINARY = /blob|binary|bytea|bit\b|geometry|point|polygon/i;
 
-export function TableView({ sessionId, kind, schema, table, isView, dark, onDirtyChange }: Props) {
-  const [mode, setMode] = useState<"data" | "structure">("data");
+export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, dark, onDirtyChange }: Props) {
+  const [mode, setMode] = useState<"data" | "structure" | MetadataKind>("data");
   const [data, setData] = useState<TableData | null>(null);
   const [structure, setStructure] = useState<QueryResult | null>(null);
   const [structureLoading, setStructureLoading] = useState(true);
@@ -34,6 +37,11 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
   const [orderDesc, setOrderDesc] = useState(false);
   const [filterDraft, setFilterDraft] = useState("");
   const [filter, setFilter] = useState("");
+  const [visualFilter, setVisualFilter] = useState<TableFilter>();
+  const [showFilters, setShowFilters] = useState(false);
+  const [metadata, setMetadata] = useState<{ kind: MetadataKind; result?: QueryResult; error?: string }>();
+  const [metadataReload, setMetadataReload] = useState(0);
+  const [conflict, setConflict] = useState(false);
 
   // Pending edits: row index -> column index -> new value.
   const [edits, setEdits] = useState<Record<number, Record<number, Cell>>>({});
@@ -55,10 +63,11 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
   const load = useCallback(async () => {
     const current = ++request.current;
     currentRead.current?.cancel();
-    const read = cancellableBrowserRequest((requestId) => api.tableData({ sessionId, requestId, schema, table, limit, offset: page * limit, orderBy, orderDesc, filter: filter || undefined }));
+    const read = cancellableBrowserRequest((requestId) => api.tableData({ sessionId, requestId, schema, table, limit, offset: page * limit, orderBy, orderDesc, filter: filter || undefined, visualFilter, captureVersions: !isView && protection !== "browseOnly" }));
     currentRead.current = read;
     setLoading(true);
     setError(null);
+    setConflict(false);
     try {
       const d = await read.promise;
       if (current !== request.current) return;
@@ -69,7 +78,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
     } finally {
       if (current === request.current) { currentRead.current = null; setLoading(false); }
     }
-  }, [sessionId, schema, table, limit, page, orderBy, orderDesc, filter]);
+  }, [sessionId, schema, table, limit, page, orderBy, orderDesc, filter, visualFilter, isView, protection]);
 
   useEffect(() => {
     void load();
@@ -92,6 +101,19 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
     return () => { current = false; read.cancel(); };
   }, [sessionId, schema, table, structureReload]);
 
+  useEffect(() => {
+    if (mode !== "indexes" && mode !== "foreignKeys") return;
+    let current = true;
+    setMetadata(undefined);
+    const read = cancellableBrowserRequest((requestId) => api.tableMetadata(sessionId, schema, table, mode, requestId));
+    read.promise.then((result) => {
+      if (current) setMetadata({ kind: mode, result });
+    }).catch((e) => {
+      if (current) setMetadata({ kind: mode, error: errText(e) });
+    });
+    return () => { current = false; read.cancel(); };
+  }, [mode, sessionId, schema, table, metadataReload]);
+
   const colNames = useMemo(() => structure?.rows.map((r) => String(r[0])) ?? [], [structure]);
   const columns = data?.result.columns.length ? data.result.columns : colNames;
   const { pk, colTypes } = useMemo(() => {
@@ -102,8 +124,8 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
     return { pk, colTypes };
   }, [structure]);
 
-  const editable = !isView && pk.length > 0 && pk.every((k) => columns.includes(k));
   const baseRows = data?.result.rows.length ?? 0;
+  const editable = protection !== "browseOnly" && !isView && pk.length > 0 && pk.every((k) => columns.includes(k)) && data?.rowVersions.length === baseRows;
   const pendingCount = Object.keys(edits).filter((r) => !deleted.has(Number(r))).length + deleted.size + inserted.length;
   useEffect(() => {
     onDirtyChange(pendingCount > 0, busy);
@@ -140,9 +162,9 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
     for (const [r, cols] of Object.entries(edits)) {
       const ri = Number(r);
       if (deleted.has(ri)) continue;
-      out.push({ op: "update", key: keyOf(rows[ri]), set: Object.fromEntries(Object.entries(cols).map(([c, v]) => [columns[Number(c)], v])) });
+      out.push({ op: "update", key: keyOf(rows[ri]), version: data.rowVersions[ri], set: Object.fromEntries(Object.entries(cols).map(([c, v]) => [columns[Number(c)], v])) });
     }
-    for (const r of deleted) out.push({ op: "delete", key: keyOf(rows[r]) });
+    for (const r of deleted) out.push({ op: "delete", key: keyOf(rows[r]), version: data.rowVersions[r] });
     for (const row of inserted) {
       const values: Record<string, Cell> = {};
       row.forEach((v, c) => {
@@ -163,14 +185,21 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
 
   const commit = async () => {
     if (!pendingCount || busy || loading) return;
+    const changes = buildChanges();
     setBusy(true);
-    setError(null);
     try {
-      await api.applyChanges(sessionId, schema, table, buildChanges());
+      const confirmed = protection === "confirm";
+      if (confirmed && !(await ask(tf("Commit {count} change(s) to {name} / {table}?", {
+        count: changes.length, name: connectionName, table: `${schema}.${table}`,
+      }), { title: t("Confirm table changes"), kind: "warning", okLabel: t("Commit"), cancelLabel: t("Cancel") }))) return;
+      setError(null);
+      setConflict(false);
+      await api.applyChanges(sessionId, schema, table, changes, confirmed);
       clearPending();
       setPreview(null);
       await load();
     } catch (e) {
+      setConflict(String(e).startsWith("Row conflict:"));
       setError(errText(e));
     } finally {
       setBusy(false);
@@ -193,7 +222,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
 
   const guard = async (fn: () => void) => {
     if (busy || loading) return;
-    if (pendingCount && !(await ask(tf("Discard {count} uncommitted change(s)?", { count: pendingCount }), { title: t("Discard changes"), kind: "warning" }))) return;
+    if (pendingCount && !(await ask(tf("Discard {count} uncommitted change(s)?", { count: pendingCount }), { title: t("Discard changes"), kind: "warning", okLabel: t("Discard"), cancelLabel: t("Cancel") }))) return;
     fn();
   };
 
@@ -208,7 +237,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
     });
 
   const toggleDelete = () => {
-    if (!sel) return;
+    if (!sel || !editable || busy || loading) return;
     if (sel.r >= baseRows) {
       setInserted((rows) => rows.filter((_, i) => i !== sel.r - baseRows));
       return;
@@ -225,6 +254,22 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
     if (sel && editing?.canEdit(sel.c) && editing.rowState(sel.r) !== "deleted") editing.onChange(sel.r, sel.c, null);
   };
 
+  const activeMetadata = metadata?.kind === mode ? metadata : undefined;
+  const showingMetadata = mode === "indexes" || mode === "foreignKeys";
+  const refresh = () => {
+    if (showingMetadata) {
+      setMetadata(undefined);
+      setMetadataReload((n) => n + 1);
+    } else if (mode === "structure") {
+      setStructureReload((n) => n + 1);
+    } else {
+      void guard(() => {
+        if (!structure) setStructureReload((n) => n + 1);
+        void load();
+      });
+    }
+  };
+
   return (
     <div className="tableview" ref={root}>
       <div className="toolbar">
@@ -233,8 +278,13 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
              {t("Data")} </button>
           <button className={mode === "structure" ? "on" : ""} onClick={() => setMode("structure")}>
              {t("Structure")} </button>
+          <button className={mode === "indexes" ? "on" : ""} onClick={() => setMode("indexes")}>{t("Indexes")}</button>
+          <button className={mode === "foreignKeys" ? "on" : ""} onClick={() => setMode("foreignKeys")}>{t("Foreign keys")}</button>
         </div>
-        {mode === "data" && (
+        {mode === "data" && <button disabled={!colNames.length} aria-expanded={showFilters} className={visualFilter || showFilters ? "on-btn" : ""} onClick={() => setShowFilters((v) => !v)}>
+          <Filter size={14} />{t("Filters")}{visualFilter ? ` (${visualFilter.conditions.length})` : ""}
+        </button>}
+        {mode === "data" && protection === "automatic" && !showFilters && (
           <div className="filter">
             <span className="muted">WHERE</span>
             <SqlInput
@@ -247,6 +297,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
                 void guard(() => {
                   setPage(0);
                   setFilter(filterDraft.trim());
+                  setVisualFilter(undefined);
                 })
               }
               placeholder={t("id > 10 AND name LIKE 'a%'   (Enter to apply)")}
@@ -268,16 +319,26 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
         )}
         {mode === "data" && !editable && data && structure && (
           <span className="muted small" title={t("Editing needs a primary key")}>
-            {isView ? t("view · read-only") : t("no primary key · read-only")}
+            {protection === "browseOnly" ? t("Browse only") : isView ? t("view · read-only") : t("no primary key · read-only")}
           </span>
         )}
         {!data && mode === "data" && <select value={limit} aria-label={t("Rows per page")} onChange={(e) => { setPage(0); setLimit(Number(e.target.value)); }}>
           {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} {t("/ page")}</option>)}
         </select>}
-        <button onClick={() => void guard(() => { if (!structure) setStructureReload((n) => n + 1); void load(); })} disabled={loading || busy} title={t("Refresh")}>
+        <button onClick={refresh} disabled={busy || (mode === "data" && loading)} title={t("Refresh")}>
           <RefreshCw size={14} />
         </button>
       </div>
+
+      {mode === "data" && showFilters && <VisualFilter columns={colNames} applied={visualFilter} onClose={() => setShowFilters(false)} onApply={(next) => {
+        void guard(() => {
+          setPage(0);
+          setFilter("");
+          setFilterDraft("");
+          setVisualFilter(next);
+          setShowFilters(false);
+        });
+      }} />}
 
       {pendingCount > 0 && (
         <div className="pending-bar">
@@ -285,7 +346,7 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
             {pendingCount}  {t("pending change")}{pendingCount > 1 && t("pending change") === "pending change" ? "s" : ""}
           </span>
           <span className="spacer" />
-          <button onClick={showPreview}><Eye size={14} />{t("Preview SQL")}</button>
+          <button onClick={showPreview} disabled={busy}><Eye size={14} />{t("Preview SQL")}</button>
           <button onClick={clearPending} disabled={busy || loading}><Undo2 size={14} />{t("Discard")}</button>
           <button className="primary" onClick={() => void commit()} disabled={busy}>
             <Check size={14} />
@@ -294,8 +355,11 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
         </div>
       )}
 
-      {error && <pre className="error">{error}</pre>}
-      {structureError && <pre className="error">{t("Unable to load table structure; editing is unavailable.")} {structureError}</pre>}
+      {error && mode === "data" && <pre className="error">{error}</pre>}
+      {conflict && mode === "data" && <div className="toolbar">
+        <button onClick={refresh}><RefreshCw size={14} />{t("Discard and reload rows")}</button>
+      </div>}
+      {structureError && !showingMetadata && <pre className="error">{t("Unable to load table structure; editing is unavailable.")} {structureError}</pre>}
 
       {((mode === "data" && loading && !display) || (mode === "structure" && structureLoading && !structure)) && <>
         <div className="loading-grid" aria-hidden="true">
@@ -356,6 +420,11 @@ export function TableView({ sessionId, kind, schema, table, isView, dark, onDirt
       )}
 
       {mode === "structure" && structure && <DataGrid result={structure} />}
+      {showingMetadata && (activeMetadata?.result
+        ? <DataGrid result={activeMetadata.result} />
+        : activeMetadata?.error
+          ? <pre className="error">{activeMetadata.error}</pre>
+          : <div className="statusbar loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading structure…")}</div>)}
 
       {preview && (
         <div className="modal-backdrop" onMouseDown={() => setPreview(null)}>

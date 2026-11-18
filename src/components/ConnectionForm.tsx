@@ -14,7 +14,7 @@ interface SshHost {
   identityFile: string | null;
 }
 import { DbIcon } from "./DbIcon";
-import { api, blankConnection, DEFAULT_PORT, isTunnelable, ENV_LABEL, ENVS, errText, KIND_LABEL, type ConnectionConfig, type Kind, type SecretsInput } from "../api";
+import { api, blankConnection, DEFAULT_PORT, isSql, isTunnelable, ENV_LABEL, ENVS, errText, KIND_LABEL, type ConnectionConfig, type Kind, type SecretsInput } from "../api";
 import { FolderOpen, Save, Zap } from "lucide-react";
 
 interface Props {
@@ -152,6 +152,14 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
               </button>
             ))}
           </div>
+          {isSql(c.kind) && <>
+            <label htmlFor="sql-protection">{t("SQL protection")}</label>
+            <select id="sql-protection" value={c.sqlProtection ?? "automatic"} onChange={(e) => set("sqlProtection", e.target.value as ConnectionConfig["sqlProtection"])}>
+              <option value="automatic">{t("Automatic (protect production)")}</option>
+              <option value="confirm">{t("Confirm risky SQL and edits")}</option>
+              <option value="browseOnly">{t("Browse only")}</option>
+            </select>
+          </>}
           <label>{t("Group")}</label>
           <input value={c.group} onChange={(e) => set("group", e.target.value)} placeholder={t("Ungrouped — pick or type a new path")} list="group-options" spellCheck={false} />
           <datalist id="group-options">

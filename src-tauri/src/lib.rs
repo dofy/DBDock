@@ -5,6 +5,8 @@ mod import;
 mod mongo_db;
 mod redis_db;
 mod sql;
+mod sql_browser;
+mod sql_protection;
 mod sources;
 mod ssh;
 mod ssh_config;
@@ -22,8 +24,9 @@ use tauri::{Emitter, Manager, State};
 
 use redis_db::{KeyValue, RedisConn, ScanPage};
 use sql::{Change, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
+use sql_browser::{TableFilter, TableMetadata};
 use ssh::Tunnel;
-use store::{ConnectionConfig, Kind, Secrets, SecretsInput, Store};
+use store::{ConnectionConfig, Kind, Secrets, SecretsInput, SqlProtection, Store};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -62,6 +65,7 @@ enum Conn {
 
 struct Session {
     conn: Conn,
+    sql_protection: SqlProtection,
     // Dropped after `conn`, so the pool closes before the tunnel.
     _tunnel: Option<Tunnel>,
 }
@@ -129,6 +133,7 @@ struct SessionInfo {
     server_version: String,
     /// SQL: current database/schema. Redis: selected db index.
     default_schema: String,
+    sql_protection: SqlProtection,
 }
 
 async fn open_session(cfg: &ConnectionConfig, secrets: Secrets) -> anyhow::Result<(Session, String, String)> {
@@ -158,7 +163,7 @@ async fn open_session(cfg: &ConnectionConfig, secrets: Secrets) -> anyhow::Resul
         Conn::Redis(r) => (r.server_version().await?, r.db().await.to_string()),
         Conn::Mongo(m) => (m.version().await?, m.default_db.clone()),
     };
-    Ok((Session { conn, _tunnel: tunnel }, version, schema))
+    Ok((Session { conn, sql_protection: cfg.sql_protection.effective(&cfg.env), _tunnel: tunnel }, version, schema))
 }
 
 // ---------- connections ----------
@@ -242,8 +247,9 @@ async fn connect(state: State<'_, AppState>, id: String, attempt_id: String) -> 
             return Err("connection cancelled".into());
         }
         let session_id = uuid::Uuid::new_v4().to_string();
+        let sql_protection = session.sql_protection;
         state.sessions.lock().unwrap().insert(session_id.clone(), Arc::new(session));
-        Ok(SessionInfo { session_id, kind: cfg.kind, server_version, default_schema })
+        Ok(SessionInfo { session_id, kind: cfg.kind, server_version, default_schema, sql_protection })
     }.await;
     state.pending_connections.lock().unwrap().remove(&attempt_id);
     result
@@ -484,6 +490,14 @@ async fn sql_structure(state: State<'_, AppState>, session_id: String, schema: S
 }
 
 #[tauri::command]
+async fn sql_table_metadata(state: State<'_, AppState>, session_id: String, schema: String, table: String, kind: TableMetadata, request_id: String) -> CmdResult<QueryResult> {
+    browser_request(&state, &request_id, async {
+        let s = state.sql(&session_id)?;
+        browser_pool(&s).metadata(&schema, &table, kind).await.map_err(err)
+    }).await
+}
+
+#[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn sql_table_data(
     state: State<'_, AppState>,
@@ -495,17 +509,32 @@ async fn sql_table_data(
     order_by: Option<String>,
     order_desc: bool,
     filter: Option<String>,
+    visual_filter: Option<TableFilter>,
+    capture_versions: bool,
     request_id: String,
 ) -> CmdResult<TableData> {
     browser_request(&state, &request_id, async {
         let s = state.sql(&session_id)?;
-        browser_pool(&s).table_data(&schema, &table, limit, offset, order_by, order_desc, filter).await.map_err(err)
+        if filter.as_ref().is_some_and(|f| !f.trim().is_empty()) && s.sql_protection != SqlProtection::Automatic {
+            return Err("Use visual filters on protected connections".into());
+        }
+        let capture_versions = capture_versions && s.sql_protection != SqlProtection::BrowseOnly;
+        browser_pool(&s).table_data(&schema, &table, limit, offset, order_by, order_desc, filter, visual_filter, capture_versions).await.map_err(err)
     }).await
 }
 
 #[tauri::command]
-async fn sql_execute(state: State<'_, AppState>, session_id: String, sql: String) -> CmdResult<Vec<QueryResult>> {
+fn sql_needs_confirmation(state: State<'_, AppState>, session_id: String, sql: String) -> CmdResult<bool> {
     let s = state.sql(&session_id)?;
+    Ok(s.sql_protection == SqlProtection::Confirm && sql_protection::needs_confirmation(&sql, pool(&s).dialect()))
+}
+
+#[tauri::command]
+async fn sql_execute(state: State<'_, AppState>, session_id: String, sql: String, confirmed: bool) -> CmdResult<Vec<QueryResult>> {
+    let s = state.sql(&session_id)?;
+    if s.sql_protection != SqlProtection::Confirm || (!confirmed && sql_protection::needs_confirmation(&sql, pool(&s).dialect())) {
+        s.sql_protection.check_execution(confirmed).map_err(err)?;
+    }
     pool(&s).execute(sql).await.map_err(err)
 }
 
@@ -523,15 +552,16 @@ async fn sql_columns(state: State<'_, AppState>, session_id: String, schema: Str
 }
 
 #[tauri::command]
-fn sql_preview_changes(state: State<'_, AppState>, session_id: String, schema: String, table: String, changes: Vec<Change>) -> CmdResult<Vec<String>> {
+async fn sql_preview_changes(state: State<'_, AppState>, session_id: String, schema: String, table: String, changes: Vec<Change>) -> CmdResult<Vec<String>> {
     let s = state.sql(&session_id)?;
-    pool(&s).change_sql(&schema, &table, &changes).map_err(err)
+    browser_pool(&s).change_sql(&schema, &table, &changes).await.map_err(err)
 }
 
 #[tauri::command]
-async fn sql_apply_changes(state: State<'_, AppState>, session_id: String, schema: String, table: String, changes: Vec<Change>) -> CmdResult<usize> {
+async fn sql_apply_changes(state: State<'_, AppState>, session_id: String, schema: String, table: String, changes: Vec<Change>, confirmed: bool) -> CmdResult<usize> {
     let s = state.sql(&session_id)?;
-    pool(&s).apply(&schema, &table, &changes).await.map_err(err)
+    s.sql_protection.check_execution(confirmed).map_err(err)?;
+    browser_pool(&s).apply(&schema, &table, &changes).await.map_err(err)
 }
 
 // ---------- Redis ----------
@@ -718,7 +748,9 @@ pub fn run() {
             begin_browser_request,
             cancel_browser_request,
             sql_structure,
+            sql_table_metadata,
             sql_table_data,
+            sql_needs_confirmation,
             sql_execute,
             sql_cancel,
             sql_columns,
@@ -772,6 +804,7 @@ mod it {
             options: String::new(),
             color: String::new(),
             env: String::new(),
+            sql_protection: Default::default(),
             group: String::new(),
             ssh: SshConfig::default(),
         }
@@ -803,7 +836,7 @@ mod it {
         println!("tables {:?}", p.tables(schema).await.unwrap());
         let st = p.structure(schema, table).await.unwrap();
         println!("structure {:?}", st.rows);
-        let d = p.table_data(schema, table, 1, 0, Some("id".into()), false, None).await.unwrap();
+        let d = p.table_data(schema, table, 1, 0, Some("id".into()), false, None, None, true).await.unwrap();
         println!("data {} more={} cols={:?}\n  rows={}", d.sql, d.has_more, d.result.columns, serde_json::to_string(&d.result.rows).unwrap());
         let r = p.execute(format!("SELECT 1 AS one; SELECT * FROM {}.{} WHERE 1=0", p.quote_ident(schema), p.quote_ident(table))).await.unwrap();
         println!("multi {}", serde_json::to_string(&r).unwrap());
@@ -869,13 +902,14 @@ mod it {
             Change::Insert { values: m(&[("id", 2.into()), ("name", "b".into())]) },
         ];
         p.apply(schema, "dbdock_edit", &ch).await.unwrap();
+        let page = p.table_data(schema, "dbdock_edit", 2, 0, Some("id".into()), false, None, None, true).await.unwrap();
         let ch = vec![
-            Change::Update { key: m(&[("id", 1.into())]), set: m(&[("n", "42".into()), ("name", "x\\y".into())]) },
-            Change::Delete { key: m(&[("id", 2.into())]) },
+            Change::Update { key: m(&[("id", 1.into())]), set: m(&[("n", "42".into()), ("name", "x\\y".into())]), version: page.row_versions[0].clone() },
+            Change::Delete { key: m(&[("id", 2.into())]), version: page.row_versions[1].clone() },
         ];
-        println!("sql {:?}", p.change_sql(schema, "dbdock_edit", &ch).unwrap());
+        println!("sql {:?}", p.change_sql(schema, "dbdock_edit", &ch).await.unwrap());
         p.apply(schema, "dbdock_edit", &ch).await.unwrap();
-        let bad = vec![Change::Delete { key: m(&[("id", 99.into())]) }];
+        let bad = vec![Change::Delete { key: m(&[("id", 99.into())]), version: "missing".into() }];
         println!("missing row: {}", p.apply(schema, "dbdock_edit", &bad).await.unwrap_err());
         let r = p.execute("SELECT * FROM dbdock_edit".into()).await.unwrap();
         println!("after {}", serde_json::to_string(&r[0].rows).unwrap());
@@ -916,7 +950,7 @@ mod it {
             println!("columns for {} tables; Book: {:?}", cols.len(), cols.get("Book").map(|c| c.len()));
             let st = p.structure("main", "Book").await.unwrap();
             println!("structure cols={:?} first={:?}", st.columns, st.rows.first());
-            let d = p.table_data("main", "Book", 2, 0, Some("id".into()), true, None).await.unwrap();
+            let d = p.table_data("main", "Book", 2, 0, Some("id".into()), true, None, None, true).await.unwrap();
             println!("data {} more={} cols={}", d.sql, d.has_more, d.result.columns.len());
         }
         if let Ok(rw) = std::env::var("DBDOCK_D1_RW") {
@@ -928,15 +962,17 @@ mod it {
             println!("rw tables {:?}", p.tables("main").await.unwrap().iter().map(|t| format!("{}:{}", t.name, t.kind)).collect::<Vec<_>>());
             println!("rw rows {}", serde_json::to_string(&p.execute("SELECT * FROM notes ORDER BY id".into()).await.unwrap()[0].rows).unwrap());
             let m = |pairs: &[(&str, serde_json::Value)]| pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect::<BTreeMap<_, _>>();
+            let page = p.table_data("main", "notes", 2, 0, Some("id".into()), false, None, None, true).await.unwrap();
             let ok = vec![
-                Change::Update { key: m(&[("id", 1.into())]), set: m(&[("body", "edited".into())]) },
+                Change::Update { key: m(&[("id", 1.into())]), set: m(&[("body", "edited".into())]), version: page.row_versions[0].clone() },
                 Change::Insert { values: m(&[("body", "new".into())]) },
-                Change::Delete { key: m(&[("id", 2.into())]) },
+                Change::Delete { key: m(&[("id", 2.into())]), version: page.row_versions[1].clone() },
             ];
             p.apply("main", "notes", &ok).await.unwrap();
+            let page = p.table_data("main", "notes", 2, 0, Some("id".into()), false, None, None, true).await.unwrap();
             let bad = vec![
-                Change::Update { key: m(&[("id", 1.into())]), set: m(&[("body", "SHOULD ROLL BACK".into())]) },
-                Change::Delete { key: m(&[("id", 999.into())]) },
+                Change::Update { key: m(&[("id", 1.into())]), set: m(&[("body", "SHOULD ROLL BACK".into())]), version: page.row_versions[0].clone() },
+                Change::Delete { key: m(&[("id", 999.into())]), version: "missing".into() },
             ];
             println!("bad batch: {}", p.apply("main", "notes", &bad).await.unwrap_err());
             println!("after {}", serde_json::to_string(&p.execute("SELECT id, body FROM notes ORDER BY id".into()).await.unwrap()[0].rows).unwrap());

@@ -65,16 +65,21 @@ A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cl
 
 ### SQL (MySQL, PostgreSQL, SQLite, Cloudflare D1)
 
-- Schema / table tree, paged table browser with a WHERE filter (column completion) and
-  column sort, structure view.
+- Browse paged table data and sort by column. Combine visual filters with AND or OR, or
+  use a SQL WHERE filter on a standard connection. View columns, indexes and foreign keys
+  in their own tabs.
 - SQL editor: ⌘T opens a SQL tab and ⇧⌘W closes the current database tab. ⌘↵ runs the selected text or current line; ⇧⌘↵ runs the whole script. Save or
   load SQL files with the toolbar; recent statements are kept in memory for each connection
   and selected database until the app exits. Tab accepts a suggestion; Cancel stops a running
   MySQL / PostgreSQL query. ⌃1–9 select top-level tabs and ⌘1–9 select database tabs; hold
   the modifier to show their numbers. ⌥⌘←/→ and ⌃⇧Tab / ⌃Tab cycle tabs.
 - Grid editing for tables with a primary key: double-click a cell, add / delete rows, set
-  NULL, preview the SQL, commit with ⌘S. Everything runs in one transaction; an UPDATE or
-  DELETE that does not hit exactly one row rolls the whole commit back.
+  NULL, preview the SQL and commit with ⌘S. Updates and deletes check the original row.
+  A conflicting change rolls back the entire commit and leaves the edits pending.
+- Export the current query result as CSV or JSON, up to the rows already loaded.
+- **SQL protection** runs ordinary reads directly on production connections and confirms SQL that
+  can modify data or has uncertain effects, as well as grid commits. Choose **Browse only** in connection settings to disable both. Reconnect
+  to apply protection changes.
 - MySQL sessions send only `SET NAMES` (no sql_mode / time_zone changes), so StarRocks and
   Doris work too.
 - **Cloudflare D1** goes through the REST API (Account ID, Database ID, API token with D1

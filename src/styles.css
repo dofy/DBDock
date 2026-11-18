@@ -658,3 +658,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 .palette-category { color: var(--muted); font-size: 11px; }
 .palette-empty { padding: 22px 12px; text-align: center; color: var(--muted); }
 .palette-footer { display: flex; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+
+.tableview > .toolbar { flex-wrap: wrap; }
+.visual-filter { display: grid; gap: 7px; padding: 8px; background: var(--bg2); border-bottom: 1px solid var(--line); }
+.filter-conditions { display: grid; gap: 6px; max-height: 24vh; overflow: auto; }
+.filter-condition { display: grid; grid-template-columns: minmax(0, 2fr) minmax(95px, 1fr) minmax(0, 3fr) auto; gap: 6px; align-items: center; }
+.protection-label { color: var(--muted); white-space: nowrap; }
+.export-result { display: flex; gap: 5px; align-items: center; margin-left: auto; }
+.export-result select { width: auto; }

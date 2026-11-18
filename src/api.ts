@@ -17,6 +17,8 @@ export interface SshConfig {
   keyPath: string;
 }
 
+export type SqlProtection = "automatic" | "confirm" | "browseOnly";
+
 export interface ConnectionConfig {
   id: string;
   name: string;
@@ -34,6 +36,7 @@ export interface ConnectionConfig {
   color: string;
   /** local | development | testing | staging | production | "" */
   env: string;
+  sqlProtection?: SqlProtection;
   /** Folder path, e.g. "Acme / AI". */
   group: string;
   ssh: SshConfig;
@@ -51,6 +54,7 @@ export interface SessionInfo {
   kind: Kind;
   serverVersion: string;
   defaultSchema: string;
+  sqlProtection: SqlProtection;
 }
 
 export type Cell = string | number | boolean | null;
@@ -72,7 +76,13 @@ export interface TableData {
   sql: string;
   result: QueryResult;
   hasMore: boolean;
+  rowVersions: string[];
 }
+
+export type MetadataKind = "indexes" | "foreignKeys";
+export type FilterOperator = "equals" | "notEquals" | "contains" | "greater" | "less" | "isNull" | "isNotNull";
+export type FilterCondition = { column: string; operator: FilterOperator; value: string };
+export type TableFilter = { matchAny: boolean; conditions: FilterCondition[] };
 
 export type Row = Record<string, Cell>;
 
@@ -80,8 +90,8 @@ export type Row = Record<string, Cell>;
 export type Doc = Record<string, unknown>;
 
 export type Change =
-  | { op: "update"; key: Row; set: Row }
-  | { op: "delete"; key: Row }
+  | { op: "update"; key: Row; set: Row; version: string }
+  | { op: "delete"; key: Row; version: string }
   | { op: "insert"; values: Row };
 
 export interface KeyInfo {
@@ -176,6 +186,8 @@ export const api = {
   tables: (sessionId: string, schema: string) => invoke<TableInfo[]>("sql_tables", { sessionId, schema }),
   structure: (sessionId: string, schema: string, table: string, requestId: string) =>
     invoke<QueryResult>("sql_structure", { sessionId, schema, table, requestId }),
+  tableMetadata: (sessionId: string, schema: string, table: string, kind: MetadataKind, requestId: string) =>
+    invoke<QueryResult>("sql_table_metadata", { sessionId, schema, table, kind, requestId }),
   tableData: (args: {
     sessionId: string;
     requestId: string;
@@ -186,14 +198,18 @@ export const api = {
     orderBy?: string;
     orderDesc: boolean;
     filter?: string;
+    visualFilter?: TableFilter;
+    captureVersions: boolean;
   }) => invoke<TableData>("sql_table_data", args),
-  execute: (sessionId: string, sql: string) => invoke<QueryResult[]>("sql_execute", { sessionId, sql }),
+  sqlNeedsConfirmation: (sessionId: string, sql: string) =>
+    invoke<boolean>("sql_needs_confirmation", { sessionId, sql }),
+  execute: (sessionId: string, sql: string, confirmed: boolean) => invoke<QueryResult[]>("sql_execute", { sessionId, sql, confirmed }),
   cancel: (sessionId: string) => invoke<void>("sql_cancel", { sessionId }),
   columns: (sessionId: string, schema: string) => invoke<Record<string, string[]>>("sql_columns", { sessionId, schema }),
   previewChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<string[]>("sql_preview_changes", { sessionId, schema, table, changes }),
-  applyChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
-    invoke<number>("sql_apply_changes", { sessionId, schema, table, changes }),
+  applyChanges: (sessionId: string, schema: string, table: string, changes: Change[], confirmed: boolean) =>
+    invoke<number>("sql_apply_changes", { sessionId, schema, table, changes, confirmed }),
 
   mongoDatabases: (sessionId: string) => invoke<string[]>("mongo_databases", { sessionId }),
   mongoCollections: (sessionId: string, db: string) => invoke<string[]>("mongo_collections", { sessionId, db }),

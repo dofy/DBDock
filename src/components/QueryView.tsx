@@ -1,19 +1,22 @@
 import { t, tf } from "../i18n";
 import { FileDown, FileUp, Play, Square } from "lucide-react";
-import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
 import { selectedOrCurrentLine } from "../sqlHistory";
 import { useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { keymap } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
-import { api, errText, type Kind, type QueryResult } from "../api";
+import { api, errText, type Kind, type QueryResult, type SqlProtection } from "../api";
 import { DataGrid } from "./DataGrid";
 import { sqlExtensions } from "../sqlComplete";
 import { useSettings } from "../settings";
 import { vimExtension } from "./CodeEditor";
+import { serializeResult, type ExportFormat } from "../sqlResultExport";
 
 interface Props {
   sessionId: string;
+  protection: SqlProtection;
+  connectionName: string;
   kind: Kind;
   history: string[];
   onExecuted: (sql: string) => void;
@@ -24,12 +27,15 @@ interface Props {
   dark: boolean;
 }
 
-export function QueryView({ sessionId, kind, history, onExecuted, value, onChange, schema, dark }: Props) {
+export function QueryView({ sessionId, protection, connectionName, kind, history, onExecuted, value, onChange, schema, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState<number | null>(null);
+  const [format, setFormat] = useState<ExportFormat>("csv");
+  const [exporting, setExporting] = useState(false);
+  const executing = useRef(false);
   const ref = useRef<ReactCodeMirrorRef>(null);
 
   const run = async (all = false) => {
@@ -37,13 +43,22 @@ export function QueryView({ sessionId, kind, history, onExecuted, value, onChang
     const doc = view?.state.doc.toString() ?? value;
     const selection = view?.state.selection.main;
     const text = all ? doc : selectedOrCurrentLine(doc, selection?.from ?? 0, selection?.to ?? 0);
-    if (!text.trim() || running) return;
-    setRunning(true);
-    setError(null);
-    onExecuted(text);
-    const t0 = performance.now();
+    if (!text.trim() || executing.current || protection === "browseOnly") return;
+    executing.current = true;
+    let t0: number | undefined;
     try {
-      const r = await api.execute(sessionId, text);
+      const confirmed = protection === "confirm" && await api.sqlNeedsConfirmation(sessionId, text);
+      if (confirmed) {
+        const preview = text.length > 1200 ? text.slice(0, 1200) + "\n…" : text;
+        if (!(await ask(tf("Run SQL on {name}?", { name: connectionName }) + "\n\n" + preview, {
+          title: t("Confirm SQL execution"), kind: "warning", okLabel: t("Run"), cancelLabel: t("Cancel"),
+        }))) return;
+      }
+      setRunning(true);
+      setError(null);
+      onExecuted(text);
+      t0 = performance.now();
+      const r = await api.execute(sessionId, text, confirmed);
       setResults(r);
       // Show the last result that has rows, like most clients.
       const idx = r.map((x) => x.columns.length > 0).lastIndexOf(true);
@@ -52,7 +67,8 @@ export function QueryView({ sessionId, kind, history, onExecuted, value, onChang
       setError(errText(e));
       setResults([]);
     } finally {
-      setElapsed(Math.round(performance.now() - t0));
+      executing.current = false;
+      if (t0 !== undefined) setElapsed(Math.round(performance.now() - t0));
       setRunning(false);
     }
   };
@@ -117,6 +133,19 @@ export function QueryView({ sessionId, kind, history, onExecuted, value, onChang
   );
 
   const cur = results[active];
+  const exportResult = async () => {
+    if (!cur?.columns.length || exporting) return;
+    setExporting(true);
+    try {
+      const path = await save({ defaultPath: `result-${active + 1}.${format}`, filters: [{ name: format.toUpperCase(), extensions: [format] }] });
+      if (path) await api.writeSqlFile(path, serializeResult(cur, format));
+    } catch (e) {
+      // Preserve the result when the save is unsuccessful.
+      await message(errText(e), { kind: "error", title: t("Export result") });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="query">
@@ -129,19 +158,20 @@ export function QueryView({ sessionId, kind, history, onExecuted, value, onChang
             <Square size={13} />
              {t("Cancel")} </button>
         ) : (
-          <button className="primary" onClick={() => void run(false)}>
+          <button className="primary" disabled={protection === "browseOnly"} onClick={() => void run(false)}>
             <Play size={13} />
              {t("Run")} </button>
         )}
-        <button onClick={() => void run(true)} disabled={running} title={t("Run all SQL (⇧⌘↵)")}>{t("Run all")}</button>
+        <button onClick={() => void run(true)} disabled={running || protection === "browseOnly"} title={t("Run all SQL (⇧⌘↵)")}>{t("Run all")}</button>
         <button onClick={() => void saveFile()} title={t("Save SQL to file")} aria-label={t("Save SQL to file")}><FileDown size={14} /></button>
         <button onClick={() => void loadFile()} title={t("Load SQL from file")} aria-label={t("Load SQL from file")}><FileUp size={14} /></button>
         <select value="" aria-label={t("Recent SQL")} title={t("Recent SQL (this app session)")} disabled={!history.length} onChange={(e) => { if (e.target.value) void chooseHistory(Number(e.target.value) - 1); }}>
           <option value="">{t("Recent SQL")}</option>
           {history.map((sql, i) => <option key={sql} value={i + 1}>{sql.replace(/\s+/g, " ").slice(0, 100)}</option>)}
         </select>
+        {protection !== "automatic" && <span className="small protection-label">{t(protection === "browseOnly" ? "Browse only" : "SQL protected")}</span>}
         {vimOn && <span className="vim-badge static">VIM</span>}
-        <span className="muted query-hint">{running ? t("Running…") : `${t("⌘↵ runs the current line or selection · ⇧⌘↵ runs all")}${vimOn ? t(" · :w runs") : ""}`}</span>
+        {protection !== "browseOnly" && <span className="muted query-hint">{running ? t("Running…") : `${t("⌘↵ runs the current line or selection · ⇧⌘↵ runs all")}${vimOn ? t(" · :w runs") : ""}`}</span>}
         <span className="spacer" />
         {results.length > 1 &&
           results.map((r, i) => (
@@ -160,6 +190,15 @@ export function QueryView({ sessionId, kind, history, onExecuted, value, onChang
             <div className="statusbar">
               {cur.columns.length ? tf("{count} row(s)", { count: cur.rows.length }) : tf("{count} row(s) affected", { count: cur.rowsAffected ?? 0 })}
               {cur.truncated && t(" · truncated to 5000 rows")}
+              {cur.columns.length > 0 && <div className="export-result">
+                <select aria-label={t("Export format")} disabled={exporting} value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
+                  <option value="csv">CSV</option>
+                  <option value="json">JSON</option>
+                </select>
+                <button disabled={running || exporting} title={t("Export the displayed result")} onClick={() => void exportResult()}>
+                  <FileDown size={14} />{t("Export result")}
+                </button>
+              </div>}
             </div>
           </>
         ) : (

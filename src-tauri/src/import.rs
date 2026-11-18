@@ -220,6 +220,7 @@ pub fn read_tableplus_file(file: &std::path::Path) -> Result<(Vec<ConnectionConf
             color: color(&s(d, "statusColor")),
             // TablePlus spells the key "Enviroment".
             env: env_tag(&s(d, "Enviroment")),
+            sql_protection: Default::default(),
             group: groups.get(&s(d, "GroupID")).cloned().unwrap_or_default(),
             ssh,
         });

@@ -9,12 +9,13 @@ import { FileCode, RefreshCw, X } from "lucide-react";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 
 type Tab =
-  | { id: string; type: "table"; schema: string; table: string }
+  | { id: string; type: "table"; schema: string; table: string; isView: boolean }
   | { id: string; type: "query"; title: string; sql: string };
 
 interface Props {
   session: SessionInfo;
   connectionId: string;
+  connectionName: string;
   history: SqlHistory;
   showTabNumbers: boolean;
   dark: boolean;
@@ -24,7 +25,7 @@ interface Props {
 let seq = 0;
 const newId = () => `t${++seq}`;
 
-export function SqlWorkspace({ session, connectionId, history, showTabNumbers, dark, dirtyTabs }: Props) {
+export function SqlWorkspace({ session, connectionId, connectionName, history, showTabNumbers, dark, dirtyTabs }: Props) {
   const sid = session.sessionId;
   const [schemas, setSchemas] = useState<string[]>([]);
   const [schema, setSchema] = useState(session.defaultSchema || "");
@@ -108,7 +109,7 @@ export function SqlWorkspace({ session, connectionId, history, showTabNumbers, d
   const openTable = (t: TableInfo) => {
     const existing = tabs.find((x) => x.type === "table" && x.schema === schema && x.table === t.name);
     if (existing) return setActive(existing.id);
-    const tab: Tab = { id: newId(), type: "table", schema, table: t.name };
+    const tab: Tab = { id: newId(), type: "table", schema, table: t.name, isView: t.kind === "view" };
     setTabs((ts) => [...ts, tab]);
     setActive(tab.id);
   };
@@ -209,7 +210,9 @@ export function SqlWorkspace({ session, connectionId, history, showTabNumbers, d
                   kind={session.kind}
                   schema={t.schema}
                   table={t.table}
-                  isView={tables.find((x) => x.name === t.table)?.kind === "view"}
+                  isView={t.isView}
+                  protection={session.sqlProtection}
+                  connectionName={connectionName}
                   dark={dark}
                   onDirtyChange={(dirty, busy) => {
                     const tabs = dirtyTabs.current.get(sid) ?? new Map<string, "dirty" | "busy">();
@@ -222,6 +225,8 @@ export function SqlWorkspace({ session, connectionId, history, showTabNumbers, d
                   sessionId={sid}
                   kind={session.kind}
                   history={history.get(connectionId, schema)}
+                  protection={session.sqlProtection}
+                  connectionName={connectionName}
                   onExecuted={(sql) => { history.add(connectionId, schema, sql); setHistoryVersion((n) => n + 1); }}
                   value={t.sql}
                   onChange={(v) => setTabs((ts) => ts.map((x) => (x.id === t.id && x.type === "query" ? { ...x, sql: v } : x)))}

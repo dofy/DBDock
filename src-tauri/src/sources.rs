@@ -106,6 +106,7 @@ fn blank(kind: Kind, name: String) -> ConnectionConfig {
         options: String::new(),
         color: "#8a8f98".into(),
         env: String::new(),
+        sql_protection: Default::default(),
         group: String::new(),
         ssh: SshConfig::default(),
     }

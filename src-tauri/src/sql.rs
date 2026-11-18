@@ -14,6 +14,7 @@ use sqlx::postgres::{PgConnection, PgConnectOptions, PgPool, PgPoolOptions, PgRo
 use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection, SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::{AssertSqlSafe, Column, Connection, Either, Row, ValueRef};
 
+use crate::sql_browser::TableFilter;
 use crate::store::{expand_tilde, ConnectionConfig, Kind};
 
 /// Rows kept per result set; the rest of the stream is drained and dropped.
@@ -41,6 +42,7 @@ pub struct TableData {
     pub sql: String,
     pub result: QueryResult,
     pub has_more: bool,
+    pub row_versions: Vec<String>,
 }
 
 pub enum SqlPool {
@@ -456,9 +458,13 @@ impl SqlPool {
     }
 
     pub fn quote_lit(&self, s: &str) -> String {
+        let quoted = s.replace('\'', "''");
+        let hex = || s.bytes().map(|b| format!("{b:02x}")).collect::<String>();
         match self.dialect() {
-            Kind::Mysql => format!("'{}'", s.replace('\\', "\\\\").replace('\'', "''")),
-            _ => format!("'{}'", s.replace('\'', "''")),
+            Kind::Mysql if s.contains(['\\', '\0']) => format!("CONVERT(X'{}' USING utf8mb4)", hex()),
+            Kind::Postgres if s.contains('\\') => format!("E'{}'", quoted.replace('\\', "\\\\")),
+            Kind::Sqlite if s.contains('\0') => format!("CAST(X'{}' AS TEXT)", hex()),
+            _ => format!("'{quoted}'"),
         }
     }
 
@@ -575,6 +581,30 @@ impl SqlPool {
         Ok(self.execute(sql).await?.into_iter().next().unwrap_or_default())
     }
 
+    // Use the server representation of the full row, including values that the
+    // grid only previews. The same expression runs in the UPDATE/DELETE predicate.
+    async fn row_version_expression(&self, schema: &str, table: &str) -> Result<String> {
+        if self.dialect() == Kind::Postgres {
+            return Ok(format!("pg_catalog.md5(CAST({}.* AS text))", self.quote_ident(table)));
+        }
+        let columns = self.structure(schema, table).await?;
+        let names = columns.rows.iter().filter_map(|r| r.first()?.as_str()).map(|c| self.quote_ident(c)).collect::<Vec<_>>();
+        anyhow::ensure!(!names.is_empty(), "Table columns are unavailable");
+        if self.dialect() == Kind::Mysql {
+            let values = names.iter().map(|c| format!("COALESCE(HEX(CAST({c} AS BINARY)), '-')")).collect::<Vec<_>>().join(", ");
+            return Ok(format!("SHA2(CONCAT_WS(':', {values}), 256)"));
+        }
+        // Small chunks keep JSON_ARRAY below SQLite's argument limit on wide tables.
+        let chunks = names.chunks(32).map(|names| {
+            let values = names.iter().map(|c| format!(
+                "typeof({c}) || ':' || CASE WHEN typeof({c}) = 'real' THEN printf('%!.26g', {c}) ELSE hex(CAST({c} AS BLOB)) END"
+            )).collect::<Vec<_>>().join(", ");
+            format!("json_array({values})")
+        }).collect::<Vec<_>>();
+        Ok(chunks.join(" || '|' || "))
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub async fn table_data(
         &self,
         schema: &str,
@@ -584,10 +614,17 @@ impl SqlPool {
         order_by: Option<String>,
         order_desc: bool,
         filter: Option<String>,
+        visual_filter: Option<TableFilter>,
+        capture_versions: bool,
     ) -> Result<TableData> {
-        let mut sql = format!("SELECT * FROM {}", self.table_ref(schema, table));
-        if let Some(f) = filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
-            sql.push_str(&format!(" WHERE {f}"));
+        anyhow::ensure!((1..=1000).contains(&limit), "Invalid table page size");
+        let mut sql = format!(" FROM {}", self.table_ref(schema, table));
+        let raw = filter.as_deref().map(str::trim).unwrap_or_default();
+        let visual = visual_filter.map(|f| self.visual_predicate(f)).transpose()?.unwrap_or_default();
+        anyhow::ensure!(raw.is_empty() || visual.is_empty(), "Choose one filter mode");
+        let predicate = if raw.is_empty() { visual.as_str() } else { raw };
+        if !predicate.is_empty() {
+            sql.push_str(&format!(" WHERE {predicate}"));
         }
         if let Some(col) = order_by.filter(|c| !c.is_empty()) {
             sql.push_str(&format!(
@@ -596,23 +633,36 @@ impl SqlPool {
                 if order_desc { "DESC" } else { "ASC" }
             ));
         }
-        let shown = format!("{sql} LIMIT {limit} OFFSET {offset}");
-        // Fetch one extra row to know whether another page exists.
-        let probe = format!("{sql} LIMIT {} OFFSET {offset}", limit + 1);
+        let shown = format!("SELECT *{sql} LIMIT {limit} OFFSET {offset}");
+        let version_column = if capture_versions {
+            let expression = self.row_version_expression(schema, table).await?;
+            format!(", ({expression}) AS __dbdock_row_version")
+        } else {
+            String::new()
+        };
+        let probe = format!("SELECT *{version_column}{sql} LIMIT {} OFFSET {offset}", limit + 1);
         let mut result = self.execute(probe).await?.into_iter().next().unwrap_or_default();
         let has_more = result.rows.len() > limit as usize;
         result.rows.truncate(limit as usize);
+        let mut row_versions = Vec::with_capacity(result.rows.len());
+        if capture_versions && !result.rows.is_empty() {
+            anyhow::ensure!(result.columns.pop().as_deref() == Some("__dbdock_row_version"), "Row version is unavailable");
+            for row in &mut result.rows {
+                let version = row.pop().and_then(|v| v.as_str().map(str::to_owned)).context("Row version is unavailable")?;
+                row_versions.push(version);
+            }
+        }
         result.rows_affected = None;
-        Ok(TableData { sql: shown, result, has_more })
+        Ok(TableData { sql: shown, result, has_more, row_versions })
     }
 }
 
-/// One pending grid edit; keys identify the row by its primary-key values.
+/// An UPDATE or DELETE must still match the row version shown in the grid.
 #[derive(Deserialize, Debug)]
 #[serde(tag = "op", rename_all = "lowercase")]
 pub enum Change {
-    Update { key: BTreeMap<String, Value>, set: BTreeMap<String, Value> },
-    Delete { key: BTreeMap<String, Value> },
+    Update { key: BTreeMap<String, Value>, set: BTreeMap<String, Value>, version: String },
+    Delete { key: BTreeMap<String, Value>, version: String },
     Insert { values: BTreeMap<String, Value> },
 }
 
@@ -687,22 +737,31 @@ impl SqlPool {
             .join(" AND "))
     }
 
-    pub fn change_sql(&self, schema: &str, table: &str, changes: &[Change]) -> Result<Vec<String>> {
+    pub async fn change_sql(&self, schema: &str, table: &str, changes: &[Change]) -> Result<Vec<String>> {
         let t = self.table_ref(schema, table);
+        let version = if changes.iter().any(|change| !matches!(change, Change::Insert { .. })) {
+            self.row_version_expression(schema, table).await?
+        } else {
+            String::new()
+        };
+        let where_row = |key: &BTreeMap<String, Value>, original: &str| -> Result<String> {
+            anyhow::ensure!(!original.is_empty(), "Row version is unavailable");
+            Ok(format!("{} AND ({version}) = {}", self.where_key(key)?, self.quote_lit(original)))
+        };
         changes
             .iter()
             .map(|c| {
                 Ok(match c {
-                    Change::Update { key, set } => {
+                    Change::Update { key, set, version } => {
                         anyhow::ensure!(!set.is_empty(), "empty update");
                         let set = set
                             .iter()
                             .map(|(k, v)| format!("{} = {}", self.quote_ident(k), self.value_lit(v)))
                             .collect::<Vec<_>>()
                             .join(", ");
-                        format!("UPDATE {t} SET {set} WHERE {}", self.where_key(key)?)
+                        format!("UPDATE {t} SET {set} WHERE {}", where_row(key, version)?)
                     }
-                    Change::Delete { key } => format!("DELETE FROM {t} WHERE {}", self.where_key(key)?),
+                    Change::Delete { key, version } => format!("DELETE FROM {t} WHERE {}", where_row(key, version)?),
                     Change::Insert { values } if values.is_empty() => match self {
                         SqlPool::My(_) | SqlPool::BrowserMy(_) => format!("INSERT INTO {t} () VALUES ()"),
                         _ => format!("INSERT INTO {t} DEFAULT VALUES"),
@@ -720,16 +779,25 @@ impl SqlPool {
     /// Apply all changes in one transaction. Updates and deletes must hit exactly
     /// one row; SQLx negotiates MySQL's FOUND_ROWS capability.
     pub async fn apply(&self, schema: &str, table: &str, changes: &[Change]) -> Result<usize> {
-        let stmts = self.change_sql(schema, table, changes)?;
+        if self.dialect() == Kind::Mysql {
+            let (s, t) = (self.quote_lit(schema), self.quote_lit(table));
+            let transactional = self.scalar(&format!(
+                "SELECT e.TRANSACTIONS FROM information_schema.TABLES t
+                 JOIN information_schema.ENGINES e ON e.ENGINE = t.ENGINE
+                 WHERE t.TABLE_SCHEMA = {s} AND t.TABLE_NAME = {t}"
+            )).await?;
+            anyhow::ensure!(transactional == "YES", "This table does not support transactional grid edits");
+        }
+        let stmts = self.change_sql(schema, table, changes).await?;
         macro_rules! run_tx {
             ($p:expr) => {{
                 let mut tx = $p.begin().await?;
-                for (sql, ch) in stmts.iter().zip(changes) {
+                for (index, (sql, ch)) in stmts.iter().zip(changes).enumerate() {
                     let n = sqlx::raw_sql(AssertSqlSafe(sql.clone())).execute(&mut *tx).await?.rows_affected();
                     let insert = matches!(ch, Change::Insert { .. });
                     if !insert && n != 1 {
                         tx.rollback().await?;
-                        anyhow::bail!("{sql}\naffected {n} rows, expected 1; rolled back (row changed elsewhere, or key not unique)");
+                        anyhow::bail!("Row conflict: change {} no longer matches exactly one row. No changes were saved. Discard pending edits and reload.", index + 1);
                     }
                 }
                 tx.commit().await?;
@@ -752,7 +820,7 @@ impl SqlPool {
                 }
                 c.query(&batch.join(";\n")).await.map_err(|e| {
                     if e.to_string().contains("malformed JSON") {
-                        anyhow::anyhow!("an UPDATE / DELETE did not hit exactly one row; nothing was changed (row changed elsewhere, or key not unique)")
+                        anyhow::anyhow!("Row conflict: a row changed or was removed. No changes were saved. Discard pending edits and reload.")
                     } else {
                         e
                     }
@@ -873,18 +941,115 @@ mod tests {
         sqlx::query("ROLLBACK").execute(&mut *editor_conn).await.unwrap();
     }
 
+    fn contains_filter() -> TableFilter {
+        use crate::sql_browser::{Condition, Operator};
+        TableFilter {
+            match_any: false,
+            conditions: vec![
+                Condition { column: "label".into(), operator: Operator::Contains, value: "o'\\%_".into() },
+                Condition { column: "parent".into(), operator: Operator::IsNull, value: String::new() },
+            ],
+        }
+    }
+
+    async fn check_table_tools(db: SqlPool, schema: &str) {
+        use crate::sql_browser::TableMetadata;
+        db.execute("CREATE TABLE dbdock_parents (id INTEGER PRIMARY KEY);
+            CREATE TABLE dbdock_children (
+                id INTEGER PRIMARY KEY, label VARCHAR(100), parent INTEGER,
+                CONSTRAINT dbdock_child_parent FOREIGN KEY (parent) REFERENCES dbdock_parents(id)
+            );
+            CREATE INDEX dbdock_children_label ON dbdock_children(label);
+            INSERT INTO dbdock_parents VALUES (1);
+            INSERT INTO dbdock_children VALUES (1, 'initial', NULL), (2, 'similar', 1), (3, 'other', NULL)".into()).await.unwrap();
+        let literal = db.quote_lit("prefix o'\\%_ suffix");
+        db.execute(format!("UPDATE dbdock_children SET label = {literal} WHERE id IN (1, 2)")).await.unwrap();
+
+        let initial = db.table_data(schema, "dbdock_children", 10, 0, Some("id".into()), false, None, Some(contains_filter()), true).await.unwrap();
+        assert_eq!(initial.result.rows.len(), 1);
+        assert_eq!(initial.result.rows[0][0], Value::from(1));
+        assert_eq!(initial.result.columns, ["id", "label", "parent"]);
+
+        let change = || Change::Update {
+            key: BTreeMap::from([("id".into(), Value::from(1))]),
+            set: BTreeMap::from([("label".into(), Value::from("ours"))]),
+            version: initial.row_versions[0].clone(),
+        };
+        assert_eq!(db.apply(schema, "dbdock_children", &[change()]).await.unwrap(), 1);
+        db.execute("UPDATE dbdock_children SET label = 'theirs' WHERE id = 1".into()).await.unwrap();
+        let error = db.apply(schema, "dbdock_children", &[change()]).await.unwrap_err();
+        assert!(error.to_string().starts_with("Row conflict:"));
+        assert_eq!(db.scalar("SELECT label FROM dbdock_children WHERE id = 1").await.unwrap(), "theirs");
+
+        let indexes = db.metadata(schema, "dbdock_children", TableMetadata::Indexes).await.unwrap();
+        assert!(indexes.rows.iter().flatten().any(|value| value == "dbdock_children_label"));
+        let foreign_keys = db.metadata(schema, "dbdock_children", TableMetadata::ForeignKeys).await.unwrap();
+        assert!(foreign_keys.rows.iter().flatten().any(|value| value == "dbdock_parents"));
+
+        db.execute("DROP TABLE dbdock_children; DROP TABLE dbdock_parents".into()).await.unwrap();
+    }
+
     #[tokio::test]
-    async fn missing_row_rolls_back_entire_grid_batch() {
+    async fn table_tools_sqlite() {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        check_table_tools(SqlPool::Lite(pool), "main").await;
+    }
+
+    // Both URLs must point at disposable test databases.
+    #[tokio::test]
+    #[ignore = "requires an isolated PostgreSQL test database"]
+    async fn table_tools_postgres() {
+        let url = std::env::var("DBDOCK_TEST_POSTGRES_URL").unwrap();
+        let pool = PgPoolOptions::new().connect(&url).await.unwrap();
+        check_table_tools(SqlPool::BrowserPg(pool), "public").await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated MySQL test database"]
+    async fn table_tools_mysql() {
+        let url = std::env::var("DBDOCK_TEST_MYSQL_URL").unwrap();
+        let pool = MySqlPoolOptions::new().connect(&url).await.unwrap();
+        let db = SqlPool::BrowserMy(pool);
+        let schema = db.current_schema().await.unwrap();
+        check_table_tools(db, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_update_and_delete_roll_back_entire_grid_batch() {
+        use crate::sql_browser::TableMetadata;
+
         let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
         let db = SqlPool::Lite(pool);
-        db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT); INSERT INTO items VALUES (1, 'before')".into()).await.unwrap();
+        db.execute("CREATE TABLE parents (id INTEGER PRIMARY KEY);
+            CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT, parent INTEGER REFERENCES parents(id), bytes BLOB);
+            CREATE INDEX idx_items_value ON items(value);
+            INSERT INTO items VALUES (1, 'one', NULL, NULL), (2, 'two', NULL, X'00'), (3, 'three', NULL, NULL)".into()).await.unwrap();
+        let page = db.table_data("main", "items", 3, 0, Some("id".into()), false, None, None, true).await.unwrap();
+        assert_eq!(page.result.columns, ["id", "value", "parent", "bytes"]);
         let key = |id| BTreeMap::from([("id".into(), Value::from(id))]);
-        let changes = vec![
-            Change::Update { key: key(1), set: BTreeMap::from([("value".into(), Value::from("after"))]) },
-            Change::Update { key: key(2), set: BTreeMap::from([("value".into(), Value::from("missing"))]) },
-        ];
-        assert!(db.apply("main", "items", &changes).await.is_err());
-        let result = db.execute("SELECT value FROM items WHERE id = 1".into()).await.unwrap();
-        assert_eq!(result[0].rows[0][0], Value::from("before"));
+        let first_update = || Change::Update {
+            key: key(1),
+            version: page.row_versions[0].clone(),
+            set: BTreeMap::from([("value".into(), Value::from("edited"))]),
+        };
+        // The key and the visible value stay the same while a different field changes.
+        db.execute("UPDATE items SET bytes = X'01' WHERE id = 2; DELETE FROM items WHERE id = 3".into()).await.unwrap();
+        for id in [2, 3] {
+            let changes = [first_update(), Change::Delete {
+                key: key(id),
+                version: page.row_versions[(id - 1) as usize].clone(),
+            }];
+            let error = db.apply("main", "items", &changes).await.unwrap_err();
+            assert!(error.to_string().starts_with("Row conflict:"));
+            let result = db.execute("SELECT value FROM items WHERE id = 1".into()).await.unwrap();
+            assert_eq!(result[0].rows[0][0], Value::from("one"));
+        }
+        assert_eq!(db.apply("main", "items", &[first_update()]).await.unwrap(), 1);
+        assert!(db.apply("main", "items", &[first_update()]).await.is_err());
+
+        let indexes = db.metadata("main", "items", TableMetadata::Indexes).await.unwrap();
+        assert!(indexes.rows.iter().flatten().any(|value| value == "idx_items_value"));
+        let foreign_keys = db.metadata("main", "items", TableMetadata::ForeignKeys).await.unwrap();
+        assert!(foreign_keys.rows.iter().flatten().any(|value| value == "parents"));
     }
 }

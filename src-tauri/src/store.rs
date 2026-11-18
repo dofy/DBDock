@@ -44,6 +44,32 @@ pub struct SshConfig {
     pub key_path: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SqlProtection {
+    #[default]
+    Automatic,
+    Confirm,
+    BrowseOnly,
+}
+
+impl SqlProtection {
+    pub fn effective(self, environment: &str) -> Self {
+        match self {
+            Self::Automatic if environment == "production" => Self::Confirm,
+            mode => mode,
+        }
+    }
+
+    pub fn check_execution(self, confirmed: bool) -> Result<()> {
+        match self {
+            Self::BrowseOnly => anyhow::bail!("This connection is in browse-only mode"),
+            Self::Confirm if !confirmed => anyhow::bail!("Confirm this SQL operation first"),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionConfig {
@@ -75,6 +101,8 @@ pub struct ConnectionConfig {
     /// Environment tag: local, development, testing, staging, production, or empty.
     #[serde(default)]
     pub env: String,
+    #[serde(default)]
+    pub sql_protection: SqlProtection,
     /// Folder path shown in the list, e.g. "Acme / AI".
     #[serde(default)]
     pub group: String,
@@ -517,6 +545,19 @@ mod tests {
             ("two:password".into(), "second".into()),
         ]);
         (store, credentials, dir)
+    }
+
+    #[test]
+    fn sql_protection_applies_to_existing_production_connections() {
+        let connection: ConnectionConfig = serde_json::from_value(serde_json::json!({
+            "name": "fixture", "kind": "postgres", "env": "production"
+        })).unwrap();
+        let mode = connection.sql_protection.effective(&connection.env);
+        assert_eq!(mode, SqlProtection::Confirm);
+        assert!(mode.check_execution(false).is_err());
+        assert!(mode.check_execution(true).is_ok());
+        assert!(SqlProtection::BrowseOnly.effective(&connection.env).check_execution(true).is_err());
+        assert!(SqlProtection::Automatic.effective("development").check_execution(false).is_ok());
     }
 
     #[test]

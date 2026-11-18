@@ -173,19 +173,22 @@ jdbc:postgresql://localhost/app</code></pre>
   <section id="sql" data-title="SQL databases">
     <h2>MySQL, PostgreSQL, SQLite, D1</h2>
     <h3>Browsing</h3>
-    <p>Pick a database / schema in the sidebar, then a table. The <b>Data</b> view initially loads 5 rows per page; choose another page size when needed. Type a <code>WHERE</code> condition (column names complete, <kbd>Enter</kbd> applies) and click a column header to sort. <b>Structure</b> lists columns, types, defaults and keys.</p>
+    <p>Pick a database / schema in the sidebar, then a table. The <b>Data</b> view initially loads 5 rows per page; choose another page size when needed. Click <b>Filters</b> to combine column conditions with AND or OR. On standard connections you can also type a <code>WHERE</code> condition and press <kbd>Enter</kbd>. Click a column header to sort. <b>Structure</b> lists columns, types, defaults and keys. <b>Indexes</b> and <b>Foreign keys</b> show read-only metadata.</p>
     <h3>SQL editor</h3>
     <ul>
       <li><kbd>⌘</kbd><kbd>↵</kbd> runs the selection or current line; <kbd>⇧</kbd><kbd>⌘</kbd><kbd>↵</kbd> runs the whole script. Several statements give several result tabs.</li>
+      <li>Choose CSV or JSON and click <b>Export result</b> to save the current result tab, including any existing row limit. JSON preserves column order, duplicate names and nulls. CSV prefixes text that a spreadsheet could treat as a formula.</li>
       <li>Save or load SQL files from the toolbar. Recent SQL is kept in memory per connection and selected database until the app exits; it is not saved to disk.</li>
       <li><kbd>⌃</kbd>1–9 selects top-level tabs (1 is Connections); <kbd>⌘</kbd>1–9 selects database tabs. Hold the modifier to display the numbers. <kbd>⌥</kbd><kbd>⌘</kbd>←/→ and <kbd>⌃</kbd><kbd>⇧</kbd>Tab / <kbd>⌃</kbd>Tab cycle tabs.</li>
       <li>Completion knows tables, and the columns of the tables in the statement; <kbd>Tab</kbd> or <kbd>Enter</kbd> accepts.</li>
       <li><b>Cancel</b> stops a running MySQL or PostgreSQL query. SQLite and D1 cannot be cancelled.</li>
       <li>The SQL editor uses one connection, so <code>USE</code>, <code>SET</code> and transactions remain in that session. MySQL and PostgreSQL table browsing uses separate connections and shows committed data; editor session settings and temporary tables are not shared.</li>
     </ul>
+    <h3>SQL protection</h3>
+    <p>Production SQL connections run ordinary reads such as SELECT directly. SQL that can write, lock rows or have uncertain effects requires confirmation, as do grid commits. In connection settings you can enable the same protection for any SQL connection or choose <b>Browse only</b>, which disables editor execution and grid commits. Use visual filters on protected connections. Reconnect after changing the setting. Database permissions still apply.</p>
     <h3>Editing rows</h3>
     <p>Tables with a primary key can be edited in the grid: double-click a cell (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels), <b>+ Row</b>, <b>− Row</b>, <b>NULL</b>. Changes stay pending (yellow, struck-through, green) until you <b>Commit</b> (<kbd>⌘</kbd><kbd>S</kbd>). <b>Preview SQL</b> shows exactly what will run.</p>
-    <div class="note">A commit runs in one transaction. If any UPDATE or DELETE does not hit exactly one row (someone changed it, or the key is not unique), nothing is changed.</div>
+    <div class="note">A commit runs in one transaction. Each update or delete checks the original row version. If any row changed or disappeared, the batch is rolled back and pending edits are kept. Use <b>Discard and reload rows</b> to see the latest values before editing again.</div>
     <h3>Cloudflare D1</h3>
     <p>Fill the <b>Account ID</b>, <b>Database ID</b> (see <code>wrangler d1 list</code>) and an <b>API token</b> with the D1 Edit permission. Queries go through the Cloudflare REST API. D1 has no <code>BEGIN</code>; DBDock still commits grid edits atomically by sending them as one request.</p>
     <h3>StarRocks, Doris and other MySQL-compatible servers</h3>
