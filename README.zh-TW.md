@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>為資料庫打造順手的工作空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.0.1</p>
+<p align="center"><strong>為資料庫打造順手的工作空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.0</p>
 
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · 繁體中文 · <a href="README.ja.md">日本語</a><br />
 <a href="https://dbdock.phpz.org/zh-Hant/">官網</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -44,9 +44,9 @@ DBDock 是桌面資料庫用戶端，支援 **MySQL、PostgreSQL、SQLite、Redi
   ⌘T 新增 SQL 分頁，⌘L 聚焦現有的 SQL 編輯器，⌘I 美化選取內容或整個編輯器，將關鍵字大寫並依資料庫方言為識別字補引號。⌘W 關閉目前的子分頁，全部關閉後再按可確認關閉連線。⌥⌘W 確認後直接關閉連線。
   ⌘↵ 執行選取內容或游標所在的完整陳述式，⇧⌘↵ 執行全部腳本。工具列可儲存和載入 SQL 檔案，也可搜尋、預覽及載入查詢記錄。查詢記錄依連線及工作階段的資料庫保存在記憶體中，結束後清除。⌃1–9 切換頂部分頁，⌘1–9 切換資料庫分頁，按住對應按鍵可顯示數字。
 
-  **依上下文補全 SQL（尚未發布）**支援 CTE、子查詢與跨結構描述的資料表名稱和欄位名稱，並依編輯器工作階段的目前資料庫或搜尋路徑提供建議。在 `JOIN … ON` 後會提示已宣告的外鍵聯結條件，支援複合外鍵。PostgreSQL 和 MySQL 也會提示已宣告的 `ENUM` 值。
+  **依上下文補全 SQL**支援 CTE、子查詢與跨結構描述的資料表名稱和欄位名稱，並依編輯器工作階段的目前資料庫或搜尋路徑提供建議。在 `JOIN … ON` 後會提示已宣告的外鍵聯結條件，支援複合外鍵。PostgreSQL 和 MySQL 也會提示已宣告的 `ENUM` 值。
 
-  **視覺化執行計畫（尚未發布）**可查看選取內容或游標所在陳述式的執行計畫。展開節點可檢查索引、條件和預估列數，也可查看原始輸出。「執行計畫」預設執行 `EXPLAIN`，SQLite 和 D1 使用 `EXPLAIN QUERY PLAN`。PostgreSQL 和 MySQL 8.0.21 或更新版本提供獨立的「分析查詢…」，確認後會實際執行陳述式並顯示實際列數和耗時。
+  **視覺化執行計畫**可查看選取內容或游標所在陳述式的執行計畫。展開節點可檢查索引、條件和預估列數，也可查看原始輸出。「執行計畫」預設執行 `EXPLAIN`，SQLite 和 D1 使用 `EXPLAIN QUERY PLAN`。PostgreSQL 和 MySQL 8.0.21 或更新版本提供獨立的「分析查詢…」，確認後會實際執行陳述式並顯示實際列數和耗時。
 - **Redis**：透過 SCAN 瀏覽鍵、檢視類型與 TTL、切換資料庫、刪除鍵及執行命令。
 - **MongoDB**：瀏覽集合與索引，篩選、排序、分頁、編輯文件，並使用內建 Shell。SSH 通道使用直接連線模式。
 - **介面**：淺色與深色主題，以及英文、簡體中文、繁體中文、日文；主題與語言預設跟隨系統，可在設定中更改。支援 Vim 模式、原生選單和離線說明。
@@ -69,8 +69,11 @@ pnpm tauri dev
 
 ## 更新記錄
 
-### 尚未發布
+### 1.1.0 — 2026-11-18
 
+- 新增視覺化執行計畫和依上下文補全 SQL。
+- 新增建立資料表、結構編輯、資料匯入匯出和正式環境寫入保護。
+- 新增快速切換、收藏、最近存取和可搜尋的查詢記錄。
 - 修正 SQL 編輯器底部的補全浮層。建議現在能完整顯示，浮層容器也不會遮住編輯器、工具列和結果區。
 
 ## 授權

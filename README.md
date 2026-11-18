@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>A desktop home for your databases.</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.0.1</p>
+<p align="center"><strong>A desktop home for your databases.</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.0</p>
 
 <p align="center">English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a><br />
 <a href="https://dbdock.phpz.org/">Website</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -79,11 +79,11 @@ A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cl
   per connection and session database until the app exits. Tab accepts a suggestion. Cancel stops
   a running MySQL or PostgreSQL query. ⌃1–9 select top-level tabs and ⌘1–9 select database tabs. Hold
   the modifier to show their numbers. ⌥⌘←/→ and ⌃⇧Tab / ⌃Tab cycle tabs.
-- **Context-aware SQL completion (unreleased)** suggests tables and columns for CTEs,
+- **Context-aware SQL completion** suggests tables and columns for CTEs,
   subqueries and other schemas, and follows the editor session’s current database or
   search path. After `JOIN … ON`, it suggests conditions from declared foreign keys,
   including composite keys. PostgreSQL and MySQL also suggest declared `ENUM` values.
-- **Visual execution plans (unreleased)** show the plan for the selection or the statement
+- **Visual execution plans** show the plan for the selection or the statement
   under the cursor. Expand nodes to inspect indexes, conditions and row estimates, or view
   the raw output. **Explain** runs `EXPLAIN` by default, using `EXPLAIN QUERY PLAN` for
   SQLite and D1. On PostgreSQL and MySQL 8.0.21 or later, the separate **Analyze query…**
@@ -147,7 +147,7 @@ Keychain entries are bound to the signature of the build that wrote them: the in
 app and `pnpm tauri dev` builds cannot read each other's entries without a prompt every
 time. Use the installed app day to day.
 
-The Mac release is built for Apple Silicon. Run `./scripts/package-release.sh` to create an ad hoc signed, unnotarized DMG.
+The Mac release is built for Apple Silicon. Run `./scripts/package-release.sh` to create an ad hoc signed, unnotarized DMG in `dist-release/`.
 
 ## Build and install
 
@@ -189,8 +189,11 @@ Frontend language and help coverage: `node --test tests/*.test.mjs` (Node 22.18+
 
 ## Changelog
 
-### Unreleased
+### 1.1.0 — 2026-11-18
 
+- Added visual execution plans and context-aware SQL completion.
+- Added table creation, structure editing, data import and export, and production write protection.
+- Added quick switching, favorites, recently visited items and searchable query history.
 - Fixed clipped SQL completion suggestions near the bottom of the editor and stopped
   the popup container from covering the query pane.
 

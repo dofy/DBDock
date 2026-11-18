@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>给数据库找个顺手的家。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.0.1</p>
+<p align="center"><strong>给数据库找个顺手的家。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.0</p>
 
 <p align="center"><a href="README.md">English</a> · 简体中文 · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a><br />
 <a href="https://dbdock.phpz.org/zh-Hans/">官网</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -44,9 +44,9 @@ DBDock 是一款桌面数据库客户端，支持 **MySQL、PostgreSQL、SQLite�
   ⌘T 新建 SQL 标签页，⌘L 聚焦已有的 SQL 编辑器，⌘I 美化选区或整个编辑器，关键字大写并按数据库方言为标识符补引号。⌘W 关闭当前子标签，全部关闭后再按可确认关闭连接。⌥⌘W 确认后直接关闭连接。
   ⌘↵ 执行选区或光标所在的完整语句，⇧⌘↵ 执行全部脚本。工具栏可保存和载入 SQL 文件，也可搜索、预览和载入查询历史。查询历史按连接及会话的数据库保存在内存中，退出后清除。⌃1–9 切换顶部标签，⌘1–9 切换数据库标签，按住对应按键可显示数字。
 
-  **上下文 SQL 补全（未发布）**支持 CTE、子查询和跨 schema 的表名与字段名，并跟随编辑器会话的当前数据库或搜索路径。在 `JOIN … ON` 后提示已声明的外键连接条件，支持复合外键。PostgreSQL 和 MySQL 也会提示已声明的 `ENUM` 值。
+  **上下文 SQL 补全**支持 CTE、子查询和跨 schema 的表名与字段名，并跟随编辑器会话的当前数据库或搜索路径。在 `JOIN … ON` 后提示已声明的外键连接条件，支持复合外键。PostgreSQL 和 MySQL 也会提示已声明的 `ENUM` 值。
 
-  **可视化执行计划（未发布）**可查看选区或光标所在语句的执行计划。展开节点可检查索引、条件和预估行数，也可查看原始输出。「执行计划」默认运行 `EXPLAIN`，SQLite 和 D1 使用 `EXPLAIN QUERY PLAN`。PostgreSQL 和 MySQL 8.0.21 或更新版本提供独立的「分析查询…」，确认后实际执行语句并显示实际行数和耗时。
+  **可视化执行计划**可查看选区或光标所在语句的执行计划。展开节点可检查索引、条件和预估行数，也可查看原始输出。「执行计划」默认运行 `EXPLAIN`，SQLite 和 D1 使用 `EXPLAIN QUERY PLAN`。PostgreSQL 和 MySQL 8.0.21 或更新版本提供独立的「分析查询…」，确认后实际执行语句并显示实际行数和耗时。
 - **Redis**：通过 SCAN 浏览键、查看类型与 TTL、切换数据库、删除键和运行命令。
 - **MongoDB**：浏览集合和索引，过滤、排序、分页，编辑文档，并使用内置 Shell。SSH 隧道使用直连模式。
 - **界面**：浅色与深色主题以及英文、简体中文、繁体中文、日语；主题和语言默认跟随系统，可在设置中更改。支持 Vim 模式、原生菜单和离线帮助。
@@ -69,8 +69,11 @@ pnpm tauri dev
 
 ## 更新日志
 
-### 未发布
+### 1.1.0 — 2026-11-18
 
+- 新增可视化执行计划和上下文 SQL 补全。
+- 新增建表、结构编辑、数据导入导出和生产写入保护。
+- 新增快速切换、收藏、最近访问和可搜索的查询历史。
 - 修复 SQL 编辑器底部的补全浮层。候选项现在可以完整显示，浮层容器也不会遮住编辑器、工具栏和结果区。
 
 ## 许可
