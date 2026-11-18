@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Query run options regression</title></head>
+<body>
+<div id="root"></div>
+<script type="module">
+  import { createElement } from "react";
+  import { flushSync } from "react-dom";
+  import { createRoot } from "react-dom/client";
+  import { FeedbackDialogProvider } from "../../src/components/FeedbackDialog";
+  import { QueryView } from "../../src/components/QueryView";
+  import { ToastProvider } from "../../src/components/Toast";
+  import { createCompletionCatalog } from "../../src/sqlCompletionCatalog";
+  import { updateSettings } from "../../src/settings";
+  import "../../src/styles.css";
+
+  function assert(condition, message) {
+    if (!condition) throw new Error(message);
+  }
+
+  try {
+    updateSettings({ language: "en", vim: false });
+    const root = createRoot(document.querySelector("#root"));
+    flushSync(() => root.render(createElement(FeedbackDialogProvider, null,
+      createElement(ToastProvider, null, createElement(QueryView, {
+        sessionId: "fixture", kind: "postgres", database: "fixture", env: "local",
+        connectionName: "Fixture", protection: "automatic", history: [],
+        visible: false, focusRequest: 0, dark: false, value: "SELECT 1;",
+        onChange() {}, onExecuted() {}, onCompletionChanged() {},
+        completionCatalog: createCompletionCatalog(async () => ({}), async () => ({
+          schemas: ["public"], searchPath: ["public"],
+        })),
+        completionRevision: 0,
+      })),
+    )));
+    const toggle = document.querySelector(".query-run-toggle");
+    const openMenu = () => {
+      flushSync(() => toggle.click());
+      const menu = document.querySelector(".query-run-options");
+      assert(menu?.contains(document.activeElement), "Opening the menu should focus Run all");
+      return [...menu.querySelectorAll("button")].find(button => button.textContent === "Analyze query…");
+    };
+    const confirmDialog = () => document.querySelector(".feedback-dialog[open]");
+    const cancel = dialog => flushSync(() => [...dialog.querySelectorAll("button")]
+      .find(button => button.textContent === "Cancel").click());
+
+    const mouseAnalyze = openMenu();
+    flushSync(() => {
+      // In macOS WebKit, an uncanceled mouse press on a button blurs the
+      // keyboard-focused button without moving focus to the clicked button.
+      const defaultAllowed = mouseAnalyze.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      if (defaultAllowed) document.activeElement.blur();
+    });
+    flushSync(() => mouseAnalyze.click());
+    assert(confirmDialog()?.textContent.includes("Run EXPLAIN ANALYZE"), "Mouse activation should open the ANALYZE confirmation");
+    cancel(confirmDialog());
+    await Promise.resolve();
+
+    const keyboardAnalyze = openMenu();
+    keyboardAnalyze.focus();
+    assert(document.activeElement === keyboardAnalyze, "Analyze must remain keyboard focusable");
+    flushSync(() => keyboardAnalyze.click()); // Activation event emitted by the native button on Enter.
+    assert(confirmDialog()?.textContent.includes("Run EXPLAIN ANALYZE"), "Keyboard activation should open the ANALYZE confirmation");
+    cancel(confirmDialog());
+
+    openMenu();
+    flushSync(() => document.activeElement.blur());
+    assert(toggle.getAttribute("aria-expanded") === "false", "Leaving the menu should still dismiss it");
+    window.webkit.messageHandlers.result.postMessage("ok");
+  } catch (error) {
+    window.webkit.messageHandlers.result.postMessage(String(error));
+  }
+</script>
+</body>
+</html>

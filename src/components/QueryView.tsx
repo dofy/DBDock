@@ -332,7 +332,10 @@ export function QueryView({ sessionId, protection, connectionName, database, env
             <Square size={13} />
              {t("Cancel")} </button>
         ) : (
-          <div className="query-run" onBlur={(event) => {
+          <div className="query-run" onMouseDown={(event) => {
+            // WebKit can blur the focused button before another button receives its click.
+            if (showRunOptions && event.button === 0) event.preventDefault();
+          }} onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) setShowRunOptions(false);
           }} onKeyDown={(event) => {
             if (event.key === "Escape" && showRunOptions) {
