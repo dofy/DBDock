@@ -922,6 +922,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn completion_metadata_scopes_attached_sqlite_tables_by_schema() {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        let sql = SqlPool::Lite(pool);
+        sql.execute("ATTACH ':memory:' AS \"Sales App\"; CREATE TABLE main.books (title TEXT); \
+                     CREATE TABLE \"Sales App\".books (archived BOOLEAN NOT NULL)".into()).await.unwrap();
+
+        assert!(sql.schemas().await.unwrap().contains(&"Sales App".into()));
+        let primary = sql.columns("main").await.unwrap();
+        let attached = sql.columns("Sales App").await.unwrap();
+        assert_eq!(primary["books"][0].name, "title");
+        assert_eq!(attached["books"], [
+            CompletionColumn { name: "archived".into(), data_type: "BOOLEAN".into(), nullable: false },
+        ]);
+    }
+
+    #[tokio::test]
     async fn sqlite_health_check_does_not_create_or_modify_files() {
         let dir = std::env::temp_dir().join(format!("dbdock-health-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();

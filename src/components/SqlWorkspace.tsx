@@ -2,7 +2,8 @@ import { t, tf } from "../i18n";
 import { tableListStatus } from "../tableListStatus";
 import { SqlHistory } from "../sqlHistory";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errText, type CompletionSchema, type SessionInfo, type TableInfo } from "../api";
+import { api, errText, type SessionInfo, type TableInfo } from "../api";
+import { createCompletionCatalog } from "../sqlCompletionCatalog";
 import { TableView } from "./TableView";
 import { QueryView } from "./QueryView";
 import { ResultEmpty } from "./DataGrid";
@@ -67,7 +68,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     setActive(id);
     setFocusRequest((request) => request + 1);
   }, []);
-  const [columns, setColumns] = useState<CompletionSchema>({});
+  const completionCatalog = useMemo(() => createCompletionCatalog((name) => api.columns(sid, name)), [sid]);
   const [, setHistoryVersion] = useState(0);
 
   useEffect(() => {
@@ -91,19 +92,18 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     if (!schema) return;
     const request = ++tableRequest.current;
     setTableState({ schema, status: "loading", items: [] });
-    setColumns({});
     api.tables(sid, schema).then((items) => {
       if (request === tableRequest.current) setTableState({ schema, status: "ready", items });
     }).catch((e) => {
       if (request === tableRequest.current) setTableState({ schema, status: "error", items: [], error: errText(e) });
     });
-    // Completion metadata is independent of the table list.
-    api.columns(sid, schema).then((items) => {
-      if (request === tableRequest.current) setColumns(items);
-    }).catch(() => {
-      if (request === tableRequest.current) setColumns({});
-    });
-  }, [sid, schema]);
+    void completionCatalog.load(schema);
+  }, [sid, schema, completionCatalog]);
+
+  const refreshTables = (name = schema) => {
+    if (name) void completionCatalog.reload(name);
+    if (name === schema) loadTables();
+  };
 
   useEffect(() => {
     loadTables();
@@ -132,9 +132,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     return () => window.removeEventListener("dbdock:cycle-database-tab", cycle);
   }, [sid, tabs, selectTab]);
 
-  const completion = useMemo(() => {
-    return Object.fromEntries(tables.map((table) => [table.name, columns[table.name] ?? []]));
-  }, [tables, columns]);
+  const tableNames = useMemo(() => tables.map((table) => table.name), [tables]);
 
   const selectSchema = useCallback((name: string) => {
     navigationEpoch.current++;
@@ -299,7 +297,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
         </select>
         <div className="row">
           <input className="search" placeholder={t("Filter tables")} value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button onClick={() => { if (schemaError || !schema) setSchemaReload((n) => n + 1); else loadTables(); }} title={t("Reload")}>
+          <button onClick={() => { setSchemaReload((n) => n + 1); refreshTables(); }} title={t("Reload")}>
             <RefreshCw size={14} />
           </button>
         </div>
@@ -377,7 +375,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
                   connectionName={connectionName}
                   env={env}
                   dark={dark}
-                  onSchemaChanged={loadTables}
+                  onSchemaChanged={() => refreshTables(t.schema)}
                   onDirtyChange={(dirty, busy) => {
                     const tabs = dirtyTabs.current.get(sid) ?? new Map<string, "dirty" | "busy">();
                     if (busy) tabs.set(t.id, "busy"); else if (dirty) tabs.set(t.id, "dirty"); else tabs.delete(t.id);
@@ -399,7 +397,9 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
                   value={t.sql}
                   onChange={(v) => setTabs((ts) => ts.map((x) => (x.id === t.id && x.type === "query" ? { ...x, sql: v } : x)))}
                   schemaName={schema}
-                  schema={completion}
+                  schemas={schemas}
+                  completionCatalog={completionCatalog}
+                  tableNames={tableNames}
                   dark={dark}
                 />
               )}
@@ -428,7 +428,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
           onApplied={(name) => {
             setCreating(false);
             setFilter("");
-            loadTables();
+            refreshTables();
             openTable({ name, kind: "table" });
           }}
         />}

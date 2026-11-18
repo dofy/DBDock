@@ -191,7 +191,7 @@ jdbc:postgresql://localhost/app</code></pre>
       <li>The SQL editor uses one connection, so <code>USE</code>, <code>SET</code> and transactions remain in that session. MySQL and PostgreSQL table browsing uses separate connections and shows committed data; editor session settings and temporary tables are not shared.</li>
     </ul>
     <h3>SQL completion</h3>
-    <p>Type a space after <code>FROM</code> or <code>JOIN</code> to see tables and views. After <code>WHERE</code> or <code>UPDATE … SET</code>, the editor suggests columns from the current statement. Type an alias and a dot to see its columns. After a column or comparison operator, suggestions use its declared type and nullability. Press <kbd>Tab</kbd> to accept a suggestion.</p>
+    <p>Type a space after <code>FROM</code> or <code>JOIN</code> to see tables, views and CTEs. Type <code>schema.</code> for tables in another schema and <code>alias.</code> for its fields, including columns projected by a CTE or subquery. Give computed expressions an alias to use them in an outer query. After <code>WHERE</code> or <code>UPDATE … SET</code>, suggestions use the current SQL scope and available column types. Press <kbd>Tab</kbd> to accept a suggestion.</p>
     <h3>SQL protection</h3>
     <p>Production SQL connections run ordinary reads such as SELECT directly. SQL that can write, lock rows or have uncertain effects requires confirmation, as do grid commits. In connection settings you can enable the same protection for any SQL connection or choose <b>Browse only</b>, which disables editor execution, grid commits, structure edits and import. Use visual filters on protected connections. Reconnect after changing the setting. Database permissions still apply.</p>
     <h3>Editing rows</h3>

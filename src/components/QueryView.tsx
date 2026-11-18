@@ -8,7 +8,8 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
 import { getCM, Vim } from "@replit/codemirror-vim";
 import { EditorSelection, Prec } from "@codemirror/state";
-import { api, errorDiagnostic, errText, type CompletionSchema, type Kind, type QueryResult, type SqlProtection } from "../api";
+import { api, errorDiagnostic, errText, type Kind, type QueryResult, type SqlProtection } from "../api";
+import type { CompletionCatalog } from "../sqlCompletionCatalog";
 import { DataGrid, ResultEmpty } from "./DataGrid";
 import { querySqlExtensions } from "../sqlComplete";
 import { clampSqlEditorShare, DEFAULT_SQL_EDITOR_SHARE, MAX_SQL_EDITOR_SHARE, MIN_SQL_EDITOR_SHARE, updateSettings, useSettings } from "../settings";
@@ -32,11 +33,13 @@ interface Props {
   value: string;
   onChange: (v: string) => void;
   schemaName: string;
-  schema: CompletionSchema;
+  schemas: readonly string[];
+  completionCatalog: CompletionCatalog;
+  tableNames: readonly string[];
   dark: boolean;
 }
 
-export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, schemaName, schema, dark }: Props) {
+export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, schemaName, schemas, completionCatalog, tableNames, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -211,7 +214,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       })),
       // Vim handles `:w` and its editing commands.
       ...(vimOn ? [vimExtension(() => void runRef.current())] : []),
-      ...querySqlExtensions(kind, schemaName, schema),
+      ...querySqlExtensions(kind, schemaName, schemas, completionCatalog, tableNames),
       EditorView.contentAttributes.of({ "aria-label": editorLabel }),
       Prec.highest(
         keymap.of([
@@ -234,7 +237,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         ]),
       ),
     ],
-    [kind, schemaName, schema, vimOn, editorLabel],
+    [kind, schemaName, schemas, completionCatalog, tableNames, vimOn, editorLabel],
   );
 
   const cur = results[active];
