@@ -2,7 +2,7 @@ import { acceptCompletion, autocompletion, type CompletionContext, type Completi
 import { MySQL, PostgreSQL, SQLite, sql, schemaCompletionSource, keywordCompletionSource } from "@codemirror/lang-sql";
 import { Prec, type Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
-import type { CompletionSchema, Kind } from "./api";
+import type { CompletionSession, Kind } from "./api";
 import { sqlContextSource } from "./sqlCompletionContext.ts";
 import type { CompletionCatalog } from "./sqlCompletionCatalog";
 
@@ -14,46 +14,31 @@ export function sqlExtensions(kind: Kind, schema: Record<string, string[]>, fixe
   return [sql({ dialect: sqlDialect(kind), schema, defaultTable: fixedTable, upperCaseKeywords: true }), acceptWithTab];
 }
 
-/** Use context-specific candidates in recognized SQL slots, and CodeMirror's usual sources elsewhere. */
-export function querySqlExtensions(
-  kind: Kind, schemaName: string, schemas: readonly string[],
-  catalog: CompletionCatalog, tableNames: readonly string[],
-): Extension[] {
+const emptySession: CompletionSession = { searchPath: [], schemas: [] };
+
+/** Use the editor connection's namespaces for SQL completion. */
+export function querySqlExtensions(kind: Kind, catalog: CompletionCatalog): Extension[] {
   const dialect = sqlDialect(kind);
   const config = { dialect, upperCaseKeywords: true };
-  const contextSource = sqlContextSource(dialect, kind, schemaName, schemas);
+  const contextSource = sqlContextSource(dialect, kind);
   const completeKeyword = keywordCompletionSource(dialect, true);
-  const fallbackTables: CompletionSchema = Object.fromEntries(tableNames.map((name) => [name, []]));
-  const schemaSource = (columns: CompletionSchema) => schemaCompletionSource({
-    ...config,
-    schema: Object.fromEntries(Object.entries(columns).map(([table, items]) => [
-      table, items.map(({ name }) => name),
-    ])),
-  });
-  let lastMerged: CompletionSchema | undefined;
-  let activeSchema = fallbackTables;
-  const read = (name: string) => {
-    const columns = catalog.read(name);
-    if (name !== schemaName) return columns;
-    if (lastMerged !== columns) {
-      lastMerged = columns;
-      activeSchema = { ...fallbackTables, ...columns };
-    }
-    return activeSchema;
-  };
-  let lastColumns: CompletionSchema | undefined;
-  let completeSchema = schemaSource(fallbackTables);
   let pendingContext: CompletionContext | undefined;
-  let pendingResult: Promise<CompletionResult | null>;
+  let pendingResult: Promise<{ result: CompletionResult | null; session: CompletionSession } | undefined>;
   const resolveContext = async (ctx: CompletionContext) => {
-    const missing = new Set<string>();
-    const result = contextSource(ctx, (name) => {
-      if (!catalog.read(name)) missing.add(name);
-      return read(name);
-    });
-    if (!missing.size || ctx.aborted) return result;
-    await Promise.all([...missing].map(catalog.load));
-    return ctx.aborted ? null : contextSource(ctx, read);
+    const generation = catalog.generation();
+    const session = await catalog.session() ?? emptySession;
+    const attempted = new Set<string>();
+    while (!ctx.aborted && generation === catalog.generation()) {
+      const missing = new Set<string>();
+      const result = contextSource(ctx, session, (name) => {
+        const columns = catalog.read(name);
+        if (!columns && !attempted.has(name)) missing.add(name);
+        return columns;
+      });
+      if (!missing.size) return { result, session };
+      missing.forEach((name) => attempted.add(name));
+      await Promise.all([...missing].map(catalog.load));
+    }
   };
   const contextual = (ctx: CompletionContext) => {
     if (pendingContext?.state !== ctx.state || pendingContext.pos !== ctx.pos || pendingContext.explicit !== ctx.explicit) {
@@ -64,17 +49,21 @@ export function querySqlExtensions(
   };
   return [sql(config), acceptWithTab, autocompletion({
     override: [
-      contextual,
+      async (ctx) => (await contextual(ctx))?.result ?? null,
       async (ctx) => {
-        if (await contextual(ctx) !== null || ctx.aborted) return null;
-        const columns = catalog.read(schemaName);
-        if (lastColumns !== columns) {
-          lastColumns = columns;
-          completeSchema = schemaSource(read(schemaName) ?? {});
+        const resolved = await contextual(ctx);
+        if (!resolved || resolved.result !== null || ctx.aborted) return null;
+        const tables = new Map<string, string[]>();
+        for (const name of resolved.session.searchPath) {
+          const schema = catalog.read(name);
+          if (!schema) break;
+          for (const [table, columns] of Object.entries(schema)) {
+            if (!tables.has(table)) tables.set(table, columns.map(({ name }) => name));
+          }
         }
-        return completeSchema(ctx);
+        return schemaCompletionSource({ ...config, schema: Object.fromEntries(tables) })(ctx);
       },
-      async (ctx) => await contextual(ctx) === null && !ctx.aborted ? completeKeyword(ctx) : null,
+      async (ctx) => (await contextual(ctx))?.result === null && !ctx.aborted ? completeKeyword(ctx) : null,
     ],
     activateOnCompletion: (completion) => ["operator", "namespace"].includes(completion.type ?? ""),
   })];

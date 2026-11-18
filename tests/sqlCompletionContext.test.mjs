@@ -25,17 +25,20 @@ const catalogs = {
   },
 };
 const sources = {
-  postgres: sqlContextSource(PostgreSQL, 'postgres', 'public', Object.keys(catalogs.postgres)),
-  sqlite: sqlContextSource(SQLite, 'sqlite', 'main', Object.keys(catalogs.sqlite)),
-  d1: sqlContextSource(SQLite, 'd1', 'main', Object.keys(catalogs.d1)),
-  mysql: sqlContextSource(MySQL, 'mysql', 'app', Object.keys(catalogs.mysql)),
+  postgres: sqlContextSource(PostgreSQL, 'postgres'),
+  sqlite: sqlContextSource(SQLite, 'sqlite'),
+  d1: sqlContextSource(SQLite, 'd1'),
+  mysql: sqlContextSource(MySQL, 'mysql'),
 };
+const sessions = Object.fromEntries(Object.entries(catalogs).map(([kind, entries]) => [
+  kind, { searchPath: [Object.keys(entries)[0]], schemas: Object.keys(entries) },
+]));
 // The cursor marker keeps replacement ranges and suggestions in the same test.
-function completion(input, kind = 'postgres') {
+function completion(input, kind = 'postgres', session = sessions[kind]) {
   const pos = input.indexOf('|');
   assert.notEqual(pos, -1);
   const state = EditorState.create({ doc: input.replace('|', '') });
-  return sources[kind](new CompletionContext(state, pos, false), (name) => catalogs[kind][name]);
+  return sources[kind](new CompletionContext(state, pos, false), session, (name) => catalogs[kind][name]);
 }
 const labels = (input, kind) => completion(input, kind)?.options.map(({ label }) => label);
 const inserts = (input, kind) => completion(input, kind)?.options.map(({ apply }) => apply);
@@ -166,10 +169,45 @@ test('resolves cross-schema projections without searching unrelated schemas', ()
   const read = [];
   const sql = 'WITH q AS (SELECT a.* FROM audit.books a) SELECT * FROM q WHERE q.';
   const state = EditorState.create({ doc: sql });
-  const result = sources.postgres(new CompletionContext(state, sql.length, false), (name) => {
+  const result = sources.postgres(new CompletionContext(state, sql.length, false), sessions.postgres, (name) => {
     read.push(name);
     return catalogs.postgres[name];
   });
   assert.deepEqual(result.options.map(({ label }) => label), ['entry_id', 'verified']);
   assert.deepEqual([...new Set(read)], ['audit']);
+});
+
+test('resolves duplicate table names in actual search order and lists fallback tables once', () => {
+  const session = { ...sessions.postgres, searchPath: ['audit', 'public'] };
+  const fields = 'SELECT * FROM books WHERE |';
+  assert.deepEqual(completion(fields, 'postgres', session).options.map(({ label }) => label), ['entry_id', 'verified']);
+  assert.deepEqual(completion('SELECT * FROM public.books WHERE |', 'postgres', session).options.map(({ label }) => label),
+    ['id', 'title', 'published', 'featured']);
+  assert.deepEqual(completion('SELECT * FROM authors WHERE |', 'postgres', session).options.map(({ label }) => label),
+    ['id', 'active', 'display name']);
+  const candidates = completion('SELECT * FROM |', 'postgres', session).options.filter(({ type }) => type === 'class');
+  assert.equal(candidates.filter(({ label }) => label === 'books').length, 1);
+  assert.equal(candidates.find(({ label }) => label === 'books').detail, 'audit');
+  assert.ok(candidates.some(({ label }) => label === 'authors'));
+  assert.ok(candidates.some(({ label }) => label === 'events'));
+  const cte = completion('WITH books AS (SELECT 1 AS n) SELECT * FROM books WHERE |', 'postgres', session);
+  assert.deepEqual(cte.options.map(({ label }) => label), ['n']);
+});
+
+test('uses the MySQL database reported by the session, including no default database', () => {
+  const sql = 'SELECT * FROM books WHERE |';
+  const session = { ...sessions.mysql, searchPath: ['archive'] };
+  assert.deepEqual(completion(sql, 'mysql', session).options.map(({ label }) => label), ['archive_id']);
+  assert.deepEqual(completion(sql, 'mysql', { ...session, searchPath: [] }).options, []);
+  assert.deepEqual(completion('SELECT * FROM app.|', 'mysql', { ...session, searchPath: [] }).options.map(({ label }) => label),
+    ['books', 'authors', 'Sales.Region']);
+});
+
+test('does not falsely resolve a table from a later schema while an earlier schema is unknown', () => {
+  const doc = 'SELECT * FROM books WHERE ';
+  const state = EditorState.create({ doc });
+  const ctx = new CompletionContext(state, doc.length, false);
+  const session = { ...sessions.postgres, searchPath: ['unknown', 'public'] };
+  assert.deepEqual(sources.postgres(ctx, session, (name) => catalogs.postgres[name]).options, []);
+  assert.ok(sources.postgres(ctx, session, (name) => catalogs.postgres[name] ?? {}).options.some(({ label }) => label === 'published'));
 });

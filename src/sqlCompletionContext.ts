@@ -1,7 +1,7 @@
 import type { CompletionContext, CompletionResult, Completion } from "@codemirror/autocomplete";
 import type { SQLDialect } from "@codemirror/lang-sql";
 import type { Text } from "@codemirror/state";
-import type { CompletionColumn, CompletionSchema, Kind } from "./api";
+import type { CompletionColumn, CompletionSchema, CompletionSession, Kind } from "./api";
 import {
   actualName, catalogName, clauseWords, currentStatement, groupTokens, isName, lexerTokens,
   pathEndingAt, qualifiedSources, queryScope, quote, quoted, resolveField, resolves, sameReference, tableIntroducers, word,
@@ -66,11 +66,10 @@ function valueOptions(column: CompletionColumn, operator: string, assignment: bo
 }
 
 /** Returns null outside known SQL slots, and an empty result for a known slot with no candidates. */
-export function sqlContextSource(dialect: SQLDialect, kind: Kind, schemaName: string, schemaNames: readonly string[]) {
+export function sqlContextSource(dialect: SQLDialect, kind: Kind) {
   let lastDoc: Text | undefined;
   let tokens: Token[] = [];
-  const schemas = [...new Set([...schemaNames, schemaName].filter(Boolean))];
-  return (ctx: CompletionContext, readSchema: (name: string) => CompletionSchema | undefined): CompletionResult | null => {
+  return (ctx: CompletionContext, session: CompletionSession, readSchema: (name: string) => CompletionSchema | undefined): CompletionResult | null => {
     const { state, pos } = ctx;
     if (lastDoc !== state.doc) {
       tokens = lexerTokens(state.doc, dialect, kind);
@@ -82,7 +81,8 @@ export function sqlContextSource(dialect: SQLDialect, kind: Kind, schemaName: st
     const opening = at && quoted(at) ? at.text[0] : undefined;
     const from = opening ? at!.from : ctx.matchBefore(/[\p{L}\p{M}\p{N}_$]*/u)?.from ?? pos;
     const to = at?.from === from && isName(at) ? at.to : pos;
-    const catalog: CatalogLookup = { kind, defaultSchema: schemaName, schemas, readSchema };
+    const { searchPath, schemas } = session;
+    const catalog: CatalogLookup = { kind, searchPath, schemas, readSchema };
     const tree = groupTokens(statement, Math.max(pos, statement[statement.length - 1]?.to ?? 0));
     const scope = queryScope(tree, [], catalog, [], from);
     const left = scope.tokens.filter((token) => token.to <= from);
@@ -107,17 +107,26 @@ export function sqlContextSource(dialect: SQLDialect, kind: Kind, schemaName: st
     const tableSlot = tableIntroducers.has(word(tableMarker)) ||
       (tableMarker?.text === "," && ["FROM", "JOIN"].includes(slot));
     if (tableSlot) {
-      const selected = path ? catalogName(path.name, catalog) : schemaName;
-      const tables = selected ? Object.keys(readSchema(selected) ?? {}) : [];
+      const selected = path ? catalogName(path.name, catalog) : undefined;
       const visibleCtes = path || word(tableMarker) === "INTO" || word(tableMarker) === "UPDATE" ? [] : scope.ctes;
       const ctes = visibleCtes.filter((cte, i, all) => all.findIndex((item) => sameReference(item.name, cte.name, kind)) === i);
       const options: Completion[] = ctes.map((cte) => {
         const name = actualName(cte.name, kind);
         return { label: name, type: "class", detail: "CTE", apply: quote(name, kind, opening), boost: 2 };
       });
-      for (const name of tables) {
-        if (ctes.some((cte) => resolves(cte.name, name, kind))) continue;
-        options.push({ label: name, type: "class", apply: quote(name, kind, opening) });
+      const seen = new Set<string>();
+      const tableSchemas = path ? (selected ? [selected] : []) : searchPath;
+      for (const schema of tableSchemas) {
+        const tables = readSchema(schema);
+        if (!tables) break;
+        for (const name of Object.keys(tables)) {
+          const key = kind === "postgres" ? name : name.toLowerCase();
+          if (seen.has(key) || ctes.some((cte) => resolves(cte.name, name, kind))) continue;
+          seen.add(key);
+          options.push({ label: name, type: "class", apply: quote(name, kind, opening),
+            detail: searchPath.length > 1 && !path ? schema : undefined,
+            boost: !path && schema === "pg_catalog" ? -4 : undefined });
+        }
       }
       if (!path) {
         const dot = state.sliceDoc(to, to + 1) === "." ? "" : ".";

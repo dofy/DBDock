@@ -32,14 +32,13 @@ interface Props {
   onExecuted: (sql: string) => void;
   value: string;
   onChange: (v: string) => void;
-  schemaName: string;
-  schemas: readonly string[];
   completionCatalog: CompletionCatalog;
-  tableNames: readonly string[];
+  completionRevision: number;
+  onCompletionChanged: (clearColumns: boolean) => void;
   dark: boolean;
 }
 
-export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, schemaName, schemas, completionCatalog, tableNames, dark }: Props) {
+export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, completionCatalog, completionRevision, onCompletionChanged, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +98,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     const { text } = current;
     executing.current = true;
     let t0: number | undefined;
+    let metadataChanged = true;
     try {
       const confirmed = protection === "confirm" && await api.sqlNeedsConfirmation(sessionId, text);
       if (confirmed && !(await confirmSqlWrite(ask, {
@@ -110,7 +110,8 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       setError(null);
       onExecuted(text);
       t0 = performance.now();
-      const r = await api.execute(sessionId, text, confirmed);
+      const { results: r, metadataChanged: changed } = await api.execute(sessionId, text, confirmed);
+      metadataChanged = changed;
       setResults(r);
       // Show the last result that has rows, like most clients.
       const idx = r.map((x) => x.columns.length > 0).lastIndexOf(true);
@@ -120,7 +121,10 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       setResults([]);
     } finally {
       executing.current = false;
-      if (t0 !== undefined) setElapsed(Math.round(performance.now() - t0));
+      if (t0 !== undefined) {
+        setElapsed(Math.round(performance.now() - t0));
+        onCompletionChanged(metadataChanged);
+      }
       setRunning(false);
     }
   };
@@ -214,7 +218,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       })),
       // Vim handles `:w` and its editing commands.
       ...(vimOn ? [vimExtension(() => void runRef.current())] : []),
-      ...querySqlExtensions(kind, schemaName, schemas, completionCatalog, tableNames),
+      ...querySqlExtensions(kind, completionCatalog),
       EditorView.contentAttributes.of({ "aria-label": editorLabel }),
       Prec.highest(
         keymap.of([
@@ -237,7 +241,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         ]),
       ),
     ],
-    [kind, schemaName, schemas, completionCatalog, tableNames, vimOn, editorLabel],
+    [kind, completionCatalog, completionRevision, vimOn, editorLabel],
   );
 
   const cur = results[active];

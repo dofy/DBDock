@@ -44,7 +44,7 @@ interface Scope {
 
 export interface CatalogLookup {
   kind: Kind;
-  defaultSchema: string;
+  searchPath: readonly string[];
   schemas: readonly string[];
   readSchema: (name: string) => CompletionSchema | undefined;
 }
@@ -183,9 +183,14 @@ export function catalogName(token: Token, catalog: CatalogLookup) {
 function tableColumns(table: Token, schema: Token | undefined, ctes: Cte[], catalog: CatalogLookup) {
   const cte = !schema && ctes.find((entry) => sameReference(table, entry.name, catalog.kind));
   if (cte) return cte.columns();
-  const schemaName = schema ? catalogName(schema, catalog) : catalog.defaultSchema;
-  const entries = schemaName ? catalog.readSchema(schemaName) : undefined;
-  return entries && findName(entries, table, catalog.kind);
+  const schemaName = schema ? catalogName(schema, catalog) : undefined;
+  const path = schema ? (schemaName ? [schemaName] : []) : catalog.searchPath;
+  for (const name of path) {
+    const entries = catalog.readSchema(name);
+    if (!entries) return; // An earlier, unknown schema may shadow all later matches.
+    const columns = findName(entries, table, catalog.kind);
+    if (columns !== undefined) return columns;
+  }
 }
 
 const isSelect = (tokens: Token[]) => ["SELECT", "WITH"].includes(word(tokens[0]));

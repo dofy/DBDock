@@ -75,6 +75,16 @@ export interface CompletionColumn {
 
 export type CompletionSchema = Record<string, CompletionColumn[]>;
 
+export interface CompletionSession {
+  searchPath: string[];
+  schemas: string[];
+}
+
+interface QueryExecution {
+  results: QueryResult[];
+  metadataChanged: boolean;
+}
+
 export interface TableInfo {
   name: string;
   kind: "table" | "view";
@@ -229,8 +239,9 @@ export const api = {
   }) => invoke<TableData>("sql_table_data", args),
   sqlNeedsConfirmation: (sessionId: string, sql: string) =>
     invoke<boolean>("sql_needs_confirmation", { sessionId, sql }),
-  execute: (sessionId: string, sql: string, confirmed: boolean) => invoke<QueryResult[]>("sql_execute", { sessionId, sql, confirmed }),
+  execute: (sessionId: string, sql: string, confirmed: boolean) => invoke<QueryExecution>("sql_execute", { sessionId, sql, confirmed }),
   cancel: (sessionId: string) => invoke<void>("sql_cancel", { sessionId }),
+  completionSession: (sessionId: string) => invoke<CompletionSession>("sql_completion_session", { sessionId }),
   columns: (sessionId: string, schema: string) => invoke<CompletionSchema>("sql_columns", { sessionId, schema }),
   previewChanges: (sessionId: string, schema: string, table: string, changes: Change[]) =>
     invoke<string[]>("sql_preview_changes", { sessionId, schema, table, changes }),

@@ -25,7 +25,7 @@ use serde_json::Value;
 use tauri::{Emitter, Manager, State};
 
 use redis_db::{KeyValue, RedisConn, ScanPage};
-use sql::{Change, CompletionColumn, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
+use sql::{Change, CompletionColumn, CompletionSession, QueryExecution, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
 use sql_browser::{TableFilter, TableMetadata};
 use sql_schema::SchemaChange;
 use sql_transfer::ExportFormat;
@@ -562,12 +562,15 @@ fn sql_needs_confirmation(state: State<'_, AppState>, session_id: String, sql: S
 }
 
 #[tauri::command]
-async fn sql_execute(state: State<'_, AppState>, session_id: String, sql: String, confirmed: bool) -> CmdResult<Vec<QueryResult>> {
+async fn sql_execute(state: State<'_, AppState>, session_id: String, sql: String, confirmed: bool) -> CmdResult<QueryExecution> {
     let s = state.sql(&session_id)?;
-    if s.sql_protection != SqlProtection::Confirm || (!confirmed && sql_protection::needs_confirmation(&sql, pool(&s).dialect())) {
+    let pool = pool(&s);
+    let metadata_changed = sql_protection::needs_confirmation(&sql, pool.dialect());
+    if s.sql_protection != SqlProtection::Confirm || (!confirmed && metadata_changed) {
         s.sql_protection.check_execution(confirmed).map_err(err)?;
     }
-    pool(&s).execute(sql).await.map_err(err)
+    let results = pool.execute(sql).await.map_err(err)?;
+    Ok(QueryExecution { results, metadata_changed })
 }
 
 #[tauri::command]
@@ -578,9 +581,15 @@ async fn sql_cancel(state: State<'_, AppState>, session_id: String) -> CmdResult
 }
 
 #[tauri::command]
+async fn sql_completion_session(state: State<'_, AppState>, session_id: String) -> CmdResult<CompletionSession> {
+    let s = state.sql(&session_id)?;
+    pool(&s).completion_session().await.map_err(err)
+}
+
+#[tauri::command]
 async fn sql_columns(state: State<'_, AppState>, session_id: String, schema: String) -> CmdResult<std::collections::BTreeMap<String, Vec<CompletionColumn>>> {
     let s = state.sql(&session_id)?;
-    browser_pool(&s).columns(&schema).await.map_err(err)
+    pool(&s).columns(&schema).await.map_err(err)
 }
 
 #[tauri::command]
@@ -820,6 +829,7 @@ pub fn run() {
             sql_table_data,
             sql_needs_confirmation,
             sql_execute,
+            sql_completion_session,
             sql_cancel,
             sql_columns,
             sql_preview_changes,

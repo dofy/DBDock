@@ -1,8 +1,13 @@
-import type { CompletionSchema } from "./api";
+import type { CompletionSchema, CompletionSession } from "./api";
 
-export function createCompletionCatalog(fetchColumns: (schema: string) => Promise<CompletionSchema>) {
+export function createCompletionCatalog(
+  fetchColumns: (schema: string) => Promise<CompletionSchema>,
+  fetchSession: () => Promise<CompletionSession>,
+) {
   const entries = new Map<string, { pending: Promise<void>; columns?: CompletionSchema }>();
   let queue = Promise.resolve();
+  let path: Promise<CompletionSession | null> | undefined;
+  let generation = 0;
 
   function load(schema: string) {
     const existing = entries.get(schema);
@@ -23,11 +28,20 @@ export function createCompletionCatalog(fetchColumns: (schema: string) => Promis
   }
 
   return {
+    session() {
+      path ??= fetchSession().catch(() => null);
+      return path;
+    },
+    generation: () => generation,
+    invalidate(clearColumns: boolean) {
+      generation++;
+      path = undefined;
+      if (clearColumns) entries.clear();
+    },
     load,
     read: (schema: string) => entries.get(schema)?.columns,
-    reload(schema: string) {
+    forget(schema: string) {
       entries.delete(schema);
-      return load(schema);
     },
   };
 }

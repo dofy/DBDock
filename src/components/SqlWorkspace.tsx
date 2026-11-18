@@ -68,7 +68,15 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     setActive(id);
     setFocusRequest((request) => request + 1);
   }, []);
-  const completionCatalog = useMemo(() => createCompletionCatalog((name) => api.columns(sid, name)), [sid]);
+  const completionCatalog = useMemo(() => createCompletionCatalog(
+    (name) => api.columns(sid, name),
+    () => api.completionSession(sid),
+  ), [sid]);
+  const [completionRevision, setCompletionRevision] = useState(0);
+  const refreshCompletion = useCallback((clearColumns: boolean) => {
+    completionCatalog.invalidate(clearColumns);
+    setCompletionRevision((version) => version + 1);
+  }, [completionCatalog]);
   const [, setHistoryVersion] = useState(0);
 
   useEffect(() => {
@@ -97,11 +105,11 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     }).catch((e) => {
       if (request === tableRequest.current) setTableState({ schema, status: "error", items: [], error: errText(e) });
     });
-    void completionCatalog.load(schema);
-  }, [sid, schema, completionCatalog]);
+  }, [sid, schema]);
 
   const refreshTables = (name = schema) => {
-    if (name) void completionCatalog.reload(name);
+    refreshCompletion(false);
+    if (name) completionCatalog.forget(name);
     if (name === schema) loadTables();
   };
 
@@ -132,7 +140,6 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     return () => window.removeEventListener("dbdock:cycle-database-tab", cycle);
   }, [sid, tabs, selectTab]);
 
-  const tableNames = useMemo(() => tables.map((table) => table.name), [tables]);
 
   const selectSchema = useCallback((name: string) => {
     navigationEpoch.current++;
@@ -396,10 +403,9 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
                   onExecuted={(sql) => { history.add(connectionId, database, sql); setHistoryVersion((n) => n + 1); }}
                   value={t.sql}
                   onChange={(v) => setTabs((ts) => ts.map((x) => (x.id === t.id && x.type === "query" ? { ...x, sql: v } : x)))}
-                  schemaName={schema}
-                  schemas={schemas}
                   completionCatalog={completionCatalog}
-                  tableNames={tableNames}
+                  completionRevision={completionRevision}
+                  onCompletionChanged={refreshCompletion}
                   dark={dark}
                 />
               )}

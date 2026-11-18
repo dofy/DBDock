@@ -31,6 +31,13 @@ pub struct QueryResult {
 }
 
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryExecution {
+    pub results: Vec<QueryResult>,
+    pub metadata_changed: bool,
+}
+
+#[derive(Serialize, Debug)]
 pub struct TableInfo {
     pub name: String,
     pub kind: String,
@@ -42,6 +49,13 @@ pub struct CompletionColumn {
     pub name: String,
     pub data_type: String,
     pub nullable: bool,
+}
+
+#[derive(Default, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionSession {
+    pub search_path: Vec<String>,
+    pub schemas: Vec<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -347,7 +361,7 @@ pub(crate) fn decode_lite(row: &SqliteRow, i: usize) -> Value {
 
 /// Run one or more statements; one QueryResult per statement.
 macro_rules! run_many {
-    ($pool:expr, $sql:expr, $decode:ident) => {{
+    ($pool:expr, $sql:expr, $decode:ident, $row_limit:expr) => {{
         let mut out = Vec::new();
         let mut cur = QueryResult::default();
         let mut started = Instant::now();
@@ -358,7 +372,7 @@ macro_rules! run_many {
                     if cur.columns.is_empty() {
                         cur.columns = row.columns().iter().map(|c| c.name().to_string()).collect();
                     }
-                    if cur.rows.len() < MAX_ROWS {
+                    if cur.rows.len() < $row_limit {
                         cur.rows.push((0..row.len()).map(|i| $decode(&row, i)).collect());
                     } else {
                         cur.truncated = true;
@@ -394,13 +408,16 @@ impl<DB: sqlx::Database> Drop for BrowserLease<DB> {
 
 // A timed-out read must not return a connection with an unfinished query to the pool.
 macro_rules! run_browser {
-    ($pool:expr, $sql:expr, $decode:ident, $timeout:expr) => {{
+    ($pool:expr, $sql:expr, $decode:ident, $timeout:expr) => {
+        run_browser!($pool, $sql, $decode, $timeout, MAX_ROWS)
+    };
+    ($pool:expr, $sql:expr, $decode:ident, $timeout:expr, $row_limit:expr) => {{
         let conn = $pool.acquire().await.map_err(|e| match e {
             sqlx::Error::PoolTimedOut => anyhow::anyhow!("Database connection wait timed out: connections are busy or a new connection could not be established"),
             other => other.into(),
         })?;
         let mut lease = BrowserLease { conn, finished: false };
-        match tokio::time::timeout($timeout, async { run_many!(&mut *lease.conn, $sql, $decode) }).await {
+        match tokio::time::timeout($timeout, async { run_many!(&mut *lease.conn, $sql, $decode, $row_limit) }).await {
             Ok(result) => { lease.finished = true; result },
             Err(_) => Err(anyhow::anyhow!("Database browsing query timed out after 30 seconds")),
         }
@@ -425,27 +442,23 @@ impl SqlPool {
     }
 
     pub async fn execute(&self, sql: String) -> Result<Vec<QueryResult>> {
+        self.query_rows(sql, MAX_ROWS).await
+    }
+
+    async fn query_rows(&self, sql: String, row_limit: usize) -> Result<Vec<QueryResult>> {
         match self {
-            SqlPool::My(p) => run_many!(p, sql, decode_my),
-            SqlPool::BrowserMy(p) => run_browser!(p, sql, decode_my, Duration::from_secs(30)),
-            SqlPool::Pg(p) => run_many!(p, sql, decode_pg),
-            SqlPool::BrowserPg(p) => run_browser!(p, sql, decode_pg, Duration::from_secs(30)),
-            SqlPool::Lite(p) => run_many!(p, sql, decode_lite),
+            SqlPool::My(p) => run_many!(p, sql, decode_my, row_limit),
+            SqlPool::BrowserMy(p) => run_browser!(p, sql, decode_my, Duration::from_secs(30), row_limit),
+            SqlPool::Pg(p) => run_many!(p, sql, decode_pg, row_limit),
+            SqlPool::BrowserPg(p) => run_browser!(p, sql, decode_pg, Duration::from_secs(30), row_limit),
+            SqlPool::Lite(p) => run_many!(p, sql, decode_lite, row_limit),
             SqlPool::D1(c) => c.query(&sql).await,
         }
     }
 
-    /// First column of the first result as strings.
+    /// The first result's rows as strings.
     async fn strings(&self, sql: String) -> Result<Vec<Vec<String>>> {
-        let res = self.execute(sql).await?;
-        let Some(first) = res.into_iter().find(|r| !r.columns.is_empty()) else {
-            return Ok(vec![]);
-        };
-        Ok(first
-            .rows
-            .into_iter()
-            .map(|r| r.into_iter().map(value_to_string).collect())
-            .collect())
+        Ok(string_rows(self.execute(sql).await?))
     }
 
     async fn scalar(&self, sql: &str) -> Result<String> {
@@ -688,6 +701,39 @@ pub enum Change {
 }
 
 impl SqlPool {
+    /// Inspect the connection used by the editor, including its temporary namespace.
+    pub async fn completion_session(&self) -> Result<CompletionSession> {
+        let sql = match self {
+            SqlPool::My(_) | SqlPool::BrowserMy(_) =>
+                "SELECT SCHEMA_NAME, DATABASE() FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME",
+            SqlPool::Pg(_) | SqlPool::BrowserPg(_) =>
+                "SELECT CASE WHEN n.oid = pg_catalog.pg_my_temp_schema() THEN 'pg_temp' ELSE n.nspname::text END, \
+                        CASE WHEN p.ord IS NULL THEN '' ELSE '1' END \
+                 FROM pg_catalog.pg_namespace n \
+                 LEFT JOIN pg_catalog.unnest(pg_catalog.current_schemas(true)) WITH ORDINALITY p(name, ord) \
+                   ON p.name = n.nspname \
+                 WHERE (p.ord IS NOT NULL OR pg_catalog.has_schema_privilege(n.oid, 'USAGE')) \
+                   AND NOT pg_catalog.pg_is_other_temp_schema(n.oid) \
+                   AND n.nspname NOT LIKE 'pg_toast%' \
+                 ORDER BY p.ord NULLS LAST, n.nspname",
+            SqlPool::Lite(_) =>
+                "SELECT name, '1' FROM pragma_database_list \
+                 ORDER BY CASE name WHEN 'temp' THEN 0 WHEN 'main' THEN 1 ELSE 2 END, seq",
+            SqlPool::D1(_) => return Ok(CompletionSession { search_path: vec!["main".into()], schemas: vec!["main".into()] }),
+        };
+        let mut session = CompletionSession::default();
+        for row in string_rows(self.query_rows(sql.into(), usize::MAX).await?) {
+            if let Ok([name, marker]) = <[String; 2]>::try_from(row) {
+                let in_search_path = if self.dialect() == Kind::Mysql { marker == name } else { marker == "1" };
+                if in_search_path {
+                    session.search_path.push(name.clone());
+                }
+                session.schemas.push(name);
+            }
+        }
+        Ok(session)
+    }
+
     pub async fn columns(&self, schema: &str) -> Result<BTreeMap<String, Vec<CompletionColumn>>> {
         if let SqlPool::D1(_) = self {
             // One request: a PRAGMA per table (table-valued pragmas are not allowed).
@@ -724,7 +770,10 @@ impl SqlPool {
                  CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END FROM pg_catalog.pg_attribute a \
                  JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-                 WHERE n.nspname = {lit} AND c.relkind IN ('r','p','v','m','f') \
+                 WHERE (n.nspname = {lit} OR ({lit} = 'pg_temp' AND n.oid = pg_catalog.pg_my_temp_schema())) \
+                   AND NOT pg_catalog.pg_is_other_temp_schema(n.oid) \
+                   AND (n.oid = pg_catalog.pg_my_temp_schema() OR pg_catalog.has_schema_privilege(n.oid, 'USAGE')) \
+                   AND c.relkind IN ('r','p','v','m','f') \
                  AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum"
             ),
             SqlPool::Lite(_) => format!(
@@ -736,7 +785,9 @@ impl SqlPool {
             SqlPool::D1(_) => unreachable!(),
         };
         let mut out: BTreeMap<String, Vec<CompletionColumn>> = BTreeMap::new();
-        for row in self.strings(sql).await? {
+        // These are schema catalog rows. The grid's result limit would silently
+        // drop fields (or entire tables) from large catalogs.
+        for row in string_rows(self.query_rows(sql, usize::MAX).await?) {
             if let Ok([table, name, data_type, nullable]) = <[String; 4]>::try_from(row) {
                 out.entry(table).or_default().push(CompletionColumn {
                     name,
@@ -904,6 +955,11 @@ pub fn value_to_string(v: Value) -> String {
     }
 }
 
+fn string_rows(results: Vec<QueryResult>) -> Vec<Vec<String>> {
+    let rows = results.into_iter().find(|r| !r.columns.is_empty()).map(|r| r.rows).unwrap_or_default();
+    rows.into_iter().map(|r| r.into_iter().map(value_to_string).collect()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -935,6 +991,78 @@ mod tests {
         assert_eq!(attached["books"], [
             CompletionColumn { name: "archived".into(), data_type: "BOOLEAN".into(), nullable: false },
         ]);
+        assert_eq!(sql.completion_session().await.unwrap().search_path, ["main", "Sales App"]);
+        sql.execute("CREATE TEMP TABLE books (temporary TEXT)".into()).await.unwrap();
+        let session = sql.completion_session().await.unwrap();
+        assert_eq!(session.search_path, ["temp", "main", "Sales App"]);
+        assert_eq!(session.schemas, session.search_path);
+        assert_eq!(sql.columns("temp").await.unwrap()["books"][0].name, "temporary");
+        sql.execute("DETACH DATABASE \"Sales App\"".into()).await.unwrap();
+        assert_eq!(sql.completion_session().await.unwrap().search_path, ["temp", "main"]);
+    }
+
+    #[tokio::test]
+    async fn completion_columns_bypass_the_grid_result_limit() {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        let db = SqlPool::Lite(pool);
+        let cols = (0..100).map(|i| format!("c{i} INTEGER")).collect::<Vec<_>>().join(",");
+        let setup = (0..=MAX_ROWS / 100).map(|i| format!("CREATE TABLE t{i:03} ({cols})")).collect::<Vec<_>>().join(";");
+        db.execute(setup).await.unwrap();
+        let metadata = db.columns("main").await.unwrap();
+        assert_eq!(metadata.values().map(Vec::len).sum::<usize>(), MAX_ROWS + 100);
+        assert_eq!(metadata["t050"].last().unwrap().name, "c99");
+        let mut result = db.execute(
+            format!("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x <= {MAX_ROWS}) SELECT x FROM n")
+        ).await.unwrap();
+        let grid = result.pop().unwrap();
+        assert_eq!(grid.rows.len(), MAX_ROWS);
+        assert!(grid.truncated);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated PostgreSQL test database"]
+    async fn completion_session_tracks_postgres_search_path_and_transaction_state() {
+        let url = std::env::var("DBDOCK_TEST_POSTGRES_URL").unwrap();
+        let pool = PgPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let db = SqlPool::Pg(pool);
+        db.execute("CREATE SCHEMA completion_first; CREATE SCHEMA completion_second; \
+                    CREATE TABLE completion_first.lookup (first_id integer); \
+                    CREATE TABLE completion_second.lookup (second_id integer); \
+                    SET search_path TO completion_second, completion_first".into()).await.unwrap();
+        let initial = db.completion_session().await.unwrap();
+        assert_eq!(initial.search_path, ["pg_catalog", "completion_second", "completion_first"]);
+        assert!(initial.schemas.contains(&"public".to_string()));
+        db.execute("BEGIN; SET LOCAL search_path TO completion_first, completion_second; \
+                    CREATE TEMP TABLE lookup (temp_id integer); \
+                    ALTER TABLE completion_first.lookup ADD COLUMN uncommitted text".into()).await.unwrap();
+        let current = db.completion_session().await.unwrap();
+        assert_eq!(current.search_path, ["pg_temp", "pg_catalog", "completion_first", "completion_second"]);
+        assert_eq!(db.columns("pg_temp").await.unwrap()["lookup"][0].name, "temp_id");
+        assert_eq!(db.columns("completion_first").await.unwrap()["lookup"][1].name, "uncommitted");
+        assert!(db.execute("SELECT missing_column FROM lookup".into()).await.is_err());
+        assert!(db.completion_session().await.is_err());
+        db.execute("ROLLBACK".into()).await.unwrap();
+        assert_eq!(db.completion_session().await.unwrap().search_path, initial.search_path);
+        assert_eq!(db.columns("completion_first").await.unwrap()["lookup"].len(), 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated MySQL test instance without a default database"]
+    async fn completion_session_tracks_mysql_use() {
+        let url = std::env::var("DBDOCK_TEST_MYSQL_URL").unwrap();
+        let pool = MySqlPoolOptions::new().max_connections(1).connect(&url).await.unwrap();
+        let db = SqlPool::My(pool);
+        assert!(db.completion_session().await.unwrap().search_path.is_empty());
+        db.execute("CREATE DATABASE completion_first; CREATE DATABASE completion_second; \
+                    CREATE TABLE completion_first.lookup (first_id INT); \
+                    CREATE TABLE completion_second.lookup (second_id INT); \
+                    USE completion_first".into()).await.unwrap();
+        assert_eq!(db.completion_session().await.unwrap().search_path, ["completion_first"]);
+        db.execute("USE completion_second".into()).await.unwrap();
+        let session = db.completion_session().await.unwrap();
+        assert_eq!(session.search_path, ["completion_second"]);
+        assert!(session.schemas.contains(&"completion_first".into()));
+        assert_eq!(db.columns(&session.search_path[0]).await.unwrap()["lookup"][0].name, "second_id");
     }
 
     #[tokio::test]
