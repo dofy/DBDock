@@ -71,7 +71,8 @@ A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cl
 - Press ⌘K for saved connections, available databases and schemas, and tables in the sidebar’s
   current schema. Favorites and recent visits stay on this Mac. PostgreSQL and MySQL switches
   open or reuse independent database sessions.
-- SQL editor: ⌘T opens a SQL tab and ⇧⌘W closes the current database tab. ⌘↵ runs the selection
+- SQL editor: ⌘T opens a SQL tab, ⌘L focuses the editor, and ⇧⌘W closes the current database tab.
+  ⌘↵ runs the selection
   or the full statement under the cursor. ⇧⌘↵ runs the whole script. The toolbar saves and loads
   SQL files. Search, preview and load submitted SQL from query history, which stays in memory
   per connection and session database until the app exits. Tab accepts a suggestion. Cancel stops

@@ -59,6 +59,12 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
   const [creating, setCreating] = useState(false);
   const [tabs, setTabs] = useState<Tab[]>([{ id: newId(), type: "query", title: "Query 1", sql: "" }]);
   const [active, setActive] = useState(tabs[0].id);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const lastQueryId = useRef(tabs[0].id);
+  const selectTab = useCallback((id: string) => {
+    setActive(id);
+    setFocusRequest((request) => request + 1);
+  }, []);
   const [columns, setColumns] = useState<Record<string, string[]>>({});
   const [, setHistoryVersion] = useState(0);
 
@@ -111,9 +117,10 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
       if (sessionId !== sid || !tabs.length) return;
       navigationEpoch.current++;
       if (index !== undefined) {
-        if (index >= 0 && index < tabs.length) setActive(tabs[index].id);
+        if (index >= 0 && index < tabs.length) selectTab(tabs[index].id);
         return;
       }
+      setFocusRequest((request) => request + 1);
       setActive((current) => {
         const currentIndex = tabs.findIndex((tab) => tab.id === current);
         return tabs[(currentIndex + (direction ?? 1) + tabs.length) % tabs.length].id;
@@ -121,7 +128,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     };
     window.addEventListener("dbdock:cycle-database-tab", cycle);
     return () => window.removeEventListener("dbdock:cycle-database-tab", cycle);
-  }, [sid, tabs]);
+  }, [sid, tabs, selectTab]);
 
   const completion = useMemo(() => {
     const out: Record<string, string[]> = {};
@@ -143,6 +150,11 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     setTabs((items) => [...items, tab]);
     setActive(tab.id);
   };
+
+  const activeQueryId = tabs.find((tab) => tab.id === active && tab.type === "query")?.id;
+  useEffect(() => {
+    if (activeQueryId) lastQueryId.current = activeQueryId;
+  }, [activeQueryId]);
 
   const activeTable = tabs.find((tab) => tab.id === active && tab.type === "table");
   useEffect(() => {
@@ -225,6 +237,14 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     setActive(tab.id);
   };
 
+  const focusSqlEditor = () => {
+    const queryTabs = tabs.filter((tab) => tab.type === "query");
+    const target = activeQueryId ?? queryTabs.find((tab) => tab.id === lastQueryId.current)?.id ?? queryTabs[0]?.id;
+    if (!target) { newQuery(); return; }
+    navigationEpoch.current++;
+    selectTab(target);
+  };
+
   const closeTab = async (id: string) => {
     const state = dirtyTabs.current.get(sid)?.get(id);
     if (state === "busy") { await message(t("Wait for the commit to finish before closing this tab.")); return; }
@@ -242,6 +262,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
       const { sessionId, action } = (event as CustomEvent<{ sessionId: string; action: string }>).detail;
       if (sessionId !== sid) return;
       if (action === "new-sql-tab") newQuery();
+      else if (action === "focus-sql-editor") focusSqlEditor();
       else if (action === "close-database-tab" && active) void closeTab(active);
     };
     window.addEventListener("dbdock:database-action", onAction);
@@ -319,7 +340,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
             const qualified = tab.type === "table" && (tableNameCounts.get(tab.table) ?? 0) > 1;
             return <div key={tab.id} className={`tab sql-workspace-tab ${tab.id === active ? "on" : ""}`}>
               <button type="button" className="link sql-tab-select" aria-label={fullName} aria-pressed={tab.id === active}
-                title={fullName} onClick={() => { navigationEpoch.current++; setActive(tab.id); }}>
+                title={fullName} onClick={() => { navigationEpoch.current++; selectTab(tab.id); }}>
                 {qualified && <span className="sql-tab-schema" aria-hidden="true">{tab.schema}.</span>}
                 <span className="sql-tab-name">{tab.type === "table" ? tab.table : tab.title}</span>
                 {showTabNumbers && index < 9 && <kbd className="tab-number" aria-hidden="true">{index + 1}</kbd>}
@@ -365,6 +386,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
                   kind={session.kind}
                   history={history.get(connectionId, database)}
                   visible={visible && t.id === active}
+                  focusRequest={focusRequest}
                   protection={session.sqlProtection}
                   connectionName={connectionName}
                   database={database}

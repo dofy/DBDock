@@ -56,6 +56,7 @@ test('keyboard shortcuts use matching tables in every language', async () => {
   assert.ok(expected.includes('⇧⌘P'));
   assert.ok(expected.includes('⌃1–9'));
   assert.ok(expected.includes('⌘1–9'));
+  assert.ok(expected.includes('⌘L'));
   assert.ok(expected.includes('⇧⌘↵'));
   for (const locale of ['zh-CN', 'zh-TW', 'ja']) {
     const help = JSON.parse(await readFile(new URL(`../public/help.${locale}.json`, import.meta.url), 'utf8'));

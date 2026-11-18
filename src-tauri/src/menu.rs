@@ -66,6 +66,7 @@ fn label<'a>(language: &str, english: &'a str) -> &'a str {
         "Settings…" => ["设置…", "設定…", "設定…"],
         "File" => ["文件", "檔案", "ファイル"],
         "New Connection…" => ["新建连接…", "新增連線…", "新規接続…"],
+        "Focus SQL Editor" => ["聚焦 SQL 编辑器", "聚焦 SQL 編輯器", "SQL エディターにフォーカス"],
         "New SQL Tab" => ["新建 SQL 标签页", "新增 SQL 分頁", "SQL タブを新規作成"],
         "Close Database Tab" => ["关闭数据库标签页", "關閉資料庫分頁", "データベースタブを閉じる"],
         "New Group…" => ["新建分组…", "新增群組…", "新規グループ…"],
@@ -129,6 +130,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, language: &str) -> tauri::Result<Me
             &item(app, "new-connection", label(language, "New Connection…"), Some("CmdOrCtrl+N"))?,
             &item(app, "new-group", label(language, "New Group…"), Some("CmdOrCtrl+Shift+N"))?,
             &item(app, "new-sql-tab", label(language, "New SQL Tab"), Some("CmdOrCtrl+T"))?,
+            &item(app, "focus-sql-editor", label(language, "Focus SQL Editor"), Some("CmdOrCtrl+L"))?,
             &item(app, "close-database-tab", label(language, "Close Database Tab"), Some("CmdOrCtrl+Shift+W"))?,
             &sep()?,
             &item(app, "import", label(language, "Import…"), Some("CmdOrCtrl+O"))?,
@@ -197,7 +199,7 @@ pub fn handle<R: Runtime>(app: &AppHandle<R>, id: &str) {
         }
         // ⌘W closes a secondary window (Help) when it has focus; in the main window it
         // closes the current session tab.
-        "command-palette" | "quick-switch" | "new-sql-tab" | "close-database-tab" => {
+        "command-palette" | "quick-switch" | "new-sql-tab" | "focus-sql-editor" | "close-database-tab" => {
             use tauri::Manager;
             if app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false)) {
                 let _ = app.emit("menu", id);

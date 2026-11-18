@@ -259,8 +259,10 @@ function Shell() {
         else if (active) void close(active, true);
         return;
       case "new-sql-tab":
+      case "focus-sql-editor":
       case "close-database-tab":
-        if (active && !document.querySelector('.modal-backdrop:not([hidden])')) {
+        if (active && !Array.from(document.querySelectorAll(".modal-backdrop, .palette-backdrop"))
+          .some((overlay) => !overlay.closest("[hidden]"))) {
           window.dispatchEvent(new CustomEvent("dbdock:database-action", { detail: { sessionId: active, action: id } }));
         }
         return;
@@ -345,7 +347,12 @@ function Shell() {
     ...(["system","en","zh-CN","zh-TW","ja"] as const).map((language): PaletteCommand => ({id:`language-${language}`,label:`${t("Language")}: ${language === "system" ? t("System") : ({en:"English", "zh-CN":"简体中文", "zh-TW":"繁體中文", ja:"日本語"} as Record<string,string>)[language]}`,category:settingsCategory,keywords:`language locale ${language}`,run:()=>updateSettings({language})})),
     { id:"help",label:t("Help"),category:settingsCategory,keywords:"help documentation",run:()=>{void invoke("open_help").catch((error)=>toast("error",errText(error)));} },
   ];
-  if (activeSession && !["redis","mongodb"].includes(activeSession.session.kind)) commands.splice(1,0,action("new-sql-tab","New query",databaseCategory,"new sql query", "⌘T"));
+  if (activeSession && !["redis", "mongodb"].includes(activeSession.session.kind)) {
+    commands.splice(1, 0,
+      action("new-sql-tab", "New query", databaseCategory, "new sql query", "⌘T"),
+      action("focus-sql-editor", "Focus SQL editor", databaseCategory, "focus input editor query", "⌘L"),
+    );
+  }
   if (active) commands.push(action("close-tab","Close connection",databaseCategory,"close session"));
   for (const connection of conns) commands.push({id:`connection-${connection.id}`,label:tf("Connect to {name}",{name:connection.name}),category:noteCategory,keywords:`connect ${connection.kind}`,run:()=>{
     void connect(connection);

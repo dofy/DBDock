@@ -745,7 +745,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 .query-result-tabs button { flex: none; }
 
 .table-toolbar { flex-wrap: wrap; justify-content: space-between; }
-.table-toolbar button { height: 29px; padding-block: 0; }
+.table-toolbar button, .table-filter-bar button, .visual-filter button { height: 29px; padding-block: 0; }
 .table-tools { flex-wrap: wrap; margin-left: auto; }
 .table-filter-bar { flex-wrap: wrap; background: var(--bg2); }
 .table-filter-bar .filter { flex: 1 1 180px; }

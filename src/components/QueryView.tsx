@@ -2,9 +2,10 @@ import { t, tf } from "../i18n";
 import { ChevronDown, FileDown, FileUp, History, Play, Square } from "lucide-react";
 import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
 import { selectedOrCurrentStatement } from "../sqlStatement";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { keymap } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
+import { getCM, Vim } from "@replit/codemirror-vim";
 import { Prec } from "@codemirror/state";
 import { api, errText, type Kind, type QueryResult, type SqlProtection } from "../api";
 import { DataGrid } from "./DataGrid";
@@ -25,6 +26,7 @@ interface Props {
   kind: Kind;
   history: string[];
   visible: boolean;
+  focusRequest: number;
   onExecuted: (sql: string) => void;
   value: string;
   onChange: (v: string) => void;
@@ -33,7 +35,7 @@ interface Props {
   dark: boolean;
 }
 
-export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, onExecuted, value, onChange, schema, dark }: Props) {
+export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, schema, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +52,27 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   const ref = useRef<ReactCodeMirrorRef>(null);
   const runOptionsButton = useRef<HTMLButtonElement>(null);
   const runAllButton = useRef<HTMLButtonElement>(null);
+  const initiallyFocused = useRef(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    const frame = requestAnimationFrame(() => {
+      const view = ref.current?.view;
+      if (!view || view.dom.closest("[hidden]")) return;
+      const overlays = document.querySelectorAll(".modal-backdrop, .palette-backdrop");
+      if (Array.from(overlays).some((overlay) => !overlay.closest("[hidden]"))) return;
+
+      view.focus();
+      if (initiallyFocused.current) return;
+      initiallyFocused.current = true;
+      // New blank SQL tabs are ready for typing even when Vim is enabled.
+      if (view.state.doc.length === 0) {
+        const cm = getCM(view);
+        if (cm?.state.vim && !cm.state.vim.insertMode) Vim.handleKey(cm, "i", "user");
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [visible, focusRequest]);
 
   const run = async (all = false) => {
     const view = ref.current?.view;
@@ -129,11 +152,13 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   runRef.current = run;
 
   const { vim: vimOn } = useSettings();
+  const editorLabel = t("SQL editor");
   const extensions = useMemo(
     () => [
       // Vim first; `:w` runs the query.
       ...(vimOn ? [vimExtension(() => void runRef.current())] : []),
       ...sqlExtensions(kind, schema),
+      EditorView.contentAttributes.of({ "aria-label": editorLabel }),
       Prec.highest(
         keymap.of([
           {
@@ -155,7 +180,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         ]),
       ),
     ],
-    [kind, schema, vimOn],
+    [kind, schema, vimOn, editorLabel],
   );
 
   const cur = results[active];

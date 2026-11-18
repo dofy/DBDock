@@ -19,6 +19,7 @@ ROWS = [
     ("⌃⇧Tab / ⌃Tab", "Previous / next session", "上一个 / 下一个会话", "上一個 / 下一個工作階段", "前 / 次のセッション"),
     ("⌥⌘← / ⌥⌘→", "Previous / next database tab", "上一个 / 下一个数据库标签", "上一個 / 下一個資料庫分頁", "前 / 次のデータベースタブ"),
     ("⌘T", "Open a SQL tab in the current SQL connection", "在当前 SQL 连接中新建查询", "在目前的 SQL 連線中新增查詢", "現在の SQL 接続にクエリを新規作成"),
+    ("⌘L", "Focus the SQL editor or open a query tab if needed", "聚焦 SQL 编辑器，需要时新建查询标签页", "聚焦 SQL 編輯器，需要時新增查詢分頁", "SQL エディターにフォーカスし、必要ならクエリタブを開く"),
     ("⇧⌘W", "Close the current database tab", "关闭当前数据库标签", "關閉目前的資料庫分頁", "現在のデータベースタブを閉じる"),
     ("⌘W", "Close the current session (confirmation required)", "关闭当前会话（需确认）", "關閉目前的工作階段（需確認）", "現在のセッションを閉じる（要確認）"),
     ("⌘Q", "Quit (confirmation required for open work)", "退出（有打开的工作时需确认）", "結束（有開啟的工作時需確認）", "終了（作業中は要確認）"),
