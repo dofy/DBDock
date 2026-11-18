@@ -79,6 +79,15 @@ A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cl
   per connection and session database until the app exits. Tab accepts a suggestion. Cancel stops
   a running MySQL or PostgreSQL query. ⌃1–9 select top-level tabs and ⌘1–9 select database tabs. Hold
   the modifier to show their numbers. ⌥⌘←/→ and ⌃⇧Tab / ⌃Tab cycle tabs.
+- **Context-aware SQL completion (unreleased)** suggests tables and columns for CTEs,
+  subqueries and other schemas, and follows the editor session’s current database or
+  search path. After `JOIN … ON`, it suggests conditions from declared foreign keys,
+  including composite keys. PostgreSQL and MySQL also suggest declared `ENUM` values.
+- **Visual execution plans (unreleased)** show the plan for the selection or the statement
+  under the cursor. Expand nodes to inspect indexes, conditions and row estimates, or view
+  the raw output. **Explain** runs `EXPLAIN` by default, using `EXPLAIN QUERY PLAN` for
+  SQLite and D1. On PostgreSQL and MySQL 8.0.21 or later, the separate **Analyze query…**
+  action requires confirmation before executing the statement to measure actual rows and timing.
 - Grid editing for tables with a primary key: double-click a cell, add / delete rows, set
   NULL, preview the SQL and commit with ⌘S. Updates and deletes check the original row.
   A conflicting change rolls back the entire commit and leaves the edits pending.
@@ -179,6 +188,11 @@ The `it::d1` test additionally requires D1 credentials and explicitly configured
 Frontend language and help coverage: `node --test tests/*.test.mjs` (Node 22.18+).
 
 ## Changelog
+
+### Unreleased
+
+- Fixed clipped SQL completion suggestions near the bottom of the editor and stopped
+  the popup container from covering the query pane.
 
 ### 1.0.0 — 2026-11-16
 
