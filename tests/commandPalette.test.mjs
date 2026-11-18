@@ -14,3 +14,11 @@ test("command search accepts localized text, aliases and multiple terms", () => 
   assert.deepEqual(filterCommands(commands, "⌘n").map(c => c.id), ["new"]);
   assert.deepEqual(filterCommands(commands, "missing"), []);
 });
+
+test("command search distinguishes same-named objects by their displayed path", () => {
+  const tables = ["public", "archive"].map((schema) => ({
+    id: schema, label: "customers", category: "Table", path: `Orders / store / ${schema}`, run() {},
+  }));
+  assert.deepEqual(filterCommands(tables, "customers").map((table) => table.id), ["public", "archive"]);
+  assert.deepEqual(filterCommands(tables, "archive customers").map((table) => table.id), ["archive"]);
+});

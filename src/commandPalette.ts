@@ -2,6 +2,7 @@ export interface PaletteCommand {
   id: string;
   label: string;
   category: string;
+  path?: string;
   shortcut?: string;
   keywords?: string;
   detail?: string;
@@ -15,7 +16,7 @@ export function filterCommands(commands: readonly PaletteCommand[], query: strin
   const terms = query.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
   if (!terms.length) return [...commands];
   return commands.filter((command) => {
-    const text = [command.label, command.category, command.shortcut, command.keywords, command.badge?.label].filter(Boolean).join(" ").toLocaleLowerCase();
+    const text = [command.label, command.category, command.path, command.shortcut, command.keywords, command.badge?.label].filter(Boolean).join(" ").toLocaleLowerCase();
     return terms.every((term) => text.includes(term));
   });
 }

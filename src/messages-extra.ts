@@ -1,5 +1,9 @@
 /** Additional UI messages. Placeholders are interpolated only after translation. */
 export const extraMessages: Record<string, readonly [string, string, string]> = {
+  "Data grid": ["数据网格", "資料表格", "データグリッド"],
+  "Close cell details": ["关闭单元格详情", "關閉儲存格詳細資訊", "セルの詳細を閉じる"],
+  "Workspace tabs": ["工作区标签", "工作區分頁", "ワークスペースのタブ"],
+  "Close tab {name}": ["关闭标签 {name}", "關閉分頁 {name}", "{name} タブを閉じる"],
   "Run selected SQL": ["运行选中的 SQL", "執行選取的 SQL", "選択中の SQL を実行"],
   "Run current statement": ["运行当前语句", "執行目前的陳述式", "現在の文を実行"],
   "Select the SQL you want to run, or use Run all": ["请选择要运行的 SQL，或使用「运行全部」", "請選取要執行的 SQL，或使用「全部執行」", "実行する SQL を選択するか、すべて実行してください"],

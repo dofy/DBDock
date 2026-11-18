@@ -39,11 +39,19 @@ function show(v: Cell | undefined): string {
   return String(v);
 }
 
-function CellEditor({ initial, onDone }: { initial: Cell | undefined; onDone: (v: Cell | undefined) => void }) {
+function CellEditor({ initial, label, onDone }: {
+  initial: Cell | undefined;
+  label: string;
+  onDone: (v: Cell | undefined, restoreFocus: boolean) => void;
+}) {
   const init = initial === null || initial === undefined ? "" : String(initial);
   const [v, setV] = useState(init);
-  // undefined = no change (unchanged text, or Escape).
-  const finish = (val: string) => onDone(val === init ? undefined : val);
+  const finished = useRef(false);
+  const finish = (value: Cell | undefined, restoreFocus: boolean) => {
+    if (finished.current) return;
+    finished.current = true;
+    onDone(value === init ? undefined : value, restoreFocus);
+  };
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -53,18 +61,20 @@ function CellEditor({ initial, onDone }: { initial: Cell | undefined; onDone: (v
     <textarea
       ref={ref}
       className="cell-input"
+      aria-label={label}
       value={v}
       rows={1}
       onChange={(e) => setV(e.target.value)}
-      onBlur={() => finish(v)}
+      onBlur={() => finish(v, false)}
       onKeyDown={(e) => {
         // Enter saves, Shift/Alt+Enter inserts a newline, Escape cancels.
+        if (e.nativeEvent.isComposing) return;
         if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
           e.preventDefault();
-          finish(v);
+          finish(v, true);
         } else if (e.key === "Escape") {
           e.preventDefault();
-          onDone(undefined);
+          finish(undefined, true);
         }
         e.stopPropagation();
       }}
@@ -75,6 +85,10 @@ function CellEditor({ initial, onDone }: { initial: Cell | undefined; onDone: (v
 export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, rowOffset = 0, editing, onSelect, resetKey }: Props) {
   const [sel, setSelState] = useState<Selection | null>(null);
   const [editCell, setEditCell] = useState<Selection | null>(null);
+  const gridBody = useRef<HTMLTableSectionElement>(null);
+  const selectedCell = useRef<HTMLTableCellElement>(null);
+  const restoreFocus = useRef(false);
+  const revealCell = useRef(false);
   const columns = result.columns.length ? result.columns : (fallbackColumns ?? []);
 
   const setSel = (s: Selection | null) => {
@@ -84,11 +98,25 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
 
   // Selection refers to row indices; reset when the rows change underneath.
   useEffect(() => {
-    setSelState(null);
+    const first = gridBody.current === document.activeElement && result.rows.length && columns.length
+      ? { r: 0, c: 0 }
+      : null;
+    setSelState(first);
     setEditCell(null);
-    onSelect?.(null);
+    onSelect?.(first);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey ?? result]);
+
+  useEffect(() => {
+    if (restoreFocus.current && !editCell) {
+      restoreFocus.current = false;
+      gridBody.current?.focus({ preventScroll: true });
+    }
+    if (revealCell.current) {
+      revealCell.current = false;
+      selectedCell.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [editCell, sel]);
 
   const valueAt = (r: number, c: number): Cell | undefined => {
     const p = editing?.pending(r, c);
@@ -117,38 +145,54 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
     <div className="grid-wrap">
       <div
         className="grid-scroll"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (!sel || editCell) return;
-          const move = (dr: number, dc: number) => {
-            e.preventDefault();
-            setSel({ r: Math.max(0, Math.min(result.rows.length - 1, sel.r + dr)), c: Math.max(0, Math.min(columns.length - 1, sel.c + dc)) });
-          };
-          if (e.key === "ArrowDown") move(1, 0);
-          else if (e.key === "ArrowUp") move(-1, 0);
-          else if (e.key === "ArrowLeft") move(0, -1);
-          else if (e.key === "ArrowRight" || e.key === "Tab") move(0, 1);
-          else if (e.key === "Enter") {
-            e.preventDefault();
-            startEdit(sel.r, sel.c);
-          } else if ((e.metaKey || e.ctrlKey) && e.key === "c") {
-            void navigator.clipboard.writeText(show(selected));
-          }
-        }}
+        role="region"
+        aria-label={t("Data grid")}
       >
         <table className="grid">
           <thead>
             <tr>
               <th className="rownum">#</th>
               {columns.map((c) => (
-                <th key={c} onClick={onSort ? () => onSort(c) : undefined} className={onSort ? "sortable" : ""}>
-                  {c}
-                  {orderBy === c && <span className="sort">{orderDesc ? " ▼" : " ▲"}</span>}
+                <th key={c} className={onSort ? "sortable" : ""}
+                  aria-sort={orderBy === c ? (orderDesc ? "descending" : "ascending") : undefined}>
+                  {onSort ? <button type="button" className="link grid-sort" onClick={() => onSort(c)}>
+                    <span>{c}</span>
+                    {orderBy === c && <span className="sort" aria-hidden="true">{orderDesc ? "▼" : "▲"}</span>}
+                  </button> : c}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody
+            ref={gridBody}
+            tabIndex={result.rows.length ? 0 : undefined}
+            onFocus={(e) => {
+              if (e.target === e.currentTarget && !sel && result.rows.length && e.currentTarget.matches(":focus-visible")) {
+                revealCell.current = true;
+                setSel({ r: 0, c: 0 });
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget || editCell || !result.rows.length) return;
+              const move = (dr: number, dc: number) => {
+                e.preventDefault();
+                revealCell.current = true;
+                const r = Math.max(0, Math.min(result.rows.length - 1, (sel?.r ?? 0) + dr));
+                const c = Math.max(0, Math.min(columns.length - 1, (sel?.c ?? 0) + dc));
+                setSel({ r, c });
+              };
+              if (e.key === "ArrowDown") move(1, 0);
+              else if (e.key === "ArrowUp") move(-1, 0);
+              else if (e.key === "ArrowLeft") move(0, -1);
+              else if (e.key === "ArrowRight") move(0, 1);
+              else if (e.key === "Enter" && hasSel && sel && editing?.canEdit(sel.c) && editing.rowState(sel.r) !== "deleted") {
+                e.preventDefault();
+                startEdit(sel.r, sel.c);
+              } else if (hasSel && (e.metaKey || e.ctrlKey) && e.key === "c") {
+                void navigator.clipboard.writeText(show(selected));
+              }
+            }}
+          >
             {result.rows.map((row, r) => {
               const state = editing?.rowState(r);
               return (
@@ -158,18 +202,26 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
                     const v = valueAt(r, c);
                     const dirty = editing?.pending(r, c) !== undefined;
                     const isEditing = editCell?.r === r && editCell.c === c;
+                    const isSelected = sel?.r === r && sel.c === c;
                     return (
                       <td
                         key={c}
-                        className={`${v === null ? "null" : v === undefined ? "null" : typeof v === "number" ? "num" : ""} ${sel?.r === r && sel.c === c ? "sel" : ""} ${dirty ? "dirty" : ""} ${isEditing ? "editing" : ""}`}
-                        onClick={() => setSel({ r, c })}
+                        ref={isSelected ? selectedCell : undefined}
+                        className={`${v == null ? "null" : typeof v === "number" ? "num" : ""} ${isSelected ? "sel" : ""} ${dirty ? "dirty" : ""} ${isEditing ? "editing" : ""}`}
+                        onClick={() => {
+                          if (isEditing) return;
+                          gridBody.current?.focus({ preventScroll: true });
+                          setSel({ r, c });
+                        }}
                         onDoubleClick={() => startEdit(r, c)}
                         title={typeof v === "string" && v.length > 60 ? v.slice(0, 500) : undefined}
                       >
                         {isEditing ? (
                           <CellEditor
                             initial={v}
-                            onDone={(nv) => {
+                            label={columns[c]}
+                            onDone={(nv, focusGrid) => {
+                              restoreFocus.current = focusGrid;
                               setEditCell(null);
                               if (nv !== undefined && editing) editing.onChange(r, c, nv);
                             }}
@@ -193,7 +245,10 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
             <b>{columns[sel.c]}</b>
             <button className="link" onClick={() => navigator.clipboard.writeText(show(selected))}>
               <Copy size={14} />{t("Copy")} </button>
-            <button className="link" onClick={() => setSel(null)}>
+            <button className="link" aria-label={t("Close cell details")} onClick={() => {
+              gridBody.current?.focus({ preventScroll: true });
+              setSel(null);
+            }}>
               ✕
             </button>
           </div>

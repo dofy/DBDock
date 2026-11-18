@@ -27,11 +27,11 @@ export function QuickNavigation({ connections, catalog, history, onClose, onNavi
     const name = target.type === "connection" ? connection.name
       : target.type === "database" ? target.database : target.type === "schema" ? target.schema : target.table;
     const type = t(target.type === "connection" ? "Connection" : target.type === "database" ? "Database" : target.type === "schema" ? "Schema" : "Table");
-    const context = target.type === "connection" ? [KIND_LABEL[connection.kind], connection.database || connection.group].filter(Boolean).join(" / ") : [
-      connection.name, target.type !== "database" && target.database !== connection.name ? target.database : "",
-      target.type === "table" && target.schema !== target.database ? target.schema : "",
-    ].filter(Boolean).join(" / ");
-    return { id, label: name, category: `${type} · ${context}`, keywords: `${target.type} ${connection.group} ${connection.env}`,
+    const context = target.type === "connection" ? [KIND_LABEL[connection.kind], connection.database || connection.group] : [
+      connection.name, target.type === "database" ? "" : target.database,
+      target.type === "table" && !(connection.kind === "mysql" && target.schema === target.database) ? target.schema : "",
+    ];
+    return { id, label: name, category: type, path: context.filter(Boolean).join(" / "), keywords: `${target.type} ${connection.group} ${connection.env}`,
       favorite: favoriteKeys.has(id),
       badge: ENV_LABEL[connection.env] ? { label: t(ENV_LABEL[connection.env]), className: `env-badge env-${connection.env}` } : undefined,
       run: () => onNavigate(target) };

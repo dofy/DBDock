@@ -65,7 +65,10 @@ export function CommandPalette({ commands, onClose, onRun, label = t("Command pa
         {matches.length ? matches.map((command, position) => <button key={command.id} type="button" className="palette-item" id={`${listId}-${position}`} role="option"
           aria-selected={position === selected} tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onMouseMove={() => setSelectedId(command.id)} onClick={() => onRun(command)}>
           {command.favorite && <Star size={13} className="palette-star" fill="currentColor" aria-hidden="true" />}
-          <span className="palette-title" title={command.detail ?? command.label}>{command.label}</span>
+          {command.path ? <span className="palette-object">
+            <span className="palette-title" title={command.label}>{command.label}</span>
+            <span className="palette-path">{command.path}</span>
+          </span> : <span className="palette-title" title={command.detail ?? command.label}>{command.label}</span>}
           {command.badge && <span className={command.badge.className}>{command.badge.label}</span>}
           {command.category && <span className="palette-category" title={command.category}>{command.category}</span>}
           {!onFavorite && !preview && <kbd className="palette-shortcut" aria-hidden={!command.shortcut || undefined}>{command.shortcut || ""}</kbd>}

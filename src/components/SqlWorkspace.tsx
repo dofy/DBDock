@@ -1,4 +1,4 @@
-import { t } from "../i18n";
+import { t, tf } from "../i18n";
 import { tableListStatus } from "../tableListStatus";
 import { SqlHistory } from "../sqlHistory";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -250,6 +250,10 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
 
   const shown = tables.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase()));
   const listStatus = tableListStatus(schema, schemasStatus, tableState.schema, tableState.status, tables.length, shown.length);
+  const tableNameCounts = new Map<string, number>();
+  for (const tab of tabs) {
+    if (tab.type === "table") tableNameCounts.set(tab.table, (tableNameCounts.get(tab.table) ?? 0) + 1);
+  }
 
   return (
     <div className="workspace sql-workspace">
@@ -280,12 +284,14 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
         {schemaError && <div className="status bad">{schemaError}</div>}
         {tableError && <div className="status bad">{tableError}</div>}
         <ul className="list">
-          {shown.map((t) => {
-            const on = tabs.some((x) => x.id === active && x.type === "table" && x.schema === schema && x.table === t.name);
+          {shown.map((table) => {
+            const on = tabs.some((x) => x.id === active && x.type === "table" && x.schema === schema && x.table === table.name);
             return (
-              <li key={t.name} className={on ? "on" : ""} onClick={() => openTable(t)} title={t.name}>
-                <span className={`icon ${t.kind}`}>{t.kind === "view" ? "◇" : "▦"}</span>
-                {t.name}
+              <li key={table.name} className={`sql-object ${on ? "on" : ""}`}>
+                <button type="button" className="link" aria-current={on ? "true" : undefined} onClick={() => openTable(table)} title={table.name}>
+                  <span className={`icon ${table.kind}`} aria-hidden="true">{table.kind === "view" ? "◇" : "▦"}</span>
+                  <span className="sql-object-name">{table.name}</span>
+                </button>
               </li>
             );
           })}
@@ -307,22 +313,27 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
             {t(session.sqlProtection === "browseOnly" ? "Browse only" : "Confirm writes")}
           </span>}
         </div>
-        <div className="tabs">
-          {tabs.map((t, index) => (
-            <div key={t.id} className={`tab ${t.id === active ? "on" : ""}`} onClick={() => { navigationEpoch.current++; setActive(t.id); }}>
-              <span>{t.type === "table" ? `${t.table}` : t.title}</span>
-              {showTabNumbers && index < 9 && <kbd className="tab-number" aria-hidden="true">{index + 1}</kbd>}
-              <button
-                className="x"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void closeTab(t.id);
-                }}
-              >
-                <X size={12} />
+        <div className="tabs" role="group" aria-label={t("Workspace tabs")}>
+          {tabs.map((tab, index) => {
+            const fullName = tab.type === "table" ? `${tab.schema}.${tab.table}` : tab.title;
+            const qualified = tab.type === "table" && (tableNameCounts.get(tab.table) ?? 0) > 1;
+            return <div key={tab.id} className={`tab sql-workspace-tab ${tab.id === active ? "on" : ""}`}>
+              <button type="button" className="link sql-tab-select" aria-label={fullName} aria-pressed={tab.id === active}
+                title={fullName} onClick={() => { navigationEpoch.current++; setActive(tab.id); }}>
+                {qualified && <span className="sql-tab-schema" aria-hidden="true">{tab.schema}.</span>}
+                <span className="sql-tab-name">{tab.type === "table" ? tab.table : tab.title}</span>
+                {showTabNumbers && index < 9 && <kbd className="tab-number" aria-hidden="true">{index + 1}</kbd>}
               </button>
-            </div>
-          ))}
+              <button
+                type="button"
+                className="x"
+                aria-label={tf("Close tab {name}", { name: fullName })}
+                onClick={() => void closeTab(tab.id)}
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
+            </div>;
+          })}
           <button className="tab-add" onClick={newQuery} title={`${t("New query")} (⌘T)`}>
             <FileCode size={14} />SQL
           </button>
