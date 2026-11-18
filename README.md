@@ -68,10 +68,14 @@ A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cl
 - Browse paged table data and sort by column. Combine visual filters with AND or OR, or
   use a SQL WHERE filter on a standard connection. View columns, indexes and foreign keys
   in their own tabs.
-- SQL editor: ⌘T opens a SQL tab and ⇧⌘W closes the current database tab. ⌘↵ runs the selected text or current line; ⇧⌘↵ runs the whole script. Save or
-  load SQL files with the toolbar; recent statements are kept in memory for each connection
-  and selected database until the app exits. Tab accepts a suggestion; Cancel stops a running
-  MySQL / PostgreSQL query. ⌃1–9 select top-level tabs and ⌘1–9 select database tabs; hold
+- Press ⌘K for saved connections, available databases and schemas, and tables in the sidebar’s
+  current schema. Favorites and recent visits stay on this Mac. PostgreSQL and MySQL switches
+  open or reuse independent database sessions.
+- SQL editor: ⌘T opens a SQL tab and ⇧⌘W closes the current database tab. ⌘↵ runs the selection
+  or the full statement under the cursor. ⇧⌘↵ runs the whole script. The toolbar saves and loads
+  SQL files. Search, preview and load submitted SQL from query history, which stays in memory
+  per connection and session database until the app exits. Tab accepts a suggestion. Cancel stops
+  a running MySQL or PostgreSQL query. ⌃1–9 select top-level tabs and ⌘1–9 select database tabs. Hold
   the modifier to show their numbers. ⌥⌘←/→ and ⌃⇧Tab / ⌃Tab cycle tabs.
 - Grid editing for tables with a primary key: double-click a cell, add / delete rows, set
   NULL, preview the SQL and commit with ⌘S. Updates and deletes check the original row.

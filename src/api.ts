@@ -193,12 +193,13 @@ export const api = {
   checkSavedConnection: (id: string) => invoke<void>("check_saved_connection", { id }),
   beginConnect: (attemptId: string) => invoke<void>("begin_connect", { attemptId }),
   cancelConnect: (attemptId: string) => invoke<void>("cancel_connect", { attemptId }),
-  connect: (id: string, attemptId: string) => invoke<SessionInfo>("connect", { id, attemptId }),
+  connect: (id: string, attemptId: string, database?: string) => invoke<SessionInfo>("connect", { id, attemptId, database }),
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
 
   readSqlFile: (path: string) => invoke<string>("read_sql_file", { path }),
   writeSqlFile: (path: string, contents: string) => invoke<void>("write_sql_file", { path, contents }),
 
+  databases: (sessionId: string) => invoke<string[]>("sql_databases", { sessionId }),
   schemas: (sessionId: string) => invoke<string[]>("sql_schemas", { sessionId }),
   tables: (sessionId: string, schema: string) => invoke<TableInfo[]>("sql_tables", { sessionId, schema }),
   structure: (sessionId: string, schema: string, table: string, requestId: string) =>

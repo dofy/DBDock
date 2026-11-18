@@ -9,6 +9,10 @@ import { Database, FileCode, LockKeyhole, Plus, RefreshCw, ShieldAlert, X } from
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { SchemaEditor } from "./SchemaEditor";
 import { EnvBadge } from "./Home";
+import { useToast } from "./Toast";
+import type { NavigationCatalog, NavigationTarget } from "../navigation";
+
+type ObjectTarget = Extract<NavigationTarget, { type: "schema" | "table" }>;
 
 type Tab =
   | { id: string; type: "table"; schema: string; table: string; isView: boolean }
@@ -21,6 +25,12 @@ interface Props {
   database: string;
   env: string;
   history: SqlHistory;
+  visible: boolean;
+  showQuick: boolean;
+  onCatalog: (catalog: NavigationCatalog) => void;
+  navigationRequest?: { target: ObjectTarget };
+  onNavigate: (target: NavigationTarget) => void;
+  onVisit: (target: NavigationTarget) => void;
   showTabNumbers: boolean;
   dark: boolean;
   dirtyTabs: React.MutableRefObject<Map<string, Map<string, "dirty" | "busy">>>;
@@ -29,15 +39,22 @@ interface Props {
 let seq = 0;
 const newId = () => `t${++seq}`;
 
-export function SqlWorkspace({ session, connectionId, connectionName, database, env, history, showTabNumbers, dark, dirtyTabs }: Props) {
+export function SqlWorkspace({ session, connectionId, connectionName, database, env, history, visible, showQuick, onCatalog,
+  navigationRequest, onNavigate, onVisit, showTabNumbers, dark, dirtyTabs }: Props) {
   const sid = session.sessionId;
+  const isMysql = session.kind === "mysql";
+  const isPostgres = session.kind === "postgres";
+  const toast = useToast();
   const [schemas, setSchemas] = useState<string[]>([]);
   const [schema, setSchema] = useState(session.defaultSchema || "");
+  const [postgresDatabases, setPostgresDatabases] = useState<string[]>([]);
+  const [databaseStatus, setDatabaseStatus] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null });
   const [tableState, setTableState] = useState<{ schema: string; status: "loading" | "ready" | "error"; items: TableInfo[]; error?: string }>({ schema: "", status: "loading", items: [] });
   const [schemasStatus, setSchemasStatus] = useState<"loading" | "ready" | "error">("loading");
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [schemaReload, setSchemaReload] = useState(0);
   const tableRequest = useRef(0);
+  const navigationEpoch = useRef(0);
   const [filter, setFilter] = useState("");
   const [creating, setCreating] = useState(false);
   const [tabs, setTabs] = useState<Tab[]>([{ id: newId(), type: "query", title: "Query 1", sql: "" }]);
@@ -52,7 +69,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     api.schemas(sid).then((s) => {
       if (!current) return;
       setSchemas(s);
-      setSchema((cur) => cur || s[0] || "");
+      if (!isMysql) setSchema((cur) => cur || s[0] || "");
       setSchemasStatus("ready");
     }).catch((e) => {
       if (!current) return;
@@ -60,7 +77,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
       setSchemasStatus("error");
     });
     return () => { current = false; };
-  }, [sid, schemaReload]);
+  }, [sid, schemaReload, isMysql]);
 
   const loadTables = useCallback(() => {
     if (!schema) return;
@@ -85,13 +102,14 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     return () => { tableRequest.current++; };
   }, [loadTables]);
 
-  const tables = tableState.schema === schema ? tableState.items : [];
+  const tables = useMemo(() => tableState.schema === schema ? tableState.items : [], [tableState, schema]);
   const tableError = tableState.schema === schema && tableState.status === "error" ? tableState.error : null;
 
   useEffect(() => {
     const cycle = (event: Event) => {
       const { sessionId, direction, index } = (event as CustomEvent<{ sessionId: string; direction?: number; index?: number }>).detail;
       if (sessionId !== sid || !tabs.length) return;
+      navigationEpoch.current++;
       if (index !== undefined) {
         if (index >= 0 && index < tabs.length) setActive(tabs[index].id);
         return;
@@ -111,15 +129,96 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
     return out;
   }, [tables, columns]);
 
-  const openTable = (t: TableInfo) => {
-    const existing = tabs.find((x) => x.type === "table" && x.schema === schema && x.table === t.name);
-    if (existing) return setActive(existing.id);
-    const tab: Tab = { id: newId(), type: "table", schema, table: t.name, isView: t.kind === "view" };
-    setTabs((ts) => [...ts, tab]);
+  const selectSchema = useCallback((name: string) => {
+    navigationEpoch.current++;
+    setSchema(name);
+    setFilter("");
+  }, []);
+
+  const openTable = (table: TableInfo, tableSchema = schema) => {
+    navigationEpoch.current++;
+    const existing = tabs.find((tab) => tab.type === "table" && tab.schema === tableSchema && tab.table === table.name);
+    if (existing) { setActive(existing.id); return; }
+    const tab: Tab = { id: newId(), type: "table", schema: tableSchema, table: table.name, isView: table.kind === "view" };
+    setTabs((items) => [...items, tab]);
     setActive(tab.id);
   };
 
+  const activeTable = tabs.find((tab) => tab.id === active && tab.type === "table");
+  useEffect(() => {
+    if (visible && activeTable?.type === "table") {
+      onVisit({ type: "table", connectionId, database, schema: activeTable.schema, table: activeTable.table });
+    }
+  }, [visible, activeTable, connectionId, database, onVisit]);
+
+  const tableActions = useRef({ openTable, tableState, tabs, schemas, schemasStatus });
+  tableActions.current = { openTable, tableState, tabs, schemas, schemasStatus };
+  useEffect(() => {
+    if (!navigationRequest) return;
+    const { target } = navigationRequest;
+    const epoch = ++navigationEpoch.current;
+    const stillCurrent = () => epoch === navigationEpoch.current;
+    const openTarget = async () => {
+      const { tableState: state, tabs: openTabs, schemas: knownSchemas, schemasStatus: status } = tableActions.current;
+      if (target.type === "schema") {
+        const available = status === "ready" ? knownSchemas : await api.schemas(sid);
+        if (!stillCurrent()) return;
+        if (!available.includes(target.schema)) { toast("error", t("This schema is no longer available")); return; }
+        selectSchema(target.schema);
+        onVisit(target);
+        return;
+      }
+      const existing = openTabs.find((tab) => tab.type === "table" && tab.schema === target.schema && tab.table === target.table);
+      if (existing) {
+        selectSchema(target.schema);
+        setActive(existing.id);
+        return;
+      }
+      const items = state.schema === target.schema && state.status === "ready" ? state.items : await api.tables(sid, target.schema);
+      if (!stillCurrent()) return;
+      const table = items.find(({ name }) => name === target.table);
+      if (!table) {
+        toast("error", t("This table is no longer available"));
+        return;
+      }
+      selectSchema(target.schema);
+      tableActions.current.openTable(table, target.schema);
+    };
+    void openTarget().catch((error) => { if (stillCurrent()) toast("error", errText(error)); });
+    return () => { navigationEpoch.current++; };
+  }, [navigationRequest, sid, selectSchema, onVisit, toast]);
+
+  useEffect(() => {
+    if (!isPostgres || !showQuick) return;
+    let current = true;
+    setDatabaseStatus({ loading: true, error: null });
+    api.databases(sid).then((items) => {
+      if (!current) return;
+      setPostgresDatabases(items);
+      setDatabaseStatus({ loading: false, error: null });
+    }).catch((error) => {
+      if (current) setDatabaseStatus({ loading: false, error: errText(error) });
+    });
+    return () => { current = false; };
+  }, [isPostgres, showQuick, sid]);
+
+  useEffect(() => {
+    if (!showQuick) return;
+    const databases = isPostgres ? postgresDatabases : isMysql ? schemas : [];
+    const targets: NavigationTarget[] = [
+      ...databases.map((name): NavigationTarget => ({ type: "database", connectionId, database: name })),
+      ...(isMysql ? [] : schemas.map((name): NavigationTarget => ({ type: "schema", connectionId, database, schema: name }))),
+      ...tables.map((item): NavigationTarget => ({ type: "table", connectionId, database, schema, table: item.name })),
+    ];
+    onCatalog({
+      sessionId: sid, targets,
+      loadingDatabases: isPostgres ? databaseStatus.loading : isMysql && schemasStatus === "loading",
+      databaseError: isPostgres ? databaseStatus.error : isMysql ? schemaError : null,
+    });
+  }, [showQuick, isPostgres, postgresDatabases, isMysql, schemas, schema, tables, databaseStatus, schemasStatus, schemaError, onCatalog, connectionId, database, sid]);
+
   const newQuery = () => {
+    navigationEpoch.current++;
     const n = tabs.filter((t) => t.type === "query").length + 1;
     const tab: Tab = { id: newId(), type: "query", title: `Query ${n}`, sql: "" };
     setTabs((ts) => [...ts, tab]);
@@ -155,7 +254,16 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
   return (
     <div className="workspace sql-workspace">
       <aside className="sidebar">
-        <select value={schema} onChange={(e) => { tableRequest.current++; setSchema(e.target.value); }} title={session.kind === "mysql" ? t("Database") : t("Schema")}>
+        <select value={schema} onChange={(e) => {
+          const name = e.target.value;
+          if (isMysql) onNavigate({ type: "database", connectionId, database: name });
+          else {
+            selectSchema(name);
+            onVisit({ type: "schema", connectionId, database, schema: name });
+          }
+        }} title={t(isMysql ? "Database" : "Schema")} aria-label={t(isMysql ? "Database" : "Schema")}>
+          {!schema && <option value="" disabled>{isMysql ? t("Choose database") : ""}</option>}
+          {!!schema && !schemas.includes(schema) && <option>{schema}</option>}
           {schemas.map((s) => (
             <option key={s}>{s}</option>
           ))}
@@ -182,7 +290,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
             );
           })}
           {listStatus === "loading" && <li className="muted loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading tables…")}</li>}
-          {listStatus === "no-schemas" && <li className="muted">{t("No schemas")}</li>}
+          {listStatus === "no-schemas" && <li className="muted">{t(isMysql && schemas.length ? "Choose database" : "No schemas")}</li>}
           {listStatus === "no-tables" && <li className="muted">{t("No tables")}</li>}
           {listStatus === "no-matches" && <li className="muted">{t("No matching tables")}</li>}
         </ul>
@@ -193,6 +301,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
           {env === "production" ? <ShieldAlert size={15} aria-hidden="true" /> : <Database size={15} aria-hidden="true" />}
           <EnvBadge env={env} />
           <strong title={connectionName}>{connectionName}</strong>
+          {(isMysql || isPostgres) && database && <span className="sql-context-database" title={database}>{database}</span>}
           {session.sqlProtection !== "automatic" && <span className="sql-protection">
             <LockKeyhole size={13} aria-hidden="true" />
             {t(session.sqlProtection === "browseOnly" ? "Browse only" : "Confirm writes")}
@@ -200,7 +309,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
         </div>
         <div className="tabs">
           {tabs.map((t, index) => (
-            <div key={t.id} className={`tab ${t.id === active ? "on" : ""}`} onClick={() => setActive(t.id)}>
+            <div key={t.id} className={`tab ${t.id === active ? "on" : ""}`} onClick={() => { navigationEpoch.current++; setActive(t.id); }}>
               <span>{t.type === "table" ? `${t.table}` : t.title}</span>
               {showTabNumbers && index < 9 && <kbd className="tab-number" aria-hidden="true">{index + 1}</kbd>}
               <button
@@ -243,12 +352,13 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
                 <QueryView
                   sessionId={sid}
                   kind={session.kind}
-                  history={history.get(connectionId, schema)}
+                  history={history.get(connectionId, database)}
+                  visible={visible && t.id === active}
                   protection={session.sqlProtection}
                   connectionName={connectionName}
                   database={database}
                   env={env}
-                  onExecuted={(sql) => { history.add(connectionId, schema, sql); setHistoryVersion((n) => n + 1); }}
+                  onExecuted={(sql) => { history.add(connectionId, database, sql); setHistoryVersion((n) => n + 1); }}
                   value={t.sql}
                   onChange={(v) => setTabs((ts) => ts.map((x) => (x.id === t.id && x.type === "query" ? { ...x, sql: v } : x)))}
                   schema={completion}

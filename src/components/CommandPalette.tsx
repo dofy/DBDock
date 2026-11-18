@@ -1,33 +1,85 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Search, Star } from "lucide-react";
 import { t } from "../i18n";
 import { filterCommands, type PaletteCommand } from "../commandPalette";
 
-export function CommandPalette({ commands, onClose, onRun }: { commands: PaletteCommand[]; onClose: () => void; onRun: (command: PaletteCommand) => void }) {
+interface Props {
+  commands: PaletteCommand[];
+  onClose: () => void;
+  onRun: (command: PaletteCommand) => void;
+  label?: string;
+  placeholder?: string;
+  empty?: string;
+  controls?: ReactNode;
+  status?: ReactNode;
+  onFavorite?: (command: PaletteCommand) => void;
+  preview?: boolean;
+}
+
+export function CommandPalette({ commands, onClose, onRun, label = t("Command palette"), placeholder = t("Search commands"),
+  empty = t("No matching commands"), controls, status, onFavorite, preview }: Props) {
   const [query, setQuery] = useState("");
-  const [index, setIndex] = useState(0);
+  const [selectedId, setSelectedId] = useState<string>();
+  const listId = useId();
   const list = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   const matches = filterCommands(commands, query);
-  const selected = Math.min(index, Math.max(0, matches.length - 1));
-  useEffect(() => { list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }, [selected, query]);
+  const selected = Math.max(0, matches.findIndex((command) => command.id === selectedId));
+  const current = matches[selected];
+
+  useEffect(() => { list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }, [current?.id, selected]);
+
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return;
-    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
-    else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault(); event.stopPropagation();
-      if (matches.length) setIndex((selected + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
+      if (matches.length) setSelectedId(matches[(selected + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length].id);
     } else if (event.key === "Enter") {
       event.preventDefault(); event.stopPropagation();
-      if (!event.repeat && matches[selected]) onRun(matches[selected]);
+      if (!event.repeat && current) onRun(current);
     }
   };
+
   return <div className="palette-backdrop" onMouseDown={onClose}>
-    <div className="command-palette" role="dialog" aria-modal="true" aria-label={t("Command palette")} onMouseDown={(event) => event.stopPropagation()}>
-      <div className="palette-search"><Search size={17} aria-hidden="true"/><input autoFocus role="combobox" aria-expanded="true" aria-controls="palette-results" aria-autocomplete="list" aria-activedescendant={matches.length ? `palette-option-${selected}` : undefined} aria-label={t("Search commands")} placeholder={t("Search commands")} value={query} onChange={(event) => { setQuery(event.target.value); setIndex(0); }} onKeyDown={onKeyDown} spellCheck={false}/><kbd>esc</kbd></div>
-      <div className="palette-results" id="palette-results" role="listbox" ref={list}>
-        {matches.length ? matches.map((command, position) => <button key={command.id} type="button" className="palette-item" id={`palette-option-${position}`} role="option" aria-selected={position === selected} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setIndex(position)} onClick={() => onRun(command)}><span className="palette-title">{command.label}</span><span className="palette-category">{command.category}</span><kbd className="palette-shortcut" aria-hidden={!command.shortcut || undefined}>{command.shortcut || ""}</kbd></button>) : <div className="palette-empty">{t("No matching commands")}</div>}
+    <div className="command-palette" role="dialog" aria-modal="true" aria-label={label} onMouseDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+          event.preventDefault(); event.stopPropagation(); onClose();
+        }
+        if (event.key === "Tab") {
+          const focusable = event.currentTarget.querySelectorAll<HTMLElement>('input, button:not(:disabled):not([tabindex="-1"])');
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey ? event.target === first : event.target === last) {
+            event.preventDefault();
+            (event.shiftKey ? last : first)?.focus();
+          }
+        }
+      }}>
+      <div className="palette-search"><Search size={17} aria-hidden="true"/><input ref={input} autoFocus role="combobox" aria-expanded="true" aria-controls={listId}
+        aria-autocomplete="list" aria-activedescendant={current ? `${listId}-${selected}` : undefined} aria-label={placeholder} placeholder={placeholder}
+        value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(undefined); }} onKeyDown={onKeyDown} spellCheck={false}/><kbd>esc</kbd></div>
+      {controls && <div className="palette-controls" onClick={() => { setSelectedId(undefined); input.current?.focus(); }}>{controls}</div>}
+      {status && <div className="palette-status" role="status">{status}</div>}
+      <div className="palette-results" id={listId} role="listbox" aria-label={label} ref={list}>
+        {matches.length ? matches.map((command, position) => <button key={command.id} type="button" className="palette-item" id={`${listId}-${position}`} role="option"
+          aria-selected={position === selected} tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onMouseMove={() => setSelectedId(command.id)} onClick={() => onRun(command)}>
+          {command.favorite && <Star size={13} className="palette-star" fill="currentColor" aria-hidden="true" />}
+          <span className="palette-title" title={command.detail ?? command.label}>{command.label}</span>
+          {command.badge && <span className={command.badge.className}>{command.badge.label}</span>}
+          {command.category && <span className="palette-category" title={command.category}>{command.category}</span>}
+          {!onFavorite && !preview && <kbd className="palette-shortcut" aria-hidden={!command.shortcut || undefined}>{command.shortcut || ""}</kbd>}
+        </button>) : <div className="palette-empty">{empty}</div>}
       </div>
-      <div className="palette-footer"><span>{t("Choose a command")}</span><span>↑↓ · ↵</span></div>
+      {preview && current?.detail && <pre className="palette-preview">{current.detail}</pre>}
+      <div className="palette-footer">
+        {onFavorite ? <button className="palette-favorite" type="button" disabled={!current} aria-pressed={current?.favorite ?? false}
+          onClick={() => { if (current) { setSelectedId(current.id); onFavorite(current); } input.current?.focus(); }}>
+          <Star size={14} fill={current?.favorite ? "currentColor" : "none"} aria-hidden="true" />
+          {t(current?.favorite ? "Remove favorite" : "Add favorite")}
+        </button> : <span>{preview ? t("Load into editor") : t("Choose a command")}</span>}
+        <span>↑↓ · ↵</span>
+      </div>
     </div>
   </div>;
 }

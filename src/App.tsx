@@ -15,18 +15,32 @@ import { CommandPalette } from "./components/CommandPalette";
 import type { PaletteCommand } from "./commandPalette";
 import { AboutDialog } from "./components/AboutDialog";
 import "./styles.css";
-import { Database, X } from "lucide-react";
+import { Database, Search, X } from "lucide-react";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { updateSettings, useDarkMode, useSettings } from "./settings";
 import { resolveLocale } from "./i18n";
 import { clearHealth } from "./healthHistory";
 import { SqlHistory } from "./sqlHistory";
 import { quitDecision } from "./quitGuard";
+import { QuickNavigation } from "./components/QuickNavigation";
+import { destinationKey, pruneNavigation, readNavigation, saveNavigation, sessionDatabase, toggleFavorite, visitTarget,
+  type NavigationCatalog, type NavigationTarget } from "./navigation";
 
 interface Open {
   conn: ConnectionConfig;
   session: SessionInfo;
+  database: string;
+  destination: string;
+  alternate: boolean;
 }
+
+interface PendingConnection {
+  key: string;
+  conn: ConnectionConfig;
+  database?: string;
+}
+
+type ObjectTarget = Extract<NavigationTarget, { type: "schema" | "table" }>;
 
 function Shell() {
   const dark = useDarkMode();
@@ -49,12 +63,18 @@ function Shell() {
   const [opened, setOpened] = useState<Open[]>([]);
   const [active, setActive] = useState<string | null>(null); // sessionId, null = home
   const [editing, setEditing] = useState<ConnectionConfig | { newInGroup: string } | null>(null);
-  const [connecting, setConnecting] = useState<ConnectionConfig[]>([]);
-  const connectingIds = useRef(new Map<string, string>());
+  const [connecting, setConnecting] = useState<PendingConnection[]>([]);
+  const connectingIds = useRef(new Map<string, { attemptId: string; target?: ObjectTarget }>());
   const [homeAction, setHomeAction] = useState<MenuAction | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
+  const [showQuick, setShowQuick] = useState(false);
+  const [navigation, setNavigation] = useState(() => readNavigation(localStorage));
+  const [catalog, setCatalog] = useState<NavigationCatalog>();
+  const [navigationRequest, setNavigationRequest] = useState<{ sessionId: string; target: ObjectTarget }>();
+  const recordVisit = useCallback((target: NavigationTarget) => setNavigation((current) => visitTarget(current, target)), []);
+  useEffect(() => { saveNavigation(localStorage, navigation); }, [navigation]);
   const previousFocus = useRef<HTMLElement | null>(null);
   const pendingCommand = useRef<PaletteCommand | null>(null);
   const openCommands = () => {
@@ -62,14 +82,21 @@ function Shell() {
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setShowCommand(true);
   };
+  const openQuick = () => {
+    if (document.querySelector('.modal-backdrop:not([hidden]), .palette-backdrop')) return;
+    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setShowQuick(true);
+  };
   useEffect(() => {
-    if (showCommand) return;
+    if (showCommand || showQuick) return;
     const command = pendingCommand.current; pendingCommand.current = null;
+    const focus = previousFocus.current;
+    previousFocus.current = null;
     if (command) { command.run(); return; }
-    previousFocus.current?.focus(); previousFocus.current = null;
-  }, [showCommand]);
+    focus?.focus();
+  }, [showCommand, showQuick]);
   const [heldTabModifier, setHeldTabModifier] = useState<"cmd" | "ctrl" | null>(null);
-  const sqlHistory = useRef(new SqlHistory());
+  const [sqlHistory] = useState(() => new SqlHistory());
   const dirtyTabs = useRef(new Map<string, Map<string, "dirty" | "busy">>());
   const closingSessions = useRef(new Set<string>());
   const quitPending = useRef(false);
@@ -79,6 +106,8 @@ function Shell() {
       const [c, g] = await Promise.all([api.listConnections(), api.listGroups()]);
       setConns(c);
       setGroups(g);
+      const ids = new Set(c.map(({ id }) => id));
+      setNavigation((current) => pruneNavigation(current, ids));
     } catch (e) {
       toast("error", errText(e));
     }
@@ -88,42 +117,68 @@ function Shell() {
     void reload();
   }, [reload]);
 
-  const cancelPending = (id: string) => {
-    const attemptId = connectingIds.current.get(id);
-    if (!attemptId) return;
-    connectingIds.current.delete(id);
-    setConnecting((pending) => pending.filter((item) => item.id !== id));
-    setActive((current) => current === `connecting:${id}` ? null : current);
-    void api.cancelConnect(attemptId).catch(() => {});
+  const cancelPending = (key: string) => {
+    const attempt = connectingIds.current.get(key);
+    if (!attempt) return;
+    connectingIds.current.delete(key);
+    setConnecting((pending) => pending.filter((item) => item.key !== key));
+    setActive((current) => current === `connecting:${key}` ? null : current);
+    void api.cancelConnect(attempt.attemptId).catch(() => {});
   };
 
-  const connect = async (c: ConnectionConfig) => {
-    const pendingId = `connecting:${c.id}`;
-    if (connectingIds.current.has(c.id)) { setActive(pendingId); return; }
+  const connect = async (conn: ConnectionConfig, target?: NavigationTarget) => {
+    const database = target && "database" in target && ["mysql", "postgres"].includes(conn.kind) ? target.database : undefined;
+    const wanted = sessionDatabase(conn.kind, database ?? conn.database, "");
+    const key = destinationKey(conn.id, wanted);
+    const objectTarget = target?.type === "table" || target?.type === "schema" ? target : undefined;
+    const existing = opened.find((item) => item.conn.id === conn.id && (item.destination === key || item.database === wanted));
+    if (existing) {
+      setActive(existing.session.sessionId);
+      if (objectTarget) setNavigationRequest({ sessionId: existing.session.sessionId, target: objectTarget });
+      return;
+    }
+    const pendingId = `connecting:${key}`;
+    const pending = connectingIds.current.get(key);
+    if (pending) {
+      pending.target = objectTarget;
+      setActive(pendingId);
+      return;
+    }
     const attemptId = crypto.randomUUID();
-    connectingIds.current.set(c.id, attemptId);
-    setConnecting((pending) => [...pending, c]);
+    const attempt = { attemptId, target: objectTarget };
+    connectingIds.current.set(key, attempt);
+    setConnecting((items) => [...items, { key, conn, database }]);
     setActive(pendingId);
-    const stillPending = () => connectingIds.current.get(c.id) === attemptId;
+    const stillPending = () => connectingIds.current.get(key) === attempt;
     try {
       await api.beginConnect(attemptId);
       // Cancellation may have happened before the backend registered the attempt.
       if (!stillPending()) await api.cancelConnect(attemptId);
-      const session = await api.connect(c.id, attemptId);
+      const session = await api.connect(conn.id, attemptId, database || undefined);
       if (!stillPending()) { await api.disconnect(session.sessionId); return; }
-      setOpened((o) => [...o, { conn: c, session }]);
+      const actual = sessionDatabase(conn.kind, database ?? conn.database, session.defaultSchema);
+      const alternate = !!database && database !== sessionDatabase(conn.kind, conn.database, "");
+      setOpened((items) => [...items, { conn, session, database: actual, destination: key, alternate }]);
+      if (attempt.target) setNavigationRequest({ sessionId: session.sessionId, target: attempt.target });
       setActive((current) => current === pendingId ? session.sessionId : current);
     } catch (e) {
       if (stillPending()) {
-        toast("error", `${c.name}: ${errText(e)}`);
+        const name = database ? `${conn.name} / ${database}` : conn.name;
+        toast("error", `${name}: ${errText(e)}`);
         setActive((current) => current === pendingId ? null : current);
       }
     } finally {
       if (stillPending()) {
-        connectingIds.current.delete(c.id);
-        setConnecting((pending) => pending.filter((item) => item.id !== c.id));
+        connectingIds.current.delete(key);
+        setConnecting((items) => items.filter((item) => item.key !== key));
       }
     }
+  };
+
+  const navigate = (target: NavigationTarget) => {
+    setShowQuick(false);
+    const connection = conns.find((item) => item.id === target.connectionId);
+    if (connection) void connect(connection, target);
   };
 
   const close = async (sessionId: string, confirmClose = false) => {
@@ -133,7 +188,8 @@ function Shell() {
       const tabs = dirtyTabs.current.get(sessionId);
       if (tabs && [...tabs.values()].includes("busy")) { await message(t("Wait for the commit to finish before closing this connection.")); return; }
       if (confirmClose) {
-        const name = opened.find((item) => item.session.sessionId === sessionId)?.conn.name ?? "";
+        const item = opened.find((entry) => entry.session.sessionId === sessionId);
+        const name = item?.alternate ? `${item.conn.name} / ${item.database}` : item?.conn.name ?? "";
         const question = tabs?.size
           ? tf('Close connection "{name}" and discard its uncommitted changes?', { name })
           : tf('Close connection "{name}"?', { name });
@@ -169,8 +225,10 @@ function Shell() {
   // Native menu: session-level items here, the rest go to the home screen.
   const menuRef = useRef<(id: string) => void>(() => {});
   menuRef.current = (id: string) => {
-    const ids = [null, ...connecting.map((c) => `connecting:${c.id}`), ...opened.map((o) => o.session.sessionId)];
+    const ids = [null, ...connecting.map(({ key }) => `connecting:${key}`), ...opened.map((o) => o.session.sessionId)];
     const cycle = (d: number) => setActive(ids[(ids.indexOf(active) + d + ids.length) % ids.length]);
+    if ((id.includes("-slot-") || ["next-tab", "prev-tab", "next-database-tab", "prev-database-tab"].includes(id))
+      && document.querySelector(".palette-backdrop")) return;
     if (id.startsWith("session-slot-")) {
       const index = Number(id.slice("session-slot-".length)) - 1;
       if (index >= 0 && index < ids.length) setActive(ids[index]);
@@ -186,6 +244,8 @@ function Shell() {
         return;
       case "command-palette":
         return openCommands();
+      case "quick-switch":
+        return openQuick();
       case "new-connection":
         return setEditing({ newInGroup: "" });
       case "settings":
@@ -236,10 +296,12 @@ function Shell() {
       e.stopPropagation();
     };
     const paletteKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && !e.isComposing && e.key.toLowerCase() === "p") {
-        if (document.querySelector('.modal-backdrop:not([hidden])') || document.querySelector('.palette-backdrop')) return;
-        e.preventDefault(); e.stopPropagation(); if (!e.repeat) menuRef.current("command-palette");
-      }
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.isComposing) return;
+      const key = e.key.toLowerCase();
+      const action = e.shiftKey && key === "p" ? "command-palette" : !e.shiftKey && key === "k" ? "quick-switch" : null;
+      if (!action || document.querySelector('.modal-backdrop:not([hidden]), .palette-backdrop')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (!e.repeat) menuRef.current(action);
     };
     window.addEventListener("keydown", paletteKey, true);
     window.addEventListener("keydown", numberedTab, true);
@@ -257,10 +319,20 @@ function Shell() {
   }, []);
 
   const activeSession = opened.find((item) => item.session.sessionId === active);
+  useEffect(() => {
+    if (!activeSession) return;
+    const { conn, database } = activeSession;
+    recordVisit({ type: "connection", connectionId: conn.id });
+    if (database && (conn.kind === "mysql" || conn.kind === "postgres")) {
+      recordVisit({ type: "database", connectionId: conn.id, database });
+    }
+  }, [activeSession, recordVisit]);
+
   const noteCategory = t("Connections"), settingsCategory = t("Settings"), databaseCategory = t("Database");
   const action = (id: string, label: string, category: string, keywords: string, shortcut?: string): PaletteCommand => ({ id, label: t(label), category, keywords, shortcut, run: () => menuRef.current(id) });
   const commands: PaletteCommand[] = [
     action("new-connection", "New connection", noteCategory, "create connection", "⌘N"),
+    action("quick-switch", "Quick switch", databaseCategory, "go to table database schema favorite recent", "⌘K"),
     action("home", "Connections", noteCategory, "home connections"),
     action("find", "Search connections", noteCategory, "search find connection", "⌘F"),
     action("new-group", "New group", noteCategory, "create group", "⌘⇧N"),
@@ -276,8 +348,7 @@ function Shell() {
   if (activeSession && !["redis","mongodb"].includes(activeSession.session.kind)) commands.splice(1,0,action("new-sql-tab","New query",databaseCategory,"new sql query", "⌘T"));
   if (active) commands.push(action("close-tab","Close connection",databaseCategory,"close session"));
   for (const connection of conns) commands.push({id:`connection-${connection.id}`,label:tf("Connect to {name}",{name:connection.name}),category:noteCategory,keywords:`connect ${connection.kind}`,run:()=>{
-    const existing=opened.find((item)=>item.conn.id===connection.id);
-    if(existing)setActive(existing.session.sessionId);else void connect(connection);
+    void connect(connection);
   }});
 
   return (
@@ -285,10 +356,10 @@ function Shell() {
       <header className="topbar">
         <button className={`top-tab home ${active === null ? "on" : ""}`} onClick={() => setActive(null)}>
            {t("Connections")} {heldTabModifier === "ctrl" && <kbd className="tab-number" aria-hidden="true">1</kbd>}</button>
-        {connecting.map((c, index) => <div key={c.id} className={`top-tab ${active === `connecting:${c.id}` ? "on" : ""}`} onClick={() => setActive(`connecting:${c.id}`)}>
-          <span className="loading-spinner" aria-hidden="true" />{c.name}<EnvBadge env={c.env} />{heldTabModifier === "ctrl" && index < 8 && <kbd className="tab-number" aria-hidden="true">{index + 2}</kbd>}<button className="x" title={t("Cancel connection")} aria-label={t("Cancel connection")} onClick={(e) => { e.stopPropagation(); cancelPending(c.id); }}><X size={12} /></button>
+        {connecting.map(({ key, conn, database }, index) => <div key={key} className={`top-tab ${active === `connecting:${key}` ? "on" : ""}`} onClick={() => setActive(`connecting:${key}`)}>
+          <span className="loading-spinner" aria-hidden="true" />{database ? `${conn.name} / ${database}` : conn.name}<EnvBadge env={conn.env} />{heldTabModifier === "ctrl" && index < 8 && <kbd className="tab-number" aria-hidden="true">{index + 2}</kbd>}<button className="x" title={t("Cancel connection")} aria-label={t("Cancel connection")} onClick={(e) => { e.stopPropagation(); cancelPending(key); }}><X size={12} /></button>
         </div>)}
-        {opened.map(({ conn, session }, index) => (
+        {opened.map(({ conn, session, database, alternate }, index) => (
           <div
             key={session.sessionId}
             className={`top-tab ${active === session.sessionId ? "on" : ""} ${conn.env === "production" ? "prod-tab" : ""}`}
@@ -296,7 +367,7 @@ function Shell() {
             title={session.serverVersion}
           >
             <DbIcon kind={conn.kind} size={18} />
-            {conn.name}
+            {alternate ? `${conn.name} / ${database}` : conn.name}
             <EnvBadge env={conn.env} />
             {heldTabModifier === "ctrl" && index + connecting.length < 8 && <kbd className="tab-number" aria-hidden="true">{index + connecting.length + 2}</kbd>}
             <button
@@ -310,32 +381,40 @@ function Shell() {
             </button>
           </div>
         ))}
+        <button className="top-tab quick-switch" type="button" title={`${t("Quick switch")} (⌘K)`} aria-label={t("Quick switch")} onClick={openQuick}>
+          <Search size={15} aria-hidden="true" />
+        </button>
       </header>
 
-      {active === null && <Home action={homeAction} conns={conns} groups={groups} reload={reload} connecting={connecting.map((c) => c.id)} onConnect={(c) => void connect(c)} onEdit={setEditing} />}
+      {active === null && <Home action={homeAction} conns={conns} groups={groups} reload={reload} connecting={connecting.filter((item) => !item.database).map(({ conn }) => conn.id)} onConnect={(c) => void connect(c)} onEdit={setEditing} />}
 
-      {connecting.map((c) => <div key={c.id} className="session connecting-workspace" hidden={active !== `connecting:${c.id}`}>
+      {connecting.map(({ key, conn, database }) => <div key={key} className="session connecting-workspace" hidden={active !== `connecting:${key}`}>
         <aside className="connecting-sidebar" aria-hidden="true"><span /><span /><span /><span /></aside>
         <div className="connecting-content" role="status" aria-live="polite">
           <div className="connecting-icon"><Database size={26} aria-hidden="true" /><span className="connecting-spinner" aria-hidden="true"><span className="loading-spinner" /></span></div>
-          <strong>{tf("Connecting to {name}…", { name: c.name })}</strong>
+          <strong>{tf("Connecting to {name}…", { name: database ? `${conn.name} / ${database}` : conn.name })}</strong>
           <span>{t("Waiting for the connection or Keychain authorization…")}</span>
         </div>
       </div>)}
 
-      {opened.map(({ conn, session }) => (
+      {opened.map(({ conn, session, database }) => (
         <div key={session.sessionId} className="session" hidden={active !== session.sessionId}>
           {session.kind === "redis" ? (
             <RedisWorkspace session={session} />
           ) : session.kind === "mongodb" ? (
             <MongoWorkspace session={session} dark={dark} />
           ) : (
-            <SqlWorkspace session={session} connectionId={conn.id} connectionName={conn.name} database={conn.database} env={conn.env} history={sqlHistory.current} showTabNumbers={active === session.sessionId && heldTabModifier === "cmd"} dark={dark} dirtyTabs={dirtyTabs} />
+            <SqlWorkspace session={session} connectionId={conn.id} connectionName={conn.name} database={database} env={conn.env} history={sqlHistory}
+              visible={active === session.sessionId} showQuick={showQuick && active === session.sessionId} onCatalog={setCatalog}
+              navigationRequest={navigationRequest?.sessionId === session.sessionId ? navigationRequest : undefined}
+              onNavigate={navigate} onVisit={recordVisit} showTabNumbers={active === session.sessionId && heldTabModifier === "cmd"} dark={dark} dirtyTabs={dirtyTabs} />
           )}
         </div>
       ))}
 
       {showCommand && <CommandPalette commands={commands} onClose={() => setShowCommand(false)} onRun={(command) => { pendingCommand.current = command; setShowCommand(false); }} />}
+      {showQuick && <QuickNavigation connections={conns} catalog={catalog?.sessionId === active ? catalog : undefined} history={navigation}
+        onClose={() => setShowQuick(false)} onNavigate={navigate} onFavorite={(target) => setNavigation((current) => toggleFavorite(current, target))} />}
       {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
 

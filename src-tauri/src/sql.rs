@@ -485,6 +485,19 @@ impl SqlPool {
         }
     }
 
+    /// PostgreSQL databases are separate connection targets, unlike schemas.
+    pub async fn databases(&self) -> Result<Vec<String>> {
+        if !matches!(self, SqlPool::Pg(_) | SqlPool::BrowserPg(_)) {
+            return Ok(Vec::new());
+        }
+        let rows = self.strings(
+            "SELECT datname::text FROM pg_catalog.pg_database \
+             WHERE datallowconn AND NOT datistemplate \
+               AND pg_catalog.has_database_privilege(oid, 'CONNECT') ORDER BY datname".into(),
+        ).await?;
+        Ok(rows.into_iter().filter_map(|row| row.into_iter().next()).collect())
+    }
+
     pub async fn schemas(&self) -> Result<Vec<String>> {
         if let SqlPool::D1(_) = self {
             return Ok(vec!["main".into()]);
@@ -944,6 +957,38 @@ mod tests {
         let result = async { run_browser!(&browser, "SELECT 43", decode_pg, Duration::from_secs(1)) }.await.unwrap();
         assert_eq!(result[0].rows[0][0], Value::from(43));
         sqlx::query("ROLLBACK").execute(&mut *editor_conn).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated PostgreSQL instance with permission to create databases"]
+    async fn postgres_database_switch_keeps_sessions_and_catalogs_separate() {
+        let url = std::env::var("DBDOCK_TEST_POSTGRES_URL").unwrap();
+        let options: PgConnectOptions = url.parse().unwrap();
+        let first = SqlPool::BrowserPg(PgPoolOptions::new().connect_with(options.clone()).await.unwrap());
+        let original = first.scalar("SELECT current_database()::text").await.unwrap();
+        let suffix = uuid::Uuid::new_v4().simple();
+        let alternate = format!("dbdock_alt_{suffix}");
+        let disabled = format!("dbdock_disabled_{suffix}");
+        first.execute(format!("CREATE DATABASE {alternate}")).await.unwrap();
+        first.execute(format!("CREATE DATABASE {disabled} ALLOW_CONNECTIONS false")).await.unwrap();
+
+        let databases = first.databases().await.unwrap();
+        assert!(databases.contains(&original));
+        assert!(databases.contains(&alternate));
+        assert!(!databases.contains(&disabled));
+        assert!(!databases.iter().any(|database| database == "template1"));
+
+        let second_pool = PgPoolOptions::new().connect_with(options.database(&alternate)).await.unwrap();
+        let second = SqlPool::BrowserPg(second_pool.clone());
+        second.execute("CREATE TABLE public.quick_switch_fixture (id INTEGER)".into()).await.unwrap();
+        assert_eq!(second.scalar("SELECT current_database()::text").await.unwrap(), alternate);
+        assert_eq!(first.scalar("SELECT current_database()::text").await.unwrap(), original);
+        assert!(second.tables("public").await.unwrap().iter().any(|table| table.name == "quick_switch_fixture"));
+        assert!(!first.tables("public").await.unwrap().iter().any(|table| table.name == "quick_switch_fixture"));
+
+        second_pool.close().await;
+        first.execute(format!("DROP DATABASE {alternate}")).await.unwrap();
+        first.execute(format!("DROP DATABASE {disabled}")).await.unwrap();
     }
 
     fn contains_filter() -> TableFilter {

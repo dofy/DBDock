@@ -234,14 +234,21 @@ async fn wait_for_connection<T>(cancelled: &mut tokio::sync::watch::Receiver<boo
 }
 
 #[tauri::command]
-async fn connect(state: State<'_, AppState>, id: String, attempt_id: String) -> CmdResult<SessionInfo> {
+async fn connect(state: State<'_, AppState>, id: String, attempt_id: String, database: Option<String>) -> CmdResult<SessionInfo> {
     let mut cancelled = {
         let pending = state.pending_connections.lock().unwrap();
         pending.get(&attempt_id).ok_or("connection attempt not found")?.subscribe()
     };
     let result = async {
         if *cancelled.borrow() { return Err("connection cancelled".into()); }
-        let cfg = state.store.get(&id).map_err(err)?;
+        let mut cfg = state.store.get(&id).map_err(err)?;
+        if let Some(database) = database {
+            if !matches!(cfg.kind, Kind::Postgres | Kind::Mysql) || database.is_empty() || database.contains('\0') {
+                return Err("Invalid database for this connection".into());
+            }
+            // An alternate database is a separate session using the saved connection's credentials and protection.
+            cfg.database = database;
+        }
         let secrets = state.store.resolve_secrets(&id, &SecretsInput::default()).map_err(err)?;
         let opened = wait_for_connection(&mut cancelled, async { open_session(&cfg, secrets).await.map_err(err) }).await?;
         let (session, server_version, default_schema) = opened;
@@ -492,6 +499,12 @@ async fn wait_for_browser_request<T>(cancelled: &mut tokio::sync::watch::Receive
 async fn sql_schemas(state: State<'_, AppState>, session_id: String) -> CmdResult<Vec<String>> {
     let s = state.sql(&session_id)?;
     browser_pool(&s).schemas().await.map_err(err)
+}
+
+#[tauri::command]
+async fn sql_databases(state: State<'_, AppState>, session_id: String) -> CmdResult<Vec<String>> {
+    let s = state.sql(&session_id)?;
+    browser_pool(&s).databases().await.map_err(err)
 }
 
 #[tauri::command]
@@ -798,6 +811,7 @@ pub fn run() {
             read_table_file,
             write_sql_file,
             sql_schemas,
+            sql_databases,
             sql_tables,
             begin_browser_request,
             cancel_browser_request,

@@ -6,6 +6,7 @@ from html import escape
 ROWS = [
     ("⌘N", "New connection", "新建连接", "新增連線", "接続を新規作成"),
     ("⇧⌘N", "New group", "新建分组", "新增群組", "グループを新規作成"),
+    ("⌘K", "Quick switch", "快速切换", "快速切換", "クイック切替"),
     ("⇧⌘P", "Open command palette", "打开命令面板", "開啟命令面板", "コマンドパレットを開く"),
     ("⌘O", "Import connections", "导入连接", "匯入連線", "接続をインポート"),
     ("⇧⌘I", "Paste connection URLs", "粘贴连接 URL", "貼上連線 URL", "接続 URL を貼り付け"),
@@ -23,7 +24,7 @@ ROWS = [
     ("⌘Q", "Quit (confirmation required for open work)", "退出（有打开的工作时需确认）", "結束（有開啟的工作時需確認）", "終了（作業中は要確認）"),
     ("⌘F", "Search connections", "搜索连接", "搜尋連線", "接続を検索"),
     ("⌘R", "Reload the connection list", "刷新连接列表", "重新整理連線清單", "接続一覧を更新"),
-    ("⌘↵", "Run the current line or selection (SQL / Mongo shell)", "执行当前行或选区（SQL / Mongo Shell）", "執行目前行或選取內容（SQL / Mongo Shell）", "現在行または選択範囲を実行（SQL / Mongo シェル）"),
+    ("⌘↵", "Run the selected SQL or current statement (current line in Mongo shell)", "执行选中的 SQL 或当前语句（Mongo Shell 中为当前行）", "執行選取的 SQL 或目前的陳述式（Mongo Shell 為目前行）", "選択した SQL または現在の文を実行（Mongo シェルでは現在行）"),
     ("⇧⌘↵", "Run the whole SQL script", "执行全部 SQL", "執行全部 SQL", "SQL 全体を実行"),
     ("⌘S", "Save SQL or commit grid edits; save document / config", "保存 SQL、提交表格更改或保存文档 / 配置", "儲存 SQL、提交表格變更或儲存文件 / 設定", "SQL 保存、表の変更をコミット、文書 / 設定を保存"),
     ("Tab", "Accept a completion", "接受补全", "接受補全", "補完候補を確定"),

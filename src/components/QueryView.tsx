@@ -1,7 +1,7 @@
 import { t, tf } from "../i18n";
-import { ChevronDown, FileDown, FileUp, Play, Square } from "lucide-react";
+import { ChevronDown, FileDown, FileUp, History, Play, Square } from "lucide-react";
 import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
-import { selectedOrCurrentLine } from "../sqlHistory";
+import { selectedOrCurrentStatement } from "../sqlStatement";
 import { useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { keymap } from "@codemirror/view";
@@ -13,6 +13,8 @@ import { useSettings } from "../settings";
 import { vimExtension } from "./CodeEditor";
 import { serializeResult, type ExportFormat } from "../sqlResultExport";
 import { confirmSqlWrite } from "../sqlWriteConfirmation";
+import { CommandPalette } from "./CommandPalette";
+import { useToast } from "./Toast";
 
 interface Props {
   sessionId: string;
@@ -22,6 +24,7 @@ interface Props {
   env: string;
   kind: Kind;
   history: string[];
+  visible: boolean;
   onExecuted: (sql: string) => void;
   value: string;
   onChange: (v: string) => void;
@@ -30,7 +33,7 @@ interface Props {
   dark: boolean;
 }
 
-export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, onExecuted, value, onChange, schema, dark }: Props) {
+export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, onExecuted, value, onChange, schema, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +43,9 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   const [exporting, setExporting] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
   const [showRunOptions, setShowRunOptions] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const historyButton = useRef<HTMLButtonElement>(null);
+  const toast = useToast();
   const executing = useRef(false);
   const ref = useRef<ReactCodeMirrorRef>(null);
   const runOptionsButton = useRef<HTMLButtonElement>(null);
@@ -49,9 +55,15 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     const view = ref.current?.view;
     const doc = view?.state.doc.toString() ?? value;
     const selection = view?.state.selection.main;
-    const text = all ? doc : selectedOrCurrentLine(doc, selection?.from ?? 0, selection?.to ?? 0);
     setShowRunOptions(false);
-    if (!text.trim() || executing.current || protection === "browseOnly") return;
+    if (executing.current || protection === "browseOnly") return;
+    const current = all ? { status: "sql" as const, text: doc } : selectedOrCurrentStatement(doc, selection?.from ?? 0, selection?.to ?? 0, kind);
+    if (current.status === "ambiguous") {
+      toast("info", t("Select the SQL you want to run, or use Run all"));
+      return;
+    }
+    if (current.status !== "sql" || !current.text.trim()) return;
+    const { text } = current;
     executing.current = true;
     let t0: number | undefined;
     try {
@@ -59,7 +71,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       if (confirmed && !(await confirmSqlWrite({
         connectionName, env, object: database, sql: text,
         title: t("Confirm SQL execution"), action: t("Run"),
-        summary: t(all ? "Run all SQL (⇧⌘↵)" : selection?.empty === false ? "Run selected SQL" : "Run SQL on the current line"),
+        summary: t(all ? "Run all SQL (⇧⌘↵)" : selection?.empty === false ? "Run selected SQL" : "Run current statement"),
       }))) return;
       setRunning(true);
       setError(null);
@@ -95,11 +107,18 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       onChange(text);
     } catch (e) { setError(errText(e)); }
   };
-  const chooseHistory = async (index: number) => {
-    const text = history[index];
-    if (text === undefined || text === value) return;
-    if (value.trim() && !(await ask(t("Replace the current SQL text?"), { title: t("Recent SQL"), kind: "warning" }))) return;
-    onChange(text);
+  const closeHistory = () => {
+    setShowHistory(false);
+    historyButton.current?.focus();
+  };
+  const chooseHistory = async (text: string) => {
+    closeHistory();
+    const current = ref.current?.view?.state.doc.toString() ?? value;
+    if (current !== text) {
+      if (current.trim() && !(await ask(t("Replace the current SQL text?"), { title: t("Query history"), kind: "warning" }))) return;
+      onChange(text);
+    }
+    ref.current?.view?.focus();
   };
   const cancel = () => {
     api.cancel(sessionId).catch((e) => setError(errText(e)));
@@ -140,7 +159,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   );
 
   const cur = results[active];
-  const runScope = t(hasSelection ? "Run selected SQL" : "Run SQL on the current line");
+  const runScope = t(hasSelection ? "Run selected SQL" : "Run current statement");
   const exportResult = async () => {
     if (!cur?.columns.length || exporting) return;
     setExporting(true);
@@ -203,10 +222,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         <div className="workspace-tools" role="group" aria-label={t("SQL files and history")}>
           <button onClick={() => void saveFile()} title={t("Save SQL to file")} aria-label={t("Save SQL to file")}><FileDown size={14} /></button>
           <button onClick={() => void loadFile()} title={t("Load SQL from file")} aria-label={t("Load SQL from file")}><FileUp size={14} /></button>
-          <select value="" aria-label={t("Recent SQL")} title={t("Recent SQL (this app session)")} disabled={!history.length} onChange={(e) => { if (e.target.value) void chooseHistory(Number(e.target.value) - 1); }}>
-            <option value="">{t("Recent SQL")}</option>
-            {history.map((sql, i) => <option key={sql} value={i + 1}>{sql.replace(/\s+/g, " ").slice(0, 100)}</option>)}
-          </select>
+          <button ref={historyButton} type="button" title={t("Query history")} aria-label={t("Query history")} onClick={() => setShowHistory(true)}><History size={14} /></button>
         </div>
         {vimOn && <span className="vim-badge static">VIM</span>}
         {protection !== "browseOnly" && <span className="muted query-hint" title={runScope}>
@@ -246,6 +262,15 @@ export function QueryView({ sessionId, protection, connectionName, database, env
           <div className="grid-empty muted">{t("Results appear here.")}</div>
         )}
       </div>
+      {visible && showHistory && <CommandPalette
+        label={t("Query history")}
+        placeholder={t("Search SQL history")}
+        empty={t(history.length ? "No matching queries" : "No queries in this session yet")}
+        preview
+        commands={history.map((sql) => ({ id: sql, label: sql.replace(/\s+/g, " "), detail: sql, category: "", run: () => void chooseHistory(sql) }))}
+        onClose={closeHistory}
+        onRun={(command) => command.run()}
+      />}
     </div>
   );
 }
