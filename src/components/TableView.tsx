@@ -2,7 +2,7 @@ import { t, tf } from "../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, cancellableBrowserRequest, errText, type Cell, type Change, type Kind, type MetadataKind, type QueryResult, type SqlProtection, type TableData, type TableFilter } from "../api";
-import { DataGrid, type GridEditing, type Selection } from "./DataGrid";
+import { DataGrid, ResultEmpty, type GridEditing, type Selection } from "./DataGrid";
 import { SqlInput } from "./SqlInput";
 import { describeVisualFilter, VisualFilter } from "./VisualFilter";
 import { SchemaEditor } from "./SchemaEditor";
@@ -278,6 +278,12 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
     setVisualFilter(visual);
     setShowFilters(false);
   });
+  const addRow = () => setInserted((rows) => [...rows, columns.map(() => undefined)]);
+  const emptyState = !loading && !error && (appliedFilter
+    ? <ResultEmpty illustrated title={t("No rows match these filters")} detail={t("Clear the filters to show all rows.")}
+        action={<button type="button" disabled={busy} onClick={() => applyFilter("")}>{t("Clear filters")}</button>} />
+    : <ResultEmpty illustrated title={t(page ? "No rows on this page" : "This table is empty")}
+        action={!page && editable && <button type="button" disabled={busy} onClick={addRow}><Plus size={14} />{t("Add a row")}</button>} />);
   const activeMetadata = metadata?.kind === mode ? metadata : undefined;
   const showingMetadata = mode === "indexes" || mode === "foreignKeys";
   const refresh = () => {
@@ -307,7 +313,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
         </div>
         <div className="workspace-tools table-tools">
           {mode === "data" && editable && <>
-            <button disabled={loading || busy} onClick={() => setInserted((rows) => [...rows, columns.map(() => undefined)])} title={t("Add a row")} aria-label={t("Add a row")}>
+            <button disabled={loading || busy} onClick={addRow} title={t("Add a row")} aria-label={t("Add a row")}>
               <Plus size={14} /><span className="table-row-label">{t("Row")}</span></button>
             <button onClick={toggleDelete} disabled={!sel || loading || busy} title={t("Delete or restore the selected row")} aria-label={t("Delete or restore the selected row")}>
               <Minus size={14} /><span className="table-row-label">{t("Row")}</span></button>
@@ -388,6 +394,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
             editing={editing}
             resetKey={data}
             onSelect={setSel}
+            emptyState={emptyState || undefined}
           />
       )}
 
@@ -396,7 +403,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
             <button disabled={page === 0 || loading || busy} title={t("Previous page")} aria-label={t("Previous page")} onClick={() => void guard(() => setPage((p) => p - 1))}>
               ‹
             </button>
-            <span>{display ? `${t("rows")} ${baseRows ? page * limit + 1 : 0}–${page * limit + baseRows}` : "—"}</span>
+            <span>{!display ? "—" : baseRows ? `${t("rows")} ${page * limit + 1}–${page * limit + baseRows}` : t("0 rows")}</span>
             <button disabled={!data?.hasMore || loading || busy} title={t("Next page")} aria-label={t("Next page")} onClick={() => void guard(() => setPage((p) => p + 1))}>
               ›
             </button>

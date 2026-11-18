@@ -8,8 +8,17 @@ globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { languages: ['en-US'] } });
 const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
 after(() => vite.close());
-const { updateSettings } = await vite.ssrLoadModule('/src/settings.ts');
-const { t, tf, localizeError } = await vite.ssrLoadModule('/src/i18n.ts');
+const { updateSettings, getSettings, clampSqlEditorShare } = await vite.ssrLoadModule('/src/settings.ts');
+const { t, tf, localizeError, backendErrorSummary } = await vite.ssrLoadModule('/src/i18n.ts');
+
+test('SQL pane size defaults for older preferences and is bounded before saving', () => {
+  assert.equal(getSettings().sqlEditorShare, 38);
+  for (const value of [undefined, null, '60', NaN, Infinity]) assert.equal(clampSqlEditorShare(value), 38);
+  assert.equal(clampSqlEditorShare(20), 25);
+  assert.equal(clampSqlEditorShare(88), 75);
+  updateSettings({ sqlEditorShare: clampSqlEditorShare(62.4) });
+  assert.equal(JSON.parse(store.get('dbdock.settings')).sqlEditorShare, 62);
+});
 
 test('dynamic messages interpolate without modifying user data', () => {
   updateSettings({ language: 'zh-CN' });
@@ -32,6 +41,17 @@ test('backend error gets a localized explanation while original diagnostics stay
   assert.ok(localizeError(dbError).includes(dbError));
   updateSettings({ language: 'en' });
   assert.equal(localizeError(raw), raw);
+});
+
+test('query error summaries do not include raw database diagnostics', () => {
+  const raw = 'Database connection wait timed out: specific server details';
+  updateSettings({ language: 'en' });
+  assert.equal(backendErrorSummary(raw), 'Database connection wait timed out');
+  assert.equal(backendErrorSummary('ERROR: duplicate key value violates unique constraint'), undefined);
+  updateSettings({ language: 'zh-CN' });
+  assert.match(backendErrorSummary(raw), /^等待数据库连接超时/);
+  assert.ok(!backendErrorSummary(raw).includes('specific server details'));
+  assert.ok(localizeError(raw).endsWith(raw));
 });
 
 test('missing SQLite file and batch actions are localized for every supported language', () => {

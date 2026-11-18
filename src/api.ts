@@ -259,9 +259,10 @@ export const api = {
     invoke<{ db: number; dbsize: number }>("redis_select", { sessionId, db }),
 };
 
-export function errText(e: unknown): string {
-  return localizeError(typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e));
-}
+export const errorDiagnostic = (e: unknown): string =>
+  typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e) ?? String(e);
+
+export const errText = (e: unknown): string => localizeError(errorDiagnostic(e));
 
 export function fmtTtl(ms: number): string {
   if (ms === -1) return "∞";

@@ -1,16 +1,16 @@
-import { t, tf } from "../i18n";
-import { ChevronDown, FileDown, FileUp, History, Play, Square } from "lucide-react";
+import { backendErrorSummary, t, tf } from "../i18n";
+import { ChevronDown, CircleAlert, Copy, FileDown, FileUp, History, Play, Square } from "lucide-react";
 import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
 import { selectedOrCurrentStatement } from "../sqlStatement";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap } from "@codemirror/view";
 import { getCM, Vim } from "@replit/codemirror-vim";
 import { Prec } from "@codemirror/state";
-import { api, errText, type Kind, type QueryResult, type SqlProtection } from "../api";
-import { DataGrid } from "./DataGrid";
+import { api, errorDiagnostic, errText, type Kind, type QueryResult, type SqlProtection } from "../api";
+import { DataGrid, ResultEmpty } from "./DataGrid";
 import { sqlExtensions } from "../sqlComplete";
-import { useSettings } from "../settings";
+import { clampSqlEditorShare, DEFAULT_SQL_EDITOR_SHARE, MAX_SQL_EDITOR_SHARE, MIN_SQL_EDITOR_SHARE, updateSettings, useSettings } from "../settings";
 import { vimExtension } from "./CodeEditor";
 import { serializeResult, type ExportFormat } from "../sqlResultExport";
 import { confirmSqlWrite } from "../sqlWriteConfirmation";
@@ -53,6 +53,11 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   const runOptionsButton = useRef<HTMLButtonElement>(null);
   const runAllButton = useRef<HTMLButtonElement>(null);
   const initiallyFocused = useRef(false);
+  const editorId = useId();
+  const queryPane = useRef<HTMLDivElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
+  const resize = useRef<{ pointerId: number; startY: number; height: number; share: number } | null>(null);
+  const [pendingShare, setPendingShare] = useState<number | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -106,7 +111,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       const idx = r.map((x) => x.columns.length > 0).lastIndexOf(true);
       setActive(idx >= 0 ? idx : Math.max(0, r.length - 1));
     } catch (e) {
-      setError(errText(e));
+      setError(errorDiagnostic(e));
       setResults([]);
     } finally {
       executing.current = false;
@@ -118,7 +123,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     try {
       const path = await save({ defaultPath: "query.sql", filters: [{ name: "SQL", extensions: ["sql"] }] });
       if (path) await api.writeSqlFile(path, ref.current?.view?.state.doc.toString() ?? value);
-    } catch (e) { setError(errText(e)); }
+    } catch (e) { toast("error", errText(e)); }
   };
   const loadFile = async () => {
     try {
@@ -128,7 +133,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       const current = ref.current?.view?.state.doc.toString() ?? value;
       if (current.trim() && text !== current && !(await ask(t("Replace the current SQL text?"), { title: t("Load SQL"), kind: "warning" }))) return;
       onChange(text);
-    } catch (e) { setError(errText(e)); }
+    } catch (e) { toast("error", errText(e)); }
   };
   const closeHistory = () => {
     setShowHistory(false);
@@ -144,14 +149,19 @@ export function QueryView({ sessionId, protection, connectionName, database, env
     ref.current?.view?.focus();
   };
   const cancel = () => {
-    api.cancel(sessionId).catch((e) => setError(errText(e)));
+    api.cancel(sessionId).catch((e) => toast("error", errText(e)));
   };
   const saveRef = useRef(saveFile);
   saveRef.current = saveFile;
   const runRef = useRef(run);
   runRef.current = run;
 
-  const { vim: vimOn } = useSettings();
+  const { vim: vimOn, sqlEditorShare } = useSettings();
+  const share = pendingShare ?? sqlEditorShare;
+  const saveShare = (next: number) => {
+    const adjusted = clampSqlEditorShare(next);
+    if (sqlEditorShare !== adjusted) updateSettings({ sqlEditorShare: adjusted });
+  };
   const editorLabel = t("SQL editor");
   const extensions = useMemo(
     () => [
@@ -185,6 +195,18 @@ export function QueryView({ sessionId, protection, connectionName, database, env
 
   const cur = results[active];
   const runScope = t(hasSelection ? "Run selected SQL" : "Run current statement");
+  const focusEditor = () => ref.current?.view?.focus();
+  const editSql = protection !== "browseOnly" && <button type="button" onClick={focusEditor}>{t("Back to SQL editor")}</button>;
+  const emptyResult = <ResultEmpty illustrated title={t("No rows to display")} detail={t("Review the SQL or adjust its conditions and run it again.")} action={editSql} />;
+  const copyError = async () => {
+    if (error === null) return;
+    try {
+      await navigator.clipboard.writeText(error);
+      toast("ok", t("Error details copied"));
+    } catch {
+      toast("error", t("Could not copy the error details"));
+    }
+  };
   const exportResult = async () => {
     if (!cur?.columns.length || exporting) return;
     setExporting(true);
@@ -200,13 +222,13 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   };
 
   return (
-    <div className="query">
-      <div className="editor">
+    <div className="query" ref={queryPane} style={{ gridTemplateRows: `minmax(0, ${share}fr) auto auto minmax(0, ${100 - share}fr)` }}>
+      <div className="editor" id={editorId}>
         <CodeMirror ref={ref} value={value} onChange={onChange} onUpdate={(update) => {
           if (update.selectionSet || update.docChanged) setHasSelection(!update.state.selection.main.empty);
         }} extensions={extensions} theme={dark ? "dark" : "light"} height="100%" basicSetup={{ foldGutter: false }} />
       </div>
-      <div className="toolbar query-toolbar">
+      <div className="toolbar query-toolbar" ref={toolbar}>
         {running ? (
           <button className="danger" onClick={cancel} disabled={kind === "sqlite" || kind === "d1"} title={kind === "sqlite" || kind === "d1" ? t("This database cannot cancel a running query") : t("Cancel the running query")}>
             <Square size={13} />
@@ -254,21 +276,91 @@ export function QueryView({ sessionId, protection, connectionName, database, env
           {running ? t("Running…") : `${runScope} · ⌘↵${vimOn ? t(" · :w runs") : ""}`}
         </span>}
       </div>
-      <div className="results">
-        {!error && results.length > 1 && <div className="toolbar query-result-tabs" role="group" aria-label={t("Query results")}>
+      <div
+        className={`query-splitter${pendingShare !== null ? " resizing" : ""}`}
+        role="separator"
+        tabIndex={0}
+        aria-label={t("Resize SQL editor and results")}
+        aria-controls={editorId}
+        aria-orientation="horizontal"
+        aria-valuemin={MIN_SQL_EDITOR_SHARE}
+        aria-valuemax={MAX_SQL_EDITOR_SHARE}
+        aria-valuenow={share}
+        aria-valuetext={tf("SQL editor: {share}%", { share })}
+        title={t("Drag to resize. Double-click to reset.")}
+        onPointerDown={(event) => {
+          if (!event.isPrimary || event.button !== 0 || !queryPane.current || !toolbar.current) return;
+          const handle = event.currentTarget;
+          const height = queryPane.current.clientHeight - toolbar.current.offsetHeight - handle.offsetHeight;
+          if (height <= 0) return;
+          event.preventDefault();
+          handle.focus({ preventScroll: true });
+          handle.setPointerCapture(event.pointerId);
+          resize.current = { pointerId: event.pointerId, startY: event.clientY, height, share };
+          setPendingShare(share);
+        }}
+        onPointerMove={(event) => {
+          const drag = resize.current;
+          if (drag?.pointerId === event.pointerId) {
+            setPendingShare(clampSqlEditorShare(drag.share + (event.clientY - drag.startY) * 100 / drag.height));
+          }
+        }}
+        onPointerUp={(event) => {
+          const drag = resize.current;
+          if (drag?.pointerId !== event.pointerId) return;
+          resize.current = null;
+          setPendingShare(null);
+          saveShare(drag.share + (event.clientY - drag.startY) * 100 / drag.height);
+        }}
+        onLostPointerCapture={(event) => {
+          if (resize.current?.pointerId === event.pointerId) {
+            resize.current = null;
+            setPendingShare(null);
+          }
+        }}
+        onDoubleClick={() => saveShare(DEFAULT_SQL_EDITOR_SHARE)}
+        onKeyDown={(event) => {
+          const adjustments: Record<string, number> = {
+            ArrowUp: share - 3, ArrowDown: share + 3,
+            Home: MIN_SQL_EDITOR_SHARE, End: MAX_SQL_EDITOR_SHARE, Enter: DEFAULT_SQL_EDITOR_SHARE,
+          };
+          const next = adjustments[event.key];
+          if (next === undefined) return;
+          event.preventDefault();
+          saveShare(next);
+        }}
+      />
+      <div className="results" aria-busy={running}>
+        {error === null && results.length > 1 && <div className="toolbar query-result-tabs" role="group" aria-label={t("Query results")}>
           {results.map((r, i) => (
             <button key={i} className={`chip ${i === active ? "on" : ""}`} aria-pressed={i === active} onClick={() => setActive(i)}>
               {r.columns.length ? tf("Result {number}", { number: i + 1 }) : `#${i + 1} (${r.rowsAffected ?? 0})`}
             </button>
           ))}
         </div>}
-        {error ? (
-          <pre className="error">{error}</pre>
+        {error !== null ? (
+          <div className="query-feedback">
+            <div className="query-error">
+              <div className="query-error-summary" role="alert">
+                <CircleAlert size={16} aria-hidden="true" />
+                <div>
+                  <strong>{t("Query failed")}</strong>
+                  <p>{backendErrorSummary(error) ?? t("Review the SQL and check the error details.")}</p>
+                </div>
+              </div>
+              <details key={error}>
+                <summary>{t("Error details")}</summary>
+                <button type="button" onClick={() => void copyError()}><Copy size={14} aria-hidden="true" />{t("Copy details")}</button>
+                <pre>{error}</pre>
+              </details>
+              {editSql}
+            </div>
+          </div>
         ) : cur ? (
           <>
-            <DataGrid result={cur} />
+            <DataGrid result={cur} emptyState={!cur.rows.length && !cur.rowsAffected ? emptyResult : undefined} />
             <div className="statusbar query-result-status">
-              <span>{cur.columns.length ? tf("{count} row(s)", { count: cur.rows.length }) : tf("{count} row(s) affected", { count: cur.rowsAffected ?? 0 })}
+              <span>{cur.columns.length || !cur.rowsAffected ? tf("{count} row(s)", { count: cur.rows.length }) : tf("{count} row(s) affected", { count: cur.rowsAffected })}
                 {cur.truncated && t(" · truncated to 5000 rows")}
               </span>
               {elapsed != null && <span className="muted">{elapsed} ms</span>}
@@ -284,7 +376,11 @@ export function QueryView({ sessionId, protection, connectionName, database, env
             </div>
           </>
         ) : (
-          <div className="grid-empty muted">{t("Results appear here.")}</div>
+          <div className="query-feedback">
+            {running ? <ResultEmpty title={t("Running…")} /> : elapsed !== null ? emptyResult : protection === "browseOnly"
+              ? <ResultEmpty title={t("This connection is in browse-only mode")} detail={t("Open a table from the sidebar to view data.")} />
+              : <ResultEmpty illustrated title={t("Run SQL to see results")} detail={t("Use ⌘↵ to run the selected SQL or the current statement.")} />}
+          </div>
         )}
       </div>
       {visible && showHistory && <CommandPalette

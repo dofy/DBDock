@@ -126,12 +126,17 @@ export function tf(source: string, values: Record<string, string | number>): str
   return t(source).replace(/\{(\w+)\}/g, (match, key: string) => key in values ? String(values[key]) : match);
 }
 
+/** Only DBDock-owned messages can be summarized without guessing at driver diagnostics. */
+export function backendErrorSummary(raw: string): string | undefined {
+  const key = Object.keys(backendMessages).sort((a, b) => b.length - a.length).find((k) => raw === k || raw.startsWith(`${k}:`) || raw.startsWith(`${k} (`) || (k.endsWith(" ") && raw.startsWith(k)) || (k === "affected " && raw.includes("\naffected ")) || (["SSH connect to", "SSH authentication failed for", "SSH key auth failed", "Cloudflare rejected the token", "unsupported scheme", "cannot parse ", "expected db."].includes(k) && raw.startsWith(k)));
+  if (!key) return undefined;
+  const locale = resolveLocale(getSettings().language);
+  return locale === "en" ? key.trim() : backendMessages[key][locale === "zh-CN" ? 0 : locale === "zh-TW" ? 1 : 2];
+}
+
 /** Translate DBDock's error summary while retaining the original diagnostic text. */
 export function localizeError(raw: string): string {
-  const locale = resolveLocale(getSettings().language);
-  if (locale === "en") return raw;
-  const idx = locale === "zh-CN" ? 0 : locale === "zh-TW" ? 1 : 2;
-  const key = Object.keys(backendMessages).sort((a, b) => b.length - a.length).find((k) => raw === k || raw.startsWith(`${k}:`) || raw.startsWith(`${k} (`) || (k.endsWith(" ") && raw.startsWith(k)) || (k === "affected " && raw.includes("\naffected ")) || (["SSH connect to", "SSH authentication failed for", "SSH key auth failed", "Cloudflare rejected the token", "unsupported scheme", "cannot parse ", "expected db."].includes(k) && raw.startsWith(k)));
-  const summary = key ? backendMessages[key][idx] : t("Operation failed");
+  if (resolveLocale(getSettings().language) === "en") return raw;
+  const summary = backendErrorSummary(raw) ?? t("Operation failed");
   return `${summary}\n${t("Details")}: ${raw}`;
 }

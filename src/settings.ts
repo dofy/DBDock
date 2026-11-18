@@ -7,10 +7,20 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   language: "system" | "en" | "zh-CN" | "zh-TW" | "ja";
   sshTerminal: "terminal" | "iterm";
+  sqlEditorShare: number;
+}
+
+export const DEFAULT_SQL_EDITOR_SHARE = 38;
+export const MIN_SQL_EDITOR_SHARE = 25;
+export const MAX_SQL_EDITOR_SHARE = 75;
+
+export function clampSqlEditorShare(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_SQL_EDITOR_SHARE;
+  return Math.max(MIN_SQL_EDITOR_SHARE, Math.min(MAX_SQL_EDITOR_SHARE, Math.round(value)));
 }
 
 const KEY = "dbdock.settings";
-const DEFAULTS: Settings = { vim: false, theme: "system", language: "system", sshTerminal: "terminal" };
+const DEFAULTS: Settings = { vim: false, theme: "system", language: "system", sshTerminal: "terminal", sqlEditorShare: DEFAULT_SQL_EDITOR_SHARE };
 
 function load(): Settings {
   try {
@@ -20,6 +30,7 @@ function load(): Settings {
       theme: ["system", "light", "dark"].includes(saved.theme) ? saved.theme : DEFAULTS.theme,
       language: ["system", "en", "zh-CN", "zh-TW", "ja"].includes(saved.language) ? saved.language : DEFAULTS.language,
       sshTerminal: saved.sshTerminal === "iterm" ? "iterm" : "terminal",
+      sqlEditorShare: clampSqlEditorShare(saved.sqlEditorShare),
     };
   } catch {
     return DEFAULTS;

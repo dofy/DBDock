@@ -1,7 +1,8 @@
 import { t, tf } from "../i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Cell, QueryResult } from "../api";
 import { Copy } from "lucide-react";
+import emptyResultsArt from "../assets/empty-results.webp";
 
 export type RowState = "deleted" | "inserted" | undefined;
 
@@ -30,6 +31,23 @@ interface Props {
   onSelect?: (sel: Selection | null) => void;
   /** Selection resets when this changes (defaults to `result`). */
   resetKey?: unknown;
+  emptyState?: ReactNode;
+}
+
+export function ResultEmpty({ title, detail, action, illustrated }: {
+  title: string;
+  detail?: string;
+  action?: ReactNode;
+  illustrated?: boolean;
+}) {
+  return <div className={illustrated ? "grid-empty result-empty result-empty--illustrated" : "grid-empty result-empty"}>
+    {illustrated && <img className="result-empty-illustration" src={emptyResultsArt} alt="" width={384} height={347} />}
+    <div role="status">
+      <strong>{title}</strong>
+      {detail && <p className="muted">{detail}</p>}
+    </div>
+    {action}
+  </div>;
 }
 
 function show(v: Cell | undefined): string {
@@ -82,7 +100,7 @@ function CellEditor({ initial, label, onDone }: {
   );
 }
 
-export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, rowOffset = 0, editing, onSelect, resetKey }: Props) {
+export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, rowOffset = 0, editing, onSelect, resetKey, emptyState }: Props) {
   const [sel, setSelState] = useState<Selection | null>(null);
   const [editCell, setEditCell] = useState<Selection | null>(null);
   const gridBody = useRef<HTMLTableSectionElement>(null);
@@ -128,9 +146,13 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
 
   if (!columns.length) {
     return (
-      <div className="grid-empty">
-        {result.rowsAffected != null ? tf("OK, {count} row(s) affected", { count: result.rowsAffected }) : t("No columns")}
-        <span className="muted"> · {result.elapsedMs} ms</span>
+      <div className="grid-wrap">
+        <div className="grid-scroll">
+          {emptyState ?? <div className="grid-empty">
+            {result.rowsAffected != null ? tf("OK, {count} row(s) affected", { count: result.rowsAffected }) : t("No columns")}
+            <span className="muted"> · {result.elapsedMs} ms</span>
+          </div>}
+        </div>
       </div>
     );
   }
@@ -237,7 +259,7 @@ export function DataGrid({ result, fallbackColumns, orderBy, orderDesc, onSort, 
             })}
           </tbody>
         </table>
-        {!result.rows.length && <div className="grid-empty">{t("0 rows")}</div>}
+        {!result.rows.length && (emptyState ?? <div className="grid-empty">{t("0 rows")}</div>)}
       </div>
       {hasSel && sel && (
         <div className="cell-detail">
