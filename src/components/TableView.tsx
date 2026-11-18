@@ -5,7 +5,9 @@ import { api, cancellableBrowserRequest, errText, type Cell, type Change, type K
 import { DataGrid, type GridEditing, type Selection } from "./DataGrid";
 import { SqlInput } from "./SqlInput";
 import { VisualFilter } from "./VisualFilter";
-import { Check, CircleSlash, Copy, Eye, Filter, Info, Minus, Plus, RefreshCw, Undo2, X } from "lucide-react";
+import { SchemaEditor } from "./SchemaEditor";
+import { TableTransfer } from "./TableTransfer";
+import { Check, CircleSlash, Copy, Eye, FileDown, FileUp, Filter, Info, Minus, Plus, RefreshCw, Settings2, Undo2, X } from "lucide-react";
 
 interface Props {
   sessionId: string;
@@ -16,13 +18,14 @@ interface Props {
   protection: SqlProtection;
   connectionName: string;
   dark: boolean;
+  onSchemaChanged: () => void;
   onDirtyChange: (dirty: boolean, busy: boolean) => void;
 }
 
 const PAGE_SIZES = [5, 25, 100, 300, 1000];
 const BINARY = /blob|binary|bytea|bit\b|geometry|point|polygon/i;
 
-export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, dark, onDirtyChange }: Props) {
+export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, dark, onSchemaChanged, onDirtyChange }: Props) {
   const [mode, setMode] = useState<"data" | "structure" | MetadataKind>("data");
   const [data, setData] = useState<TableData | null>(null);
   const [structure, setStructure] = useState<QueryResult | null>(null);
@@ -41,6 +44,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
   const [showFilters, setShowFilters] = useState(false);
   const [metadata, setMetadata] = useState<{ kind: MetadataKind; result?: QueryResult; error?: string }>();
   const [metadataReload, setMetadataReload] = useState(0);
+  const [operation, setOperation] = useState<"schema" | "import" | "export">();
   const [conflict, setConflict] = useState(false);
 
   // Pending edits: row index -> column index -> new value.
@@ -184,7 +188,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
   };
 
   const commit = async () => {
-    if (!pendingCount || busy || loading) return;
+    if (!pendingCount || busy || loading || operation) return;
     const changes = buildChanges();
     setBusy(true);
     try {
@@ -254,6 +258,8 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
     if (sel && editing?.canEdit(sel.c) && editing.rowState(sel.r) !== "deleted") editing.onChange(sel.r, sel.c, null);
   };
 
+  const allowTableWrites = protection !== "browseOnly" && !isView;
+  const pendingTitle = pendingCount ? t("Commit or discard pending edits first") : undefined;
   const activeMetadata = metadata?.kind === mode ? metadata : undefined;
   const showingMetadata = mode === "indexes" || mode === "foreignKeys";
   const refresh = () => {
@@ -325,6 +331,11 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
         {!data && mode === "data" && <select value={limit} aria-label={t("Rows per page")} onChange={(e) => { setPage(0); setLimit(Number(e.target.value)); }}>
           {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} {t("/ page")}</option>)}
         </select>}
+        {mode === "structure" && allowTableWrites && <button disabled={busy || structureLoading || pendingCount > 0}
+          title={pendingTitle} onClick={() => setOperation("schema")}><Settings2 size={14} />{t("Edit structure")}</button>}
+        {mode === "data" && allowTableWrites && <button disabled={busy || !colNames.length || pendingCount > 0}
+          title={pendingTitle ?? t("Import table data")} onClick={() => setOperation("import")} aria-label={t("Import table data")}><FileUp size={14} /></button>}
+        {mode === "data" && <button disabled={busy} title={t("Export table data")} onClick={() => setOperation("export")} aria-label={t("Export table data")}><FileDown size={14} /></button>}
         <button onClick={refresh} disabled={busy || (mode === "data" && loading)} title={t("Refresh")}>
           <RefreshCw size={14} />
         </button>
@@ -425,6 +436,29 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
         : activeMetadata?.error
           ? <pre className="error">{activeMetadata.error}</pre>
           : <div className="statusbar loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading structure…")}</div>)}
+
+      {operation === "schema" && <SchemaEditor sessionId={sessionId} schema={schema} table={table} columns={colNames}
+        connectionName={connectionName} kind={kind} protection={protection} onBusy={setBusy}
+        onClose={() => setOperation(undefined)}
+        onApplied={() => {
+          setOperation(undefined);
+          setStructureReload((n) => n + 1);
+          setMetadataReload((n) => n + 1);
+          const changedQuery = page !== 0 || !!orderBy || !!filter || !!visualFilter;
+          setPage(0);
+          setOrderBy(undefined);
+          setOrderDesc(false);
+          setFilter("");
+          setFilterDraft("");
+          setVisualFilter(undefined);
+          setData(null);
+          if (!changedQuery) void load();
+          onSchemaChanged();
+        }}
+      />}
+      {(operation === "import" || operation === "export") && <TableTransfer sessionId={sessionId} schema={schema} table={table}
+        connectionName={connectionName} columns={colNames} mode={operation} onBusy={setBusy} onClose={() => setOperation(undefined)}
+        onImported={() => { setOperation(undefined); void load(); }} />}
 
       {preview && (
         <div className="modal-backdrop" onMouseDown={() => setPreview(null)}>

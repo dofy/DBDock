@@ -84,6 +84,23 @@ export type FilterOperator = "equals" | "notEquals" | "contains" | "greater" | "
 export type FilterCondition = { column: string; operator: FilterOperator; value: string };
 export type TableFilter = { matchAny: boolean; conditions: FilterCondition[] };
 
+export type ColumnType = "integer" | "bigint" | "decimal" | "real" | "boolean" | "text" | "varchar" | "date" | "timestamp" | "json" | "binary";
+export interface ColumnDraft {
+  name: string;
+  dataType: ColumnType;
+  notNull: boolean;
+  primaryKey: boolean;
+  defaultValue: string | null;
+}
+export type SchemaChange =
+  | { op: "create"; columns: ColumnDraft[] }
+  | { op: "add"; column: ColumnDraft }
+  | { op: "rename"; column: string; newName: string }
+  | { op: "drop"; column: string }
+  | { op: "type"; column: string; dataType: ColumnType }
+  | { op: "nullability"; column: string; notNull: boolean }
+  | { op: "default"; column: string; value: string | null };
+
 export type Row = Record<string, Cell>;
 
 /** A MongoDB document in relaxed Extended JSON. */
@@ -210,6 +227,16 @@ export const api = {
     invoke<string[]>("sql_preview_changes", { sessionId, schema, table, changes }),
   applyChanges: (sessionId: string, schema: string, table: string, changes: Change[], confirmed: boolean) =>
     invoke<number>("sql_apply_changes", { sessionId, schema, table, changes, confirmed }),
+
+  previewSchema: (sessionId: string, schema: string, table: string, change: SchemaChange) =>
+    invoke<string>("sql_preview_schema", { sessionId, schema, table, change }),
+  applySchema: (sessionId: string, schema: string, table: string, change: SchemaChange, confirmed: boolean) =>
+    invoke<void>("sql_apply_schema", { sessionId, schema, table, change, confirmed }),
+  readTableFile: (path: string) => invoke<string>("read_table_file", { path }),
+  importRows: (sessionId: string, schema: string, table: string, columns: string[], rows: Cell[][], confirmed: boolean) =>
+    invoke<number>("sql_import_rows", { sessionId, schema, table, columns, rows, confirmed }),
+  exportTable: (sessionId: string, schema: string, table: string, path: string, format: "csv" | "json", requestId: string) =>
+    invoke<number>("sql_export_table", { sessionId, schema, table, path, format, requestId }),
 
   mongoDatabases: (sessionId: string) => invoke<string[]>("mongo_databases", { sessionId }),
   mongoCollections: (sessionId: string, db: string) => invoke<string[]>("mongo_collections", { sessionId, db }),

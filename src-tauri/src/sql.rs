@@ -259,7 +259,7 @@ macro_rules! cascade {
     };
 }
 
-fn decode_my(row: &MySqlRow, i: usize) -> Value {
+pub(crate) fn decode_my(row: &MySqlRow, i: usize) -> Value {
     if row.try_get_raw(i).map(|v| v.is_null()).unwrap_or(false) {
         return Value::Null;
     }
@@ -284,7 +284,7 @@ fn decode_my(row: &MySqlRow, i: usize) -> Value {
     }
 }
 
-fn decode_pg(row: &PgRow, i: usize) -> Value {
+pub(crate) fn decode_pg(row: &PgRow, i: usize) -> Value {
     let raw = match row.try_get_raw(i) {
         Ok(r) => r,
         Err(_) => return Value::Null,
@@ -321,7 +321,7 @@ fn decode_pg(row: &PgRow, i: usize) -> Value {
     Value::String(format!("<{}>", row.column(i).type_info()))
 }
 
-fn decode_lite(row: &SqliteRow, i: usize) -> Value {
+pub(crate) fn decode_lite(row: &SqliteRow, i: usize) -> Value {
     if row.try_get_raw(i).map(|v| v.is_null()).unwrap_or(false) {
         return Value::Null;
     }
@@ -715,7 +715,7 @@ impl SqlPool {
         Ok(out)
     }
 
-    fn value_lit(&self, v: &Value) -> String {
+    pub(crate) fn value_lit(&self, v: &Value) -> String {
         match v {
             Value::Null => "NULL".into(),
             Value::Bool(b) => if *b { "TRUE" } else { "FALSE" }.into(),
@@ -776,9 +776,7 @@ impl SqlPool {
             .collect()
     }
 
-    /// Apply all changes in one transaction. Updates and deletes must hit exactly
-    /// one row; SQLx negotiates MySQL's FOUND_ROWS capability.
-    pub async fn apply(&self, schema: &str, table: &str, changes: &[Change]) -> Result<usize> {
+    pub(crate) async fn ensure_transactional(&self, schema: &str, table: &str) -> Result<()> {
         if self.dialect() == Kind::Mysql {
             let (s, t) = (self.quote_lit(schema), self.quote_lit(table));
             let transactional = self.scalar(&format!(
@@ -786,8 +784,15 @@ impl SqlPool {
                  JOIN information_schema.ENGINES e ON e.ENGINE = t.ENGINE
                  WHERE t.TABLE_SCHEMA = {s} AND t.TABLE_NAME = {t}"
             )).await?;
-            anyhow::ensure!(transactional == "YES", "This table does not support transactional grid edits");
+            anyhow::ensure!(transactional == "YES", "This table does not support transactional writes");
         }
+        Ok(())
+    }
+
+    /// Apply all changes in one transaction. Updates and deletes must hit exactly
+    /// one row; SQLx negotiates MySQL's FOUND_ROWS capability.
+    pub async fn apply(&self, schema: &str, table: &str, changes: &[Change]) -> Result<usize> {
+        self.ensure_transactional(schema, table).await?;
         let stmts = self.change_sql(schema, table, changes).await?;
         macro_rules! run_tx {
             ($p:expr) => {{

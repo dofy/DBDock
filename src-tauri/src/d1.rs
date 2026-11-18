@@ -69,7 +69,7 @@ struct DbInfo {
 }
 
 /// JS-safe numbers and readable blobs, matching the other drivers.
-fn cell(v: Value) -> Value {
+fn cell(v: Value, full_blobs: bool) -> Value {
     match v {
         Value::Number(n) => match n.as_i64() {
             Some(i) if i.unsigned_abs() > (1u64 << 53) => Value::String(i.to_string()),
@@ -78,7 +78,11 @@ fn cell(v: Value) -> Value {
         // BLOBs come back as arrays of byte values.
         Value::Array(a) if a.iter().all(|x| x.as_u64().is_some_and(|b| b < 256)) => {
             let bytes: Vec<u8> = a.iter().filter_map(|x| x.as_u64().map(|b| b as u8)).collect();
-            crate::sql::bytes_preview(bytes)
+            if full_blobs {
+                Value::String(crate::sql_transfer::blob_hex(bytes))
+            } else {
+                crate::sql::bytes_preview(bytes)
+            }
         }
         other => other,
     }
@@ -124,6 +128,14 @@ impl D1Client {
 
     /// One QueryResult per statement, in order.
     pub async fn query(&self, sql: &str) -> Result<Vec<QueryResult>> {
+        self.query_mode(sql, false).await
+    }
+
+    pub async fn export_data(&self, sql: &str) -> Result<Vec<QueryResult>> {
+        self.query_mode(sql, true).await
+    }
+
+    async fn query_mode(&self, sql: &str, full_blobs: bool) -> Result<Vec<QueryResult>> {
         let started = Instant::now();
         let res: Vec<RawResult> = self.send(self.http.post(self.url("/raw")).json(&serde_json::json!({ "sql": sql }))).await?;
         let wall = started.elapsed().as_millis() as u64;
@@ -136,7 +148,7 @@ impl D1Client {
                 let truncated = rows.rows.len() > crate::sql::MAX_ROWS;
                 QueryResult {
                     columns: rows.columns,
-                    rows: rows.rows.into_iter().take(crate::sql::MAX_ROWS).map(|r| r.into_iter().map(cell).collect()).collect(),
+                    rows: rows.rows.into_iter().take(crate::sql::MAX_ROWS).map(|r| r.into_iter().map(|v| cell(v, full_blobs)).collect()).collect(),
                     rows_affected: Some(meta.changes),
                     truncated,
                     // Server time when reported, else an even share of the round trip.

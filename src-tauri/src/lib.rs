@@ -7,6 +7,8 @@ mod redis_db;
 mod sql;
 mod sql_browser;
 mod sql_protection;
+mod sql_schema;
+mod sql_transfer;
 mod sources;
 mod ssh;
 mod ssh_config;
@@ -25,6 +27,8 @@ use tauri::{Emitter, Manager, State};
 use redis_db::{KeyValue, RedisConn, ScanPage};
 use sql::{Change, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
 use sql_browser::{TableFilter, TableMetadata};
+use sql_schema::SchemaChange;
+use sql_transfer::ExportFormat;
 use ssh::Tunnel;
 use store::{ConnectionConfig, Kind, Secrets, SecretsInput, SqlProtection, Store};
 
@@ -406,9 +410,24 @@ fn ssh_config_hosts() -> Vec<ssh_config::HostEntry> {
 // SQL files are chosen explicitly using the native open/save dialog.
 #[tauri::command]
 fn read_sql_file(path: String) -> CmdResult<String> {
-    if std::fs::metadata(&path).map_err(|e| e.to_string())?.len() > 5 * 1024 * 1024 { return Err("SQL file is larger than 5 MiB".into()); }
-    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-    if bytes.len() > 5 * 1024 * 1024 { return Err("SQL file is larger than 5 MiB".into()); }
+    read_text_file(path, "SQL file is larger than 5 MiB")
+}
+
+#[tauri::command]
+fn read_table_file(path: String) -> CmdResult<String> {
+    read_text_file(path, "Import file is larger than 5 MiB")
+}
+
+fn read_text_file(path: String, too_large: &str) -> CmdResult<String> {
+    use std::io::Read;
+    const LIMIT: usize = 5 * 1024 * 1024;
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    if file.metadata().map_err(|e| e.to_string())?.len() > LIMIT as u64 {
+        return Err(too_large.into());
+    }
+    let mut bytes = Vec::new();
+    file.take(LIMIT as u64 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() > LIMIT { return Err(too_large.into()); }
     String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
@@ -562,6 +581,40 @@ async fn sql_apply_changes(state: State<'_, AppState>, session_id: String, schem
     let s = state.sql(&session_id)?;
     s.sql_protection.check_execution(confirmed).map_err(err)?;
     browser_pool(&s).apply(&schema, &table, &changes).await.map_err(err)
+}
+
+#[tauri::command]
+fn sql_preview_schema(state: State<'_, AppState>, session_id: String, schema: String, table: String, change: SchemaChange) -> CmdResult<String> {
+    let s = state.sql(&session_id)?;
+    browser_pool(&s).schema_sql(&schema, &table, &change).map_err(err)
+}
+
+#[tauri::command]
+async fn sql_apply_schema(state: State<'_, AppState>, session_id: String, schema: String, table: String, change: SchemaChange, confirmed: bool) -> CmdResult<()> {
+    let s = state.sql(&session_id)?;
+    s.sql_protection.check_execution(confirmed).map_err(err)?;
+    if matches!(&change, SchemaChange::Drop { .. }) && !confirmed {
+        return Err("Confirm this SQL operation first".into());
+    }
+    let db = browser_pool(&s);
+    let sql = db.schema_sql(&schema, &table, &change).map_err(err)?;
+    db.apply_schema(sql).await.map_err(err)
+}
+
+#[tauri::command]
+async fn sql_import_rows(state: State<'_, AppState>, session_id: String, schema: String, table: String, columns: Vec<String>, rows: Vec<Vec<Value>>, confirmed: bool) -> CmdResult<usize> {
+    let s = state.sql(&session_id)?;
+    s.sql_protection.check_execution(confirmed).map_err(err)?;
+    if !confirmed { return Err("Confirm this SQL operation first".into()); }
+    browser_pool(&s).import_rows(&schema, &table, columns, rows).await.map_err(err)
+}
+
+#[tauri::command]
+async fn sql_export_table(state: State<'_, AppState>, session_id: String, schema: String, table: String, path: String, format: ExportFormat, request_id: String) -> CmdResult<u64> {
+    browser_request(&state, &request_id, async {
+        let s = state.sql(&session_id)?;
+        browser_pool(&s).export_table(&schema, &table, std::path::Path::new(&path), format).await.map_err(err)
+    }).await
 }
 
 // ---------- Redis ----------
@@ -742,6 +795,7 @@ pub fn run() {
             connect,
             disconnect,
             read_sql_file,
+            read_table_file,
             write_sql_file,
             sql_schemas,
             sql_tables,
@@ -756,6 +810,10 @@ pub fn run() {
             sql_columns,
             sql_preview_changes,
             sql_apply_changes,
+            sql_preview_schema,
+            sql_apply_schema,
+            sql_import_rows,
+            sql_export_table,
             redis_scan,
             redis_get,
             redis_delete,

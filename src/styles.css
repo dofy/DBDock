@@ -666,3 +666,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 .protection-label { color: var(--muted); white-space: nowrap; }
 .export-result { display: flex; gap: 5px; align-items: center; margin-left: auto; }
 .export-result select { width: auto; }
+
+.table-tool fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; }
+.table-tool fieldset > button { justify-self: start; }
+.table-tool .schema-column { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; }
+.table-tool .schema-column > input { flex: 1; min-width: 95px; }
+.table-tool .schema-column label { white-space: nowrap; }
+.table-file-preview { max-height: 36vh; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.table-mapping { display: grid; gap: 5px; white-space: normal; min-width: 120px; }

@@ -76,7 +76,9 @@ A desktop database client for **MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cl
 - Grid editing for tables with a primary key: double-click a cell, add / delete rows, set
   NULL, preview the SQL and commit with ⌘S. Updates and deletes check the original row.
   A conflicting change rolls back the entire commit and leaves the edits pending.
-- Export the current query result as CSV or JSON, up to the rows already loaded.
+- Create tables and edit columns with a SQL preview. The available changes depend on the database engine.
+- Import table data from CSV or JSON with a preview, column mapping and atomic append.
+  Export a whole table, or export just the rows loaded in the current query result.
 - **SQL protection** runs ordinary reads directly on production connections and confirms SQL that
   can modify data or has uncertain effects, as well as grid commits. Choose **Browse only** in connection settings to disable both. Reconnect
   to apply protection changes.

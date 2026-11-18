@@ -5,8 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errText, type SessionInfo, type TableInfo } from "../api";
 import { TableView } from "./TableView";
 import { QueryView } from "./QueryView";
-import { FileCode, RefreshCw, X } from "lucide-react";
+import { FileCode, Plus, RefreshCw, X } from "lucide-react";
 import { ask, message } from "@tauri-apps/plugin-dialog";
+import { SchemaEditor } from "./SchemaEditor";
 
 type Tab =
   | { id: string; type: "table"; schema: string; table: string; isView: boolean }
@@ -35,6 +36,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
   const [schemaReload, setSchemaReload] = useState(0);
   const tableRequest = useRef(0);
   const [filter, setFilter] = useState("");
+  const [creating, setCreating] = useState(false);
   const [tabs, setTabs] = useState<Tab[]>([{ id: newId(), type: "query", title: "Query 1", sql: "" }]);
   const [active, setActive] = useState(tabs[0].id);
   const [columns, setColumns] = useState<Record<string, string[]>>({});
@@ -161,6 +163,9 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
             <RefreshCw size={14} />
           </button>
         </div>
+        {session.sqlProtection !== "browseOnly" && <button disabled={!schema || schemasStatus !== "ready"} onClick={() => setCreating(true)}>
+          <Plus size={14} />{t("New table")}
+        </button>}
         {schemaError && <div className="status bad">{schemaError}</div>}
         {tableError && <div className="status bad">{tableError}</div>}
         <ul className="list">
@@ -214,6 +219,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
                   protection={session.sqlProtection}
                   connectionName={connectionName}
                   dark={dark}
+                  onSchemaChanged={loadTables}
                   onDirtyChange={(dirty, busy) => {
                     const tabs = dirtyTabs.current.get(sid) ?? new Map<string, "dirty" | "busy">();
                     if (busy) tabs.set(t.id, "busy"); else if (dirty) tabs.set(t.id, "dirty"); else tabs.delete(t.id);
@@ -238,6 +244,22 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
           ))}
           {!tabs.length && <div className="grid-empty muted">{t("Pick a table, or open a new SQL tab.")}</div>}
         </div>
+        {creating && <SchemaEditor sessionId={sid} schema={schema} connectionName={connectionName} kind={session.kind} protection={session.sqlProtection}
+          onClose={() => setCreating(false)}
+          onBusy={(busy) => {
+            const states = dirtyTabs.current.get(sid) ?? new Map<string, "dirty" | "busy">();
+            if (busy) states.set("create-table", "busy");
+            else states.delete("create-table");
+            if (states.size) dirtyTabs.current.set(sid, states);
+            else dirtyTabs.current.delete(sid);
+          }}
+          onApplied={(name) => {
+            setCreating(false);
+            setFilter("");
+            loadTables();
+            openTable({ name, kind: "table" });
+          }}
+        />}
       </section>
     </div>
   );
