@@ -1,16 +1,17 @@
 import { backendErrorSummary, t, tf } from "../i18n";
-import { AlignLeft, ChevronDown, CircleAlert, Copy, FileDown, FileUp, History, Play, Square } from "lucide-react";
+import { AlignLeft, ChevronDown, CircleAlert, Copy, FileDown, FileUp, History, ListTree, Play, Square } from "lucide-react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useFeedbackDialog } from "./FeedbackDialog";
 import { selectedOrCurrentStatement } from "../sqlStatement";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, tooltips } from "@codemirror/view";
 import { getCM, Vim } from "@replit/codemirror-vim";
 import { EditorSelection, Prec } from "@codemirror/state";
-import { api, errorDiagnostic, errText, type Kind, type QueryResult, type SqlProtection } from "../api";
+import { api, errorDiagnostic, errText, type ExecutionPlan, type Kind, type PlanMode, type QueryResult, type SqlProtection } from "../api";
 import type { CompletionCatalog } from "../sqlCompletionCatalog";
 import { DataGrid, ResultEmpty } from "./DataGrid";
+import { ExecutionPlanView } from "./ExecutionPlanView";
 import { querySqlExtensions } from "../sqlComplete";
 import { clampSqlEditorShare, DEFAULT_SQL_EDITOR_SHARE, MAX_SQL_EDITOR_SHARE, MIN_SQL_EDITOR_SHARE, updateSettings, useSettings } from "../settings";
 import { vimExtension } from "./CodeEditor";
@@ -38,8 +39,15 @@ interface Props {
   dark: boolean;
 }
 
+type PlanState =
+  | { mode: PlanMode; status: "running" }
+  | { mode: PlanMode; status: "ready"; plan: ExecutionPlan }
+  | { mode: PlanMode; status: "error"; error: string };
+
 export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, visible, focusRequest, onExecuted, value, onChange, completionCatalog, completionRevision, onCompletionChanged, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
+  const [plan, setPlan] = useState<PlanState | null>(null);
+  const [showPlan, setShowPlan] = useState(false);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -58,6 +66,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
   const runAllButton = useRef<HTMLButtonElement>(null);
   const initiallyFocused = useRef(false);
   const editorId = useId();
+  const [tooltipHost, setTooltipHost] = useState<HTMLDivElement | null>(null);
   const queryPane = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const resize = useRef<{ pointerId: number; startY: number; height: number; share: number } | null>(null);
@@ -107,6 +116,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         summary: t(all ? "Run all SQL (⇧⌘↵)" : selection?.empty === false ? "Run selected SQL" : "Run current statement"),
       }))) return;
       setRunning(true);
+      setShowPlan(false);
       setError(null);
       onExecuted(text);
       t0 = performance.now();
@@ -125,6 +135,40 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         setElapsed(Math.round(performance.now() - t0));
         onCompletionChanged(metadataChanged);
       }
+      setRunning(false);
+    }
+  };
+  const explain = async (mode: PlanMode) => {
+    setShowRunOptions(false);
+    if (executing.current || protection === "browseOnly") return;
+    const view = ref.current?.view;
+    const selection = view?.state.selection.main;
+    const current = selectedOrCurrentStatement(view?.state.doc.toString() ?? value, selection?.from ?? 0, selection?.to ?? 0, kind);
+    if (current.status !== "sql") {
+      if (current.status === "ambiguous") toast("warning", t("Select one statement for the execution plan"));
+      return;
+    }
+    const { text } = current;
+    executing.current = true;
+    let submitted = false;
+    try {
+      const analyze = mode === "analyze";
+      if (analyze && !(await confirmSqlWrite(ask, {
+        connectionName, env, object: database, sql: text,
+        title: t("Run EXPLAIN ANALYZE"), action: t("Analyze"),
+        summary: t("EXPLAIN ANALYZE executes this statement and can change data."),
+      }))) return;
+      setRunning(true);
+      setShowPlan(true);
+      setPlan({ mode, status: "running" });
+      submitted = true;
+      const plan = await api.executionPlan(sessionId, text, mode, analyze);
+      setPlan({ mode, status: "ready", plan });
+    } catch (e) {
+      setPlan({ mode, status: "error", error: errorDiagnostic(e) });
+    } finally {
+      if (submitted && mode === "analyze") onCompletionChanged(true);
+      executing.current = false;
       setRunning(false);
     }
   };
@@ -219,6 +263,8 @@ export function QueryView({ sessionId, protection, connectionName, database, env
       // Vim handles `:w` and its editing commands.
       ...(vimOn ? [vimExtension(() => void runRef.current())] : []),
       ...querySqlExtensions(kind, completionCatalog),
+      // Keep popups outside the editor's clipped scrolling pane, including in WebKit.
+      ...(tooltipHost ? [tooltips({ parent: tooltipHost, position: "absolute" })] : []),
       EditorView.contentAttributes.of({ "aria-label": editorLabel }),
       Prec.highest(
         keymap.of([
@@ -241,7 +287,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         ]),
       ),
     ],
-    [kind, completionCatalog, completionRevision, vimOn, editorLabel],
+    [kind, completionCatalog, completionRevision, tooltipHost, vimOn, editorLabel],
   );
 
   const cur = results[active];
@@ -279,6 +325,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
           if (update.selectionSet || update.docChanged) setHasSelection(!update.state.selection.main.empty);
         }} extensions={extensions} theme={dark ? "dark" : "light"} height="100%" basicSetup={{ foldGutter: false }} />
       </div>
+      <div className="query-tooltip-host" ref={setTooltipHost} />
       <div className="toolbar query-toolbar" ref={toolbar}>
         {running ? (
           <button className="danger" onClick={cancel} disabled={kind === "sqlite" || kind === "d1"} title={kind === "sqlite" || kind === "d1" ? t("This database cannot cancel a running query") : t("Cancel the running query")}>
@@ -314,9 +361,17 @@ export function QueryView({ sessionId, protection, connectionName, database, env
                 runOptionsButton.current?.focus();
                 void run(true);
               }}><span>{t("Run all")}</span><kbd>⇧⌘↵</kbd></button>
+              {(kind === "postgres" || kind === "mysql") && <button type="button" disabled={!value.trim()} onClick={() => {
+                runOptionsButton.current?.focus();
+                void explain("analyze");
+              }}>{t("Analyze query…")}</button>}
             </div>}
           </div>
         )}
+        <button type="button" disabled={running || protection === "browseOnly" || !value.trim()} onClick={() => void explain("explain")}
+          title={t("Explain the selected SQL or current statement")}>
+          <ListTree size={14} aria-hidden="true" />{t("Explain")}
+        </button>
         <button type="button" disabled={!value.trim()} onClick={() => void formatEditor()}
           title={`${t("Beautify selection or all SQL")} (⌘I)`}>
           <AlignLeft size={14} aria-hidden="true" />{t("Format SQL")}
@@ -386,6 +441,16 @@ export function QueryView({ sessionId, protection, connectionName, database, env
         }}
       />
       <div className="results" aria-busy={running}>
+        {plan && <div className="toolbar query-result-tabs plan-tabs" role="group" aria-label={t("SQL output")}>
+          <button type="button" className={`chip${!showPlan ? " on" : ""}`} aria-pressed={!showPlan} onClick={() => setShowPlan(false)}>{t("Query results")}</button>
+          <button type="button" className={`chip${showPlan ? " on" : ""}`} aria-pressed={showPlan} onClick={() => setShowPlan(true)}>{t("Execution plan")}</button>
+        </div>}
+        {showPlan && plan ? plan.status === "ready" ? <ExecutionPlanView plan={plan.plan} mode={plan.mode} />
+          : plan.status === "running" ? <ResultEmpty title={t("Waiting for the execution plan…")} />
+          : <div className="query-feedback"><div className="query-error" role="alert">
+            <strong>{t("Could not generate the execution plan")}</strong><pre>{plan.error}</pre>
+          </div></div>
+          : <>
         {error === null && results.length > 1 && <div className="toolbar query-result-tabs" role="group" aria-label={t("Query results")}>
           {results.map((r, i) => (
             <button key={i} className={`chip ${i === active ? "on" : ""}`} aria-pressed={i === active} onClick={() => setActive(i)}>
@@ -437,6 +502,7 @@ export function QueryView({ sessionId, protection, connectionName, database, env
               : <ResultEmpty illustrated title={t("Run SQL to see results")} detail={t("Use ⌘↵ to run the selected SQL or the current statement.")} />}
           </div>
         )}
+        </>}
       </div>
       {visible && showHistory && <CommandPalette
         label={t("Query history")}

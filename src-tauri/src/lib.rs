@@ -6,6 +6,7 @@ mod mongo_db;
 mod redis_db;
 mod sql;
 mod sql_browser;
+mod sql_plan;
 mod sql_protection;
 mod sql_schema;
 mod sql_transfer;
@@ -27,6 +28,7 @@ use tauri::{Emitter, Manager, State};
 use redis_db::{KeyValue, RedisConn, ScanPage};
 use sql::{Change, CompletionColumn, CompletionSession, QueryExecution, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
 use sql_browser::{CompletionForeignKey, TableFilter, TableMetadata};
+use sql_plan::{ExecutionPlan, PlanMode};
 use sql_schema::SchemaChange;
 use sql_transfer::ExportFormat;
 use ssh::Tunnel;
@@ -574,6 +576,12 @@ async fn sql_execute(state: State<'_, AppState>, session_id: String, sql: String
 }
 
 #[tauri::command]
+async fn sql_execution_plan(state: State<'_, AppState>, session_id: String, sql: String, mode: PlanMode, confirmed: bool) -> CmdResult<ExecutionPlan> {
+    let s = state.sql(&session_id)?;
+    pool(&s).execution_plan(&sql, mode, s.sql_protection, confirmed).await.map_err(err)
+}
+
+#[tauri::command]
 async fn sql_cancel(state: State<'_, AppState>, session_id: String) -> CmdResult<()> {
     let s = state.sql(&session_id)?;
     let Conn::Sql(c) = &s.conn else { unreachable!() };
@@ -835,6 +843,7 @@ pub fn run() {
             sql_table_data,
             sql_needs_confirmation,
             sql_execute,
+            sql_execution_plan,
             sql_completion_session,
             sql_cancel,
             sql_columns,

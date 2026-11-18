@@ -67,6 +67,13 @@ export interface QueryResult {
   elapsedMs: number;
 }
 
+export type PlanMode = "explain" | "analyze";
+
+export interface ExecutionPlan {
+  format: "postgresJson" | "mysqlJson" | "mysqlTree" | "sqliteTree";
+  result: QueryResult;
+}
+
 export interface CompletionColumn {
   name: string;
   dataType: string;
@@ -248,6 +255,8 @@ export const api = {
   sqlNeedsConfirmation: (sessionId: string, sql: string) =>
     invoke<boolean>("sql_needs_confirmation", { sessionId, sql }),
   execute: (sessionId: string, sql: string, confirmed: boolean) => invoke<QueryExecution>("sql_execute", { sessionId, sql, confirmed }),
+  executionPlan: (sessionId: string, sql: string, mode: PlanMode, confirmed: boolean) =>
+    invoke<ExecutionPlan>("sql_execution_plan", { sessionId, sql, mode, confirmed }),
   cancel: (sessionId: string) => invoke<void>("sql_cancel", { sessionId }),
   completionSession: (sessionId: string) => invoke<CompletionSession>("sql_completion_session", { sessionId }),
   columns: (sessionId: string, schema: string) => invoke<CompletionSchema>("sql_columns", { sessionId, schema }),
