@@ -5,9 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errText, type SessionInfo, type TableInfo } from "../api";
 import { TableView } from "./TableView";
 import { QueryView } from "./QueryView";
-import { FileCode, Plus, RefreshCw, X } from "lucide-react";
+import { Database, FileCode, LockKeyhole, Plus, RefreshCw, ShieldAlert, X } from "lucide-react";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { SchemaEditor } from "./SchemaEditor";
+import { EnvBadge } from "./Home";
 
 type Tab =
   | { id: string; type: "table"; schema: string; table: string; isView: boolean }
@@ -17,6 +18,8 @@ interface Props {
   session: SessionInfo;
   connectionId: string;
   connectionName: string;
+  database: string;
+  env: string;
   history: SqlHistory;
   showTabNumbers: boolean;
   dark: boolean;
@@ -26,7 +29,7 @@ interface Props {
 let seq = 0;
 const newId = () => `t${++seq}`;
 
-export function SqlWorkspace({ session, connectionId, connectionName, history, showTabNumbers, dark, dirtyTabs }: Props) {
+export function SqlWorkspace({ session, connectionId, connectionName, database, env, history, showTabNumbers, dark, dirtyTabs }: Props) {
   const sid = session.sessionId;
   const [schemas, setSchemas] = useState<string[]>([]);
   const [schema, setSchema] = useState(session.defaultSchema || "");
@@ -150,7 +153,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
   const listStatus = tableListStatus(schema, schemasStatus, tableState.schema, tableState.status, tables.length, shown.length);
 
   return (
-    <div className="workspace">
+    <div className="workspace sql-workspace">
       <aside className="sidebar">
         <select value={schema} onChange={(e) => { tableRequest.current++; setSchema(e.target.value); }} title={session.kind === "mysql" ? t("Database") : t("Schema")}>
           {schemas.map((s) => (
@@ -186,6 +189,15 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
       </aside>
 
       <section className="main">
+        <div className={`sql-connection-context${env === "production" ? " production" : ""}`}>
+          {env === "production" ? <ShieldAlert size={15} aria-hidden="true" /> : <Database size={15} aria-hidden="true" />}
+          <EnvBadge env={env} />
+          <strong title={connectionName}>{connectionName}</strong>
+          {session.sqlProtection !== "automatic" && <span className="sql-protection">
+            <LockKeyhole size={13} aria-hidden="true" />
+            {t(session.sqlProtection === "browseOnly" ? "Browse only" : "Confirm writes")}
+          </span>}
+        </div>
         <div className="tabs">
           {tabs.map((t, index) => (
             <div key={t.id} className={`tab ${t.id === active ? "on" : ""}`} onClick={() => setActive(t.id)}>
@@ -218,6 +230,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
                   isView={t.isView}
                   protection={session.sqlProtection}
                   connectionName={connectionName}
+                  env={env}
                   dark={dark}
                   onSchemaChanged={loadTables}
                   onDirtyChange={(dirty, busy) => {
@@ -233,6 +246,8 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
                   history={history.get(connectionId, schema)}
                   protection={session.sqlProtection}
                   connectionName={connectionName}
+                  database={database}
+                  env={env}
                   onExecuted={(sql) => { history.add(connectionId, schema, sql); setHistoryVersion((n) => n + 1); }}
                   value={t.sql}
                   onChange={(v) => setTabs((ts) => ts.map((x) => (x.id === t.id && x.type === "query" ? { ...x, sql: v } : x)))}
@@ -244,7 +259,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, history, s
           ))}
           {!tabs.length && <div className="grid-empty muted">{t("Pick a table, or open a new SQL tab.")}</div>}
         </div>
-        {creating && <SchemaEditor sessionId={sid} schema={schema} connectionName={connectionName} kind={session.kind} protection={session.sqlProtection}
+        {creating && <SchemaEditor sessionId={sid} schema={schema} connectionName={connectionName} env={env} kind={session.kind} protection={session.sqlProtection}
           onClose={() => setCreating(false)}
           onBusy={(busy) => {
             const states = dirtyTabs.current.get(sid) ?? new Map<string, "dirty" | "busy">();

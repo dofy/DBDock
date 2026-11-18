@@ -330,7 +330,7 @@ function Shell() {
           ) : session.kind === "mongodb" ? (
             <MongoWorkspace session={session} dark={dark} />
           ) : (
-            <SqlWorkspace session={session} connectionId={conn.id} connectionName={conn.name} history={sqlHistory.current} showTabNumbers={active === session.sessionId && heldTabModifier === "cmd"} dark={dark} dirtyTabs={dirtyTabs} />
+            <SqlWorkspace session={session} connectionId={conn.id} connectionName={conn.name} database={conn.database} env={conn.env} history={sqlHistory.current} showTabNumbers={active === session.sessionId && heldTabModifier === "cmd"} dark={dark} dirtyTabs={dirtyTabs} />
           )}
         </div>
       ))}

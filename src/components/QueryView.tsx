@@ -1,5 +1,5 @@
 import { t, tf } from "../i18n";
-import { FileDown, FileUp, Play, Square } from "lucide-react";
+import { ChevronDown, FileDown, FileUp, Play, Square } from "lucide-react";
 import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
 import { selectedOrCurrentLine } from "../sqlHistory";
 import { useMemo, useRef, useState } from "react";
@@ -12,11 +12,14 @@ import { sqlExtensions } from "../sqlComplete";
 import { useSettings } from "../settings";
 import { vimExtension } from "./CodeEditor";
 import { serializeResult, type ExportFormat } from "../sqlResultExport";
+import { confirmSqlWrite } from "../sqlWriteConfirmation";
 
 interface Props {
   sessionId: string;
   protection: SqlProtection;
   connectionName: string;
+  database: string;
+  env: string;
   kind: Kind;
   history: string[];
   onExecuted: (sql: string) => void;
@@ -27,7 +30,7 @@ interface Props {
   dark: boolean;
 }
 
-export function QueryView({ sessionId, protection, connectionName, kind, history, onExecuted, value, onChange, schema, dark }: Props) {
+export function QueryView({ sessionId, protection, connectionName, database, env, kind, history, onExecuted, value, onChange, schema, dark }: Props) {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -35,25 +38,29 @@ export function QueryView({ sessionId, protection, connectionName, kind, history
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [format, setFormat] = useState<ExportFormat>("csv");
   const [exporting, setExporting] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
+  const [showRunOptions, setShowRunOptions] = useState(false);
   const executing = useRef(false);
   const ref = useRef<ReactCodeMirrorRef>(null);
+  const runOptionsButton = useRef<HTMLButtonElement>(null);
+  const runAllButton = useRef<HTMLButtonElement>(null);
 
   const run = async (all = false) => {
     const view = ref.current?.view;
     const doc = view?.state.doc.toString() ?? value;
     const selection = view?.state.selection.main;
     const text = all ? doc : selectedOrCurrentLine(doc, selection?.from ?? 0, selection?.to ?? 0);
+    setShowRunOptions(false);
     if (!text.trim() || executing.current || protection === "browseOnly") return;
     executing.current = true;
     let t0: number | undefined;
     try {
       const confirmed = protection === "confirm" && await api.sqlNeedsConfirmation(sessionId, text);
-      if (confirmed) {
-        const preview = text.length > 1200 ? text.slice(0, 1200) + "\n…" : text;
-        if (!(await ask(tf("Run SQL on {name}?", { name: connectionName }) + "\n\n" + preview, {
-          title: t("Confirm SQL execution"), kind: "warning", okLabel: t("Run"), cancelLabel: t("Cancel"),
-        }))) return;
-      }
+      if (confirmed && !(await confirmSqlWrite({
+        connectionName, env, object: database, sql: text,
+        title: t("Confirm SQL execution"), action: t("Run"),
+        summary: t(all ? "Run all SQL (⇧⌘↵)" : selection?.empty === false ? "Run selected SQL" : "Run SQL on the current line"),
+      }))) return;
       setRunning(true);
       setError(null);
       onExecuted(text);
@@ -133,6 +140,7 @@ export function QueryView({ sessionId, protection, connectionName, kind, history
   );
 
   const cur = results[active];
+  const runScope = t(hasSelection ? "Run selected SQL" : "Run SQL on the current line");
   const exportResult = async () => {
     if (!cur?.columns.length || exporting) return;
     setExporting(true);
@@ -150,46 +158,79 @@ export function QueryView({ sessionId, protection, connectionName, kind, history
   return (
     <div className="query">
       <div className="editor">
-        <CodeMirror ref={ref} value={value} onChange={onChange} extensions={extensions} theme={dark ? "dark" : "light"} height="100%" basicSetup={{ foldGutter: false }} />
+        <CodeMirror ref={ref} value={value} onChange={onChange} onUpdate={(update) => {
+          if (update.selectionSet || update.docChanged) setHasSelection(!update.state.selection.main.empty);
+        }} extensions={extensions} theme={dark ? "dark" : "light"} height="100%" basicSetup={{ foldGutter: false }} />
       </div>
-      <div className="toolbar">
+      <div className="toolbar query-toolbar">
         {running ? (
           <button className="danger" onClick={cancel} disabled={kind === "sqlite" || kind === "d1"} title={kind === "sqlite" || kind === "d1" ? t("This database cannot cancel a running query") : t("Cancel the running query")}>
             <Square size={13} />
              {t("Cancel")} </button>
         ) : (
-          <button className="primary" disabled={protection === "browseOnly"} onClick={() => void run(false)}>
-            <Play size={13} />
-             {t("Run")} </button>
+          <div className="query-run" onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setShowRunOptions(false);
+          }} onKeyDown={(event) => {
+            if (event.key === "Escape" && showRunOptions) {
+              event.stopPropagation();
+              runOptionsButton.current?.focus();
+              setShowRunOptions(false);
+            }
+          }}>
+            <button className="primary" title={`${runScope} (⌘↵)`} aria-label={`${t("Run")} · ${runScope}`} disabled={protection === "browseOnly"} onClick={() => void run(false)}>
+              <Play size={13} />{t("Run")}
+            </button>
+            <button ref={runOptionsButton} className="primary query-run-toggle" aria-label={t("Run options")} aria-expanded={showRunOptions}
+              disabled={protection === "browseOnly"} onClick={(event) => {
+                event.currentTarget.focus();
+                setShowRunOptions(!showRunOptions);
+              }} onKeyDown={(event) => {
+                if (event.key !== "ArrowDown") return;
+                event.preventDefault();
+                if (showRunOptions) runAllButton.current?.focus();
+                else setShowRunOptions(true);
+              }}>
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+            {showRunOptions && <div className="query-run-options">
+              <button ref={runAllButton} autoFocus title={t("Run all SQL (⇧⌘↵)")} onClick={() => {
+                runOptionsButton.current?.focus();
+                void run(true);
+              }}><span>{t("Run all")}</span><kbd>⇧⌘↵</kbd></button>
+            </div>}
+          </div>
         )}
-        <button onClick={() => void run(true)} disabled={running || protection === "browseOnly"} title={t("Run all SQL (⇧⌘↵)")}>{t("Run all")}</button>
-        <button onClick={() => void saveFile()} title={t("Save SQL to file")} aria-label={t("Save SQL to file")}><FileDown size={14} /></button>
-        <button onClick={() => void loadFile()} title={t("Load SQL from file")} aria-label={t("Load SQL from file")}><FileUp size={14} /></button>
-        <select value="" aria-label={t("Recent SQL")} title={t("Recent SQL (this app session)")} disabled={!history.length} onChange={(e) => { if (e.target.value) void chooseHistory(Number(e.target.value) - 1); }}>
-          <option value="">{t("Recent SQL")}</option>
-          {history.map((sql, i) => <option key={sql} value={i + 1}>{sql.replace(/\s+/g, " ").slice(0, 100)}</option>)}
-        </select>
-        {protection !== "automatic" && <span className="small protection-label">{t(protection === "browseOnly" ? "Browse only" : "SQL protected")}</span>}
+        <div className="workspace-tools" role="group" aria-label={t("SQL files and history")}>
+          <button onClick={() => void saveFile()} title={t("Save SQL to file")} aria-label={t("Save SQL to file")}><FileDown size={14} /></button>
+          <button onClick={() => void loadFile()} title={t("Load SQL from file")} aria-label={t("Load SQL from file")}><FileUp size={14} /></button>
+          <select value="" aria-label={t("Recent SQL")} title={t("Recent SQL (this app session)")} disabled={!history.length} onChange={(e) => { if (e.target.value) void chooseHistory(Number(e.target.value) - 1); }}>
+            <option value="">{t("Recent SQL")}</option>
+            {history.map((sql, i) => <option key={sql} value={i + 1}>{sql.replace(/\s+/g, " ").slice(0, 100)}</option>)}
+          </select>
+        </div>
         {vimOn && <span className="vim-badge static">VIM</span>}
-        {protection !== "browseOnly" && <span className="muted query-hint">{running ? t("Running…") : `${t("⌘↵ runs the current line or selection · ⇧⌘↵ runs all")}${vimOn ? t(" · :w runs") : ""}`}</span>}
-        <span className="spacer" />
-        {results.length > 1 &&
-          results.map((r, i) => (
-            <button key={i} className={`chip ${i === active ? "on" : ""}`} onClick={() => setActive(i)}>
+        {protection !== "browseOnly" && <span className="muted query-hint" title={runScope}>
+          {running ? t("Running…") : `${runScope} · ⌘↵${vimOn ? t(" · :w runs") : ""}`}
+        </span>}
+      </div>
+      <div className="results">
+        {!error && results.length > 1 && <div className="toolbar query-result-tabs" role="group" aria-label={t("Query results")}>
+          {results.map((r, i) => (
+            <button key={i} className={`chip ${i === active ? "on" : ""}`} aria-pressed={i === active} onClick={() => setActive(i)}>
               {r.columns.length ? tf("Result {number}", { number: i + 1 }) : `#${i + 1} (${r.rowsAffected ?? 0})`}
             </button>
           ))}
-        {elapsed != null && <span className="muted">{elapsed} ms</span>}
-      </div>
-      <div className="results">
+        </div>}
         {error ? (
           <pre className="error">{error}</pre>
         ) : cur ? (
           <>
             <DataGrid result={cur} />
-            <div className="statusbar">
-              {cur.columns.length ? tf("{count} row(s)", { count: cur.rows.length }) : tf("{count} row(s) affected", { count: cur.rowsAffected ?? 0 })}
-              {cur.truncated && t(" · truncated to 5000 rows")}
+            <div className="statusbar query-result-status">
+              <span>{cur.columns.length ? tf("{count} row(s)", { count: cur.rows.length }) : tf("{count} row(s) affected", { count: cur.rowsAffected ?? 0 })}
+                {cur.truncated && t(" · truncated to 5000 rows")}
+              </span>
+              {elapsed != null && <span className="muted">{elapsed} ms</span>}
               {cur.columns.length > 0 && <div className="export-result">
                 <select aria-label={t("Export format")} disabled={exporting} value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
                   <option value="csv">CSV</option>

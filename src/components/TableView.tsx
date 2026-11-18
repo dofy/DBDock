@@ -4,9 +4,10 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { api, cancellableBrowserRequest, errText, type Cell, type Change, type Kind, type MetadataKind, type QueryResult, type SqlProtection, type TableData, type TableFilter } from "../api";
 import { DataGrid, type GridEditing, type Selection } from "./DataGrid";
 import { SqlInput } from "./SqlInput";
-import { VisualFilter } from "./VisualFilter";
+import { describeVisualFilter, VisualFilter } from "./VisualFilter";
 import { SchemaEditor } from "./SchemaEditor";
 import { TableTransfer } from "./TableTransfer";
+import { confirmSqlWrite } from "../sqlWriteConfirmation";
 import { Check, CircleSlash, Copy, Eye, FileDown, FileUp, Filter, Info, Minus, Plus, RefreshCw, Settings2, Undo2, X } from "lucide-react";
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
   isView: boolean;
   protection: SqlProtection;
   connectionName: string;
+  env: string;
   dark: boolean;
   onSchemaChanged: () => void;
   onDirtyChange: (dirty: boolean, busy: boolean) => void;
@@ -25,7 +27,7 @@ interface Props {
 const PAGE_SIZES = [5, 25, 100, 300, 1000];
 const BINARY = /blob|binary|bytea|bit\b|geometry|point|polygon/i;
 
-export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, dark, onSchemaChanged, onDirtyChange }: Props) {
+export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, env, dark, onSchemaChanged, onDirtyChange }: Props) {
   const [mode, setMode] = useState<"data" | "structure" | MetadataKind>("data");
   const [data, setData] = useState<TableData | null>(null);
   const [structure, setStructure] = useState<QueryResult | null>(null);
@@ -193,9 +195,17 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
     setBusy(true);
     try {
       const confirmed = protection === "confirm";
-      if (confirmed && !(await ask(tf("Commit {count} change(s) to {name} / {table}?", {
-        count: changes.length, name: connectionName, table: `${schema}.${table}`,
-      }), { title: t("Confirm table changes"), kind: "warning", okLabel: t("Commit"), cancelLabel: t("Cancel") }))) return;
+      if (confirmed) {
+        const counts = { insert: 0, update: 0, delete: 0 };
+        for (const change of changes) counts[change.op]++;
+        const sql = await api.previewChanges(sessionId, schema, table, changes.slice(0, 5));
+        if (!(await confirmSqlWrite({
+          connectionName, env, object: `${schema}.${table}`,
+          title: t("Confirm table changes"), action: t("Commit"),
+          summary: tf("{insert} inserted · {update} updated · {delete} deleted", counts),
+          sql: sql.map((statement) => `${statement};`).join("\n") + (changes.length > sql.length ? "\n…" : ""),
+        }))) return;
+      }
       setError(null);
       setConflict(false);
       await api.applyChanges(sessionId, schema, table, changes, confirmed);
@@ -260,6 +270,14 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
 
   const allowTableWrites = protection !== "browseOnly" && !isView;
   const pendingTitle = pendingCount ? t("Commit or discard pending edits first") : undefined;
+  const appliedFilter = visualFilter ? describeVisualFilter(visualFilter) : filter;
+  const applyFilter = (where: string, visual?: TableFilter) => void guard(() => {
+    setPage(0);
+    setFilter(where);
+    setFilterDraft(where);
+    setVisualFilter(visual);
+    setShowFilters(false);
+  });
   const activeMetadata = metadata?.kind === mode ? metadata : undefined;
   const showingMetadata = mode === "indexes" || mode === "foreignKeys";
   const refresh = () => {
@@ -278,78 +296,54 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
 
   return (
     <div className="tableview" ref={root}>
-      <div className="toolbar">
-        <div className="seg">
-          <button className={mode === "data" ? "on" : ""} onClick={() => setMode("data")}>
+      <div className="toolbar table-toolbar">
+        <div className="seg" role="group" aria-label={t("Table view")}>
+          <button className={mode === "data" ? "on" : ""} aria-pressed={mode === "data"} onClick={() => setMode("data")}>
              {t("Data")} </button>
-          <button className={mode === "structure" ? "on" : ""} onClick={() => setMode("structure")}>
+          <button className={mode === "structure" ? "on" : ""} aria-pressed={mode === "structure"} onClick={() => setMode("structure")}>
              {t("Structure")} </button>
-          <button className={mode === "indexes" ? "on" : ""} onClick={() => setMode("indexes")}>{t("Indexes")}</button>
-          <button className={mode === "foreignKeys" ? "on" : ""} onClick={() => setMode("foreignKeys")}>{t("Foreign keys")}</button>
+          <button className={mode === "indexes" ? "on" : ""} aria-pressed={mode === "indexes"} onClick={() => setMode("indexes")}>{t("Indexes")}</button>
+          <button className={mode === "foreignKeys" ? "on" : ""} aria-pressed={mode === "foreignKeys"} onClick={() => setMode("foreignKeys")}>{t("Foreign keys")}</button>
         </div>
-        {mode === "data" && <button disabled={!colNames.length} aria-expanded={showFilters} className={visualFilter || showFilters ? "on-btn" : ""} onClick={() => setShowFilters((v) => !v)}>
-          <Filter size={14} />{t("Filters")}{visualFilter ? ` (${visualFilter.conditions.length})` : ""}
-        </button>}
-        {mode === "data" && protection === "automatic" && !showFilters && (
-          <div className="filter">
-            <span className="muted">WHERE</span>
-            <SqlInput
-              kind={kind}
-              table={table}
-              columns={colNames}
-              value={filterDraft}
-              onChange={setFilterDraft}
-              onSubmit={() =>
-                void guard(() => {
-                  setPage(0);
-                  setFilter(filterDraft.trim());
-                  setVisualFilter(undefined);
-                })
-              }
-              placeholder={t("id > 10 AND name LIKE 'a%'   (Enter to apply)")}
-              dark={dark}
-            />
-          </div>
-        )}
-        <span className="spacer" />
-        {mode === "data" && editable && (
-          <>
-            <button disabled={loading || busy} onClick={() => setInserted((rows) => [...rows, columns.map(() => undefined)])} title={t("Add a row")}>
-              <Plus size={14} />{t("Row")} </button>
-            <button onClick={toggleDelete} disabled={!sel || loading || busy} title={t("Delete or restore the selected row")}>
-              <Minus size={14} />{t("Row")} </button>
-            <button onClick={setNull} disabled={!sel || loading || busy} title={t("Set the selected cell to NULL")}>
-              <CircleSlash size={14} />NULL
+        <div className="workspace-tools table-tools">
+          {mode === "data" && editable && <>
+            <button disabled={loading || busy} onClick={() => setInserted((rows) => [...rows, columns.map(() => undefined)])} title={t("Add a row")} aria-label={t("Add a row")}>
+              <Plus size={14} /><span className="table-row-label">{t("Row")}</span></button>
+            <button onClick={toggleDelete} disabled={!sel || loading || busy} title={t("Delete or restore the selected row")} aria-label={t("Delete or restore the selected row")}>
+              <Minus size={14} /><span className="table-row-label">{t("Row")}</span></button>
+            <button onClick={setNull} disabled={!sel || loading || busy} title={t("Set the selected cell to NULL")} aria-label={t("Set the selected cell to NULL")}>
+              <CircleSlash size={14} /><span className="table-row-label">NULL</span>
             </button>
-          </>
-        )}
-        {mode === "data" && !editable && data && structure && (
-          <span className="muted small" title={t("Editing needs a primary key")}>
-            {protection === "browseOnly" ? t("Browse only") : isView ? t("view · read-only") : t("no primary key · read-only")}
-          </span>
-        )}
-        {!data && mode === "data" && <select value={limit} aria-label={t("Rows per page")} onChange={(e) => { setPage(0); setLimit(Number(e.target.value)); }}>
-          {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} {t("/ page")}</option>)}
-        </select>}
-        {mode === "structure" && allowTableWrites && <button disabled={busy || structureLoading || pendingCount > 0}
-          title={pendingTitle} onClick={() => setOperation("schema")}><Settings2 size={14} />{t("Edit structure")}</button>}
-        {mode === "data" && allowTableWrites && <button disabled={busy || !colNames.length || pendingCount > 0}
-          title={pendingTitle ?? t("Import table data")} onClick={() => setOperation("import")} aria-label={t("Import table data")}><FileUp size={14} /></button>}
-        {mode === "data" && <button disabled={busy} title={t("Export table data")} onClick={() => setOperation("export")} aria-label={t("Export table data")}><FileDown size={14} /></button>}
-        <button onClick={refresh} disabled={busy || (mode === "data" && loading)} title={t("Refresh")}>
-          <RefreshCw size={14} />
-        </button>
+          </>}
+          {mode === "structure" && allowTableWrites && <button disabled={busy || structureLoading || pendingCount > 0}
+            title={pendingTitle} onClick={() => setOperation("schema")}><Settings2 size={14} />{t("Edit structure")}</button>}
+          {mode === "data" && allowTableWrites && <button disabled={busy || !colNames.length || pendingCount > 0}
+            title={pendingTitle ?? t("Import table data")} onClick={() => setOperation("import")} aria-label={t("Import table data")}><FileUp size={14} /></button>}
+          {mode === "data" && <button disabled={busy} title={t("Export table data")} onClick={() => setOperation("export")} aria-label={t("Export table data")}><FileDown size={14} /></button>}
+          <button onClick={refresh} disabled={busy || (mode === "data" && loading)} title={t("Refresh")} aria-label={t("Refresh")}>
+            <RefreshCw size={14} />
+          </button>
+        </div>
       </div>
 
-      {mode === "data" && showFilters && <VisualFilter columns={colNames} applied={visualFilter} onClose={() => setShowFilters(false)} onApply={(next) => {
-        void guard(() => {
-          setPage(0);
-          setFilter("");
-          setFilterDraft("");
-          setVisualFilter(next);
-          setShowFilters(false);
-        });
-      }} />}
+      {mode === "data" && <>
+        <div className="toolbar table-filter-bar">
+          <button disabled={!colNames.length} aria-expanded={showFilters} className={appliedFilter || showFilters ? "on-btn" : ""} onClick={() => setShowFilters((v) => !v)}>
+            <Filter size={14} />{t("Filters")}
+          </button>
+          {protection === "automatic" && !showFilters && <div className="filter">
+            <span className="muted">WHERE</span>
+            <SqlInput kind={kind} table={table} columns={colNames} value={filterDraft} onChange={setFilterDraft}
+              onSubmit={() => applyFilter(filterDraft.trim())} placeholder={t("id > 10 AND name LIKE 'a%'   (Enter to apply)")} dark={dark} />
+          </div>}
+          {appliedFilter && <div className="applied-filter">
+            <span className="muted">{t("Applied filter")}</span>
+            <code title={appliedFilter}>{appliedFilter}</code>
+            <button className="icon-btn" disabled={busy || loading} onClick={() => applyFilter("")} title={t("Clear filters")} aria-label={t("Clear filters")}><X size={14} /></button>
+          </div>}
+        </div>
+        {showFilters && <VisualFilter columns={colNames} applied={visualFilter} onClose={() => setShowFilters(false)} onApply={(next) => applyFilter("", next)} />}
+      </>}
 
       {pendingCount > 0 && (
         <div className="pending-bar">
@@ -377,14 +371,13 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
           <div className="loading-grid-header" />
           {Array.from({ length: 40 }, (_, i) => <div className="loading-grid-row" key={i} />)}
         </div>
-        <div className="statusbar loading-status" role="status" aria-live="polite">
+        {mode === "structure" && <div className="statusbar loading-status" role="status" aria-live="polite">
           <span className="loading-spinner" aria-hidden="true" />
-          {t(mode === "data" ? "Loading rows…" : "Loading structure…")}
-        </div>
+          {t("Loading structure…")}
+        </div>}
       </>}
 
       {mode === "data" && display && (
-        <>
           <DataGrid
             result={display}
             fallbackColumns={colNames}
@@ -396,24 +389,27 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
             resetKey={data}
             onSelect={setSel}
           />
-          <div className="statusbar">
-            <button disabled={page === 0 || loading} onClick={() => void guard(() => setPage((p) => p - 1))}>
+      )}
+
+      {mode === "data" && <div className="statusbar table-status">
+          <div className="workspace-tools" role="group" aria-label={t("Pagination")}>
+            <button disabled={page === 0 || loading || busy} title={t("Previous page")} aria-label={t("Previous page")} onClick={() => void guard(() => setPage((p) => p - 1))}>
               ‹
             </button>
-            <span>
-               {t("rows")} {baseRows ? page * limit + 1 : 0}–{page * limit + baseRows}
-            </span>
-            <button disabled={!data?.hasMore || loading} onClick={() => void guard(() => setPage((p) => p + 1))}>
+            <span>{display ? `${t("rows")} ${baseRows ? page * limit + 1 : 0}–${page * limit + baseRows}` : "—"}</span>
+            <button disabled={!data?.hasMore || loading || busy} title={t("Next page")} aria-label={t("Next page")} onClick={() => void guard(() => setPage((p) => p + 1))}>
               ›
             </button>
             <select
-              value={limit}
+              value={limit} aria-label={t("Rows per page")} disabled={busy || (loading && !!data)}
               onChange={(e) => {
                 const n = Number(e.target.value);
-                void guard(() => {
+                const changePageSize = () => {
                   setLimit(n);
                   setPage(0);
-                });
+                };
+                if (data) void guard(changePageSize);
+                else changePageSize();
               }}
             >
               {PAGE_SIZES.map((n) => (
@@ -421,14 +417,15 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
                   {n}  {t("/ page")} </option>
               ))}
             </select>
-            {(kind === "postgres" || kind === "mysql") && <span className="muted" title={t("Table browsing uses a separate connection and shows committed data.")} aria-label={t("Table browsing uses a separate connection and shows committed data.")}><Info size={14} /></span>}
-            {editable && <span className="muted">{t("double-click to edit · Enter saves · Esc cancels")}</span>}
-            <span className="spacer" />
-            <code className="muted sql-line">{data?.sql}</code>
-            {loading ? <span className="loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading rows…")}</span> : <span className="muted">{data?.result.elapsedMs} ms</span>}
           </div>
-        </>
-      )}
+          {loading ? <span className="loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading rows…")}</span> : data && <>
+            {(kind === "postgres" || kind === "mysql") && <span className="muted table-info" title={t("Table browsing uses a separate connection and shows committed data.")} aria-label={t("Table browsing uses a separate connection and shows committed data.")}><Info size={14} /></span>}
+            {!editable && structure && protection !== "browseOnly" && <span className="muted">{t(isView ? "view · read-only" : "no primary key · read-only")}</span>}
+            {editable && <span className="muted table-edit-hint">{t("double-click to edit · Enter saves · Esc cancels")}</span>}
+            <code className="muted sql-line" title={data.sql}>{data.sql}</code>
+            <span className="muted table-elapsed">{data.result.elapsedMs} ms</span>
+          </>}
+      </div>}
 
       {mode === "structure" && structure && <DataGrid result={structure} />}
       {showingMetadata && (activeMetadata?.result
@@ -438,7 +435,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
           : <div className="statusbar loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading structure…")}</div>)}
 
       {operation === "schema" && <SchemaEditor sessionId={sessionId} schema={schema} table={table} columns={colNames}
-        connectionName={connectionName} kind={kind} protection={protection} onBusy={setBusy}
+        connectionName={connectionName} env={env} kind={kind} protection={protection} onBusy={setBusy}
         onClose={() => setOperation(undefined)}
         onApplied={() => {
           setOperation(undefined);
@@ -457,13 +454,16 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
         }}
       />}
       {(operation === "import" || operation === "export") && <TableTransfer sessionId={sessionId} schema={schema} table={table}
-        connectionName={connectionName} columns={colNames} mode={operation} onBusy={setBusy} onClose={() => setOperation(undefined)}
+        connectionName={connectionName} env={env} columns={colNames} mode={operation} onBusy={setBusy} onClose={() => setOperation(undefined)}
         onImported={() => { setOperation(undefined); void load(); }} />}
 
       {preview && (
         <div className="modal-backdrop" onMouseDown={() => setPreview(null)}>
-          <div className="modal wide" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="modal wide" role="dialog" aria-modal="true" aria-label={t("Pending SQL")} onMouseDown={(e) => e.stopPropagation()}>
             <h2>{t("Pending SQL")}</h2>
+            <p className="sql-dialog-target" data-production={env === "production"}>{env === "production" && <span>{t("PROD")} · </span>}
+              {connectionName} / {schema}.{table}
+            </p>
             <pre className="sql-preview">{preview.map((s) => `${s};`).join("\n")}</pre>
             <p className="muted small">{t("Runs in one transaction. Each UPDATE / DELETE must match exactly one row, or everything is rolled back.")}</p>
             <div className="actions">

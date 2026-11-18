@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Prec } from "@codemirror/state";
+import { acceptCompletion } from "@codemirror/autocomplete";
 import { keymap } from "@codemirror/view";
 import type { Kind } from "../api";
 import { sqlExtensions } from "../sqlComplete";
@@ -24,8 +25,10 @@ export function SqlInput({ kind, table, columns, value, onChange, onSubmit, plac
   const extensions = useMemo(
     () => [
       ...sqlExtensions(kind, { [table]: columns }, table),
-      // The completion keymap has higher precedence, so Enter accepts a suggestion first.
-      keymap.of([{ key: "Enter", run: () => (submit.current(), true) }]),
+      Prec.highest(keymap.of([{ key: "Enter", run: (view) => {
+        if (!acceptCompletion(view)) submit.current();
+        return true;
+      } }])),
       EditorState.transactionFilter.of((tr) => (tr.newDoc.lines > 1 ? [] : tr)),
     ],
     [kind, table, columns],

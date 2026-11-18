@@ -8,6 +8,16 @@ const OPERATORS: [FilterOperator, string][] = [
   ["contains", "Contains"], ["isNull", "IS NULL"], ["isNotNull", "IS NOT NULL"],
 ];
 
+export function describeVisualFilter(filter: TableFilter) {
+  const join = t(filter.matchAny ? "OR" : "AND");
+  return filter.conditions.map(({ column, operator, value }) => {
+    const label = t(OPERATORS.find(([op]) => op === operator)?.[1] ?? operator);
+    return operator === "isNull" || operator === "isNotNull"
+      ? `${column} ${label}`
+      : `${column} ${label} ${JSON.stringify(value)}`;
+  }).join(` ${join} `);
+}
+
 export function VisualFilter({ columns, applied, onApply, onClose }: {
   columns: string[];
   applied?: TableFilter;

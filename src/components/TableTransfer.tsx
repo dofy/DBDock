@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { FileDown, FileUp, X } from "lucide-react";
 import { api, cancellableBrowserRequest, errText } from "../api";
 import { t, tf } from "../i18n";
@@ -7,6 +7,7 @@ import type { ExportFormat } from "../sqlResultExport";
 import { parseTableFile, type TableFile } from "../tableImport";
 import type { TableActionTarget } from "./SchemaEditor";
 import { useToast } from "./Toast";
+import { confirmSqlWrite } from "../sqlWriteConfirmation";
 
 interface Props extends TableActionTarget {
   table: string;
@@ -17,7 +18,7 @@ interface Props extends TableActionTarget {
   onImported: () => void;
 }
 
-export function TableTransfer({ sessionId, schema, table, connectionName, columns, mode, onClose, onBusy, onImported }: Props) {
+export function TableTransfer({ sessionId, schema, table, connectionName, env, columns, mode, onClose, onBusy, onImported }: Props) {
   const importing = mode === "import";
   const action = t(importing ? "Import table data" : "Export table data");
   const [format, setFormat] = useState<ExportFormat>("csv");
@@ -54,8 +55,10 @@ export function TableTransfer({ sessionId, schema, table, connectionName, column
     onBusy(true);
     setError("");
     try {
-      if (!(await ask(tf("Append {count} row(s) to {name} / {table}?", { count: loaded.data.rows.length, name: connectionName, table: target }), {
-        title: t("Confirm import"), kind: "warning", okLabel: t("Import"), cancelLabel: t("Cancel"),
+      if (!(await confirmSqlWrite({
+        connectionName, env, object: target,
+        title: t("Confirm import"), action: t("Import"),
+        summary: tf("Append {count} row(s) from {file} into {columns} column(s).", { count: loaded.data.rows.length, file: loaded.name, columns: mapped.length }),
       }))) return;
       const indexes = mapping.flatMap((column, index) => column ? [index] : []);
       const count = await api.importRows(sessionId, schema, table, mapped, loaded.data.rows.map((row) => indexes.map((i) => row[i])), true);
@@ -97,7 +100,9 @@ export function TableTransfer({ sessionId, schema, table, connectionName, column
         <h2>{action}</h2>
         <button className="icon-btn" aria-label={t("Close")} onClick={onClose} disabled={busy}><X size={15} /></button>
       </div>
-      <p className="muted">{connectionName} / {target}</p>
+      <p className="sql-dialog-target" data-production={env === "production"}>{env === "production" && <span>{t("PROD")} · </span>}
+        {connectionName} / {target}
+      </p>
       {error && <pre className="error">{error}</pre>}
       {importing ? <>
         <div className="row">

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { confirmSqlWrite } from "../sqlWriteConfirmation";
 import { Eye, Plus, Trash2, X } from "lucide-react";
 import { api, errText, type ColumnDraft, type ColumnType, type Kind, type SchemaChange, type SqlProtection } from "../api";
 import { t, tf } from "../i18n";
@@ -46,6 +46,7 @@ export interface TableActionTarget {
   sessionId: string;
   schema: string;
   connectionName: string;
+  env: string;
 }
 
 interface Props extends TableActionTarget {
@@ -60,7 +61,7 @@ interface Props extends TableActionTarget {
 
 type Alter = Exclude<SchemaChange["op"], "create">;
 
-export function SchemaEditor({ sessionId, schema, connectionName, kind, protection, table, columns = [], onClose, onBusy, onApplied }: Props) {
+export function SchemaEditor({ sessionId, schema, connectionName, env, kind, protection, table, columns = [], onClose, onBusy, onApplied }: Props) {
   const create = table === undefined;
   const [name, setName] = useState(table ?? "");
   const [drafts, setDrafts] = useState<ColumnDraft[]>([blank()]);
@@ -111,10 +112,13 @@ export function SchemaEditor({ sessionId, schema, connectionName, kind, protecti
       const destructive = preview.change.op === "drop";
       const confirmed = destructive || protection === "confirm";
       if (confirmed) {
-        const prompt = preview.change.op === "drop"
+        const summary = preview.change.op === "drop"
           ? tf("Drop {column} and its data from {table}?", { column: preview.change.column, table: `${schema}.${preview.target}` })
-          : tf("Apply this schema change on {name}?", { name: connectionName });
-        if (!(await ask(prompt + "\n\n" + preview.sql, { title: t("Confirm schema change"), kind: "warning", okLabel: t("Apply"), cancelLabel: t("Cancel") }))) return;
+          : t(preview.change.op === "create" ? "New table" : actions.find(([key]) => key === preview.change.op)?.[1] ?? "Edit structure");
+        if (!(await confirmSqlWrite({
+          connectionName, env, object: `${schema}.${preview.target}`, summary, sql: preview.sql,
+          title: t("Confirm schema change"), action: t("Apply"),
+        }))) return;
       }
       await api.applySchema(sessionId, schema, preview.target, preview.change, confirmed);
       onApplied(preview.target);
@@ -128,7 +132,9 @@ export function SchemaEditor({ sessionId, schema, connectionName, kind, protecti
         <h2>{t(create ? "New table" : "Edit structure")}</h2>
         <button className="icon-btn" aria-label={t("Close")} disabled={busy} onClick={onClose}><X size={15} /></button>
       </div>
-      <p className="muted">{connectionName} / {schema}{table ? `.${table}` : ""}</p>
+      <p className="sql-dialog-target" data-production={env === "production"}>{env === "production" && <span>{t("PROD")} · </span>}
+        {connectionName} / {schema}{preview || table ? `.${preview?.target ?? table}` : ""}
+      </p>
       {error && <pre className="error">{error}</pre>}
       {preview ? <>
         <pre className="sql-preview">{preview.sql};</pre>
