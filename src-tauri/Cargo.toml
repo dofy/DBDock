@@ -1,6 +1,6 @@
 [package]
 name = "dbdock"
-version = "1.1.0"
+version = "1.1.1"
 description = "DBDock: database client for MySQL, PostgreSQL, SQLite, Redis, MongoDB and Cloudflare D1"
 authors = ["phpz.org"]
 license = "MIT"

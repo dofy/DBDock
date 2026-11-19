@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>データベースのための使いやすい作業空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.0</p>
+<p align="center"><strong>データベースのための使いやすい作業空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.1</p>
 
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · 日本語<br />
 <a href="https://dbdock.phpz.org/">公式サイト</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -68,6 +68,12 @@ pnpm tauri dev
 `src-tauri` ディレクトリで `cargo test` を実行すると単体テストが走ります。実際のデータベースを使う統合テストは既定で無効です。使い捨てのテスト用データベースに対してのみ実行してください。コマンドと D1 の設定は[英語版 README](README.md#develop) を参照してください。
 
 ## 変更履歴
+
+### 1.1.1 — 2026-11-19
+
+- 中国語入力で英字を Enter キーで確定すると、コマンドパレットが先にコマンドを実行する問題を修正しました。
+- コマンドパレットのショートカットを大きめの等幅フォントでキーキャップに表示し、記号間の間隔を広げました。
+- macOS で「クエリを分析…」をマウスでクリックしたときに、確認ダイアログが開かない問題を修正しました。
 
 ### 1.1.0 — 2026-11-18
 

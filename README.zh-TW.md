@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>為資料庫打造順手的工作空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.0</p>
+<p align="center"><strong>為資料庫打造順手的工作空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.1</p>
 
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · 繁體中文 · <a href="README.ja.md">日本語</a><br />
 <a href="https://dbdock.phpz.org/zh-Hant/">官網</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -68,6 +68,12 @@ pnpm tauri dev
 在 `src-tauri` 目錄執行 `cargo test` 可執行單元測試。真實資料庫整合測試預設忽略，僅應對一次性測試資料庫手動執行；命令和 D1 設定請見[英文 README](README.md#develop)。
 
 ## 更新記錄
+
+### 1.1.1 — 2026-11-19
+
+- 修正在中文輸入法中按 Enter 確認英文時，命令面板提前執行命令的問題。
+- 命令面板快捷鍵採用較大的等寬字型鍵帽，並增加按鍵符號間距。
+- 修正 macOS 上用滑鼠點選「分析查詢…」時未開啟確認對話框的問題。
 
 ### 1.1.0 — 2026-11-18
 
