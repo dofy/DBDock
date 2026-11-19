@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Command palette IME regression</title></head>
+<body>
+<div id="root"></div>
+<script type="module">
+  import { createElement } from "react";
+  import { flushSync } from "react-dom";
+  import { createRoot } from "react-dom/client";
+  import { CommandPalette } from "../../src/components/CommandPalette";
+  import { updateSettings } from "../../src/settings";
+
+  function assert(condition, message) {
+    if (!condition) throw new Error(message);
+  }
+
+  try {
+    updateSettings({ language: "en" });
+    const commands = [
+      { id: "new", label: "New connection", category: "Connection", run() {} },
+      { id: "health", label: "Health check", category: "Connection", run() {} },
+    ];
+    const executed = [];
+    let closed = false;
+    const root = createRoot(document.querySelector("#root"));
+    flushSync(() => root.render(createElement(CommandPalette, {
+      commands, onClose: () => { closed = true; }, onRun: command => executed.push(command.id),
+    })));
+    const input = document.querySelector("input");
+    function keydown(key, { keyCode = 0, isComposing = false, repeat = false } = {}) {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, isComposing, repeat });
+      Object.defineProperty(event, "keyCode", { value: keyCode });
+      flushSync(() => input.dispatchEvent(event));
+      return event.defaultPrevented;
+    }
+
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    assert(!keydown("Enter", { isComposing: true }), "Keep the standard composition Enter available to the IME");
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "health" }));
+
+    // macOS WebKit can report compositionend before the confirming Enter.
+    assert(!keydown("Enter", { keyCode: 229 }), "Keep the WebKit composition Enter available to the IME");
+    assert(executed.length === 0, "Confirming input must never run a command");
+
+    // Apply the text the input method just committed and dispatch a real input event.
+    const { set } = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    flushSync(() => {
+      set.call(input, "health");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "health" }));
+    });
+    assert(input.value === "health", "Keep the committed English text");
+    assert(!keydown("Escape", { keyCode: 229 }) && !closed, "Keep composition Escape in the input method");
+    assert(keydown("Enter", { keyCode: 13 }), "Handle the next ordinary Enter");
+    assert(executed.join() === "health", "Run the command matching the committed search exactly once");
+    keydown("Enter", { keyCode: 13, repeat: true });
+    assert(executed.length === 1, "Ignore a repeated Enter");
+    assert(keydown("Escape", { keyCode: 27 }) && closed, "Ordinary Escape still closes the palette");
+    window.webkit.messageHandlers.result.postMessage("ok");
+  } catch (error) {
+    window.webkit.messageHandlers.result.postMessage(String(error));
+  }
+</script>
+</body>
+</html>

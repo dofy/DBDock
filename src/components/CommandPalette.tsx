@@ -16,6 +16,11 @@ interface Props {
   preview?: boolean;
 }
 
+function isInputMethodKey(event: KeyboardEvent) {
+  // macOS WebKit can end composition before the confirming keydown, which still carries keyCode 229.
+  return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
+}
+
 export function CommandPalette({ commands, onClose, onRun, label = t("Command palette"), placeholder = t("Search commands"),
   empty = t("No matching commands"), controls, status, onFavorite, preview }: Props) {
   const [query, setQuery] = useState("");
@@ -30,7 +35,7 @@ export function CommandPalette({ commands, onClose, onRun, label = t("Command pa
   useEffect(() => { list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }, [current?.id, selected]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    if (isInputMethodKey(event)) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault(); event.stopPropagation();
       if (matches.length) setSelectedId(matches[(selected + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length].id);
@@ -43,7 +48,8 @@ export function CommandPalette({ commands, onClose, onRun, label = t("Command pa
   return <div className="palette-backdrop" onMouseDown={onClose}>
     <div className="command-palette" role="dialog" aria-modal="true" aria-label={label} onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+        if (isInputMethodKey(event)) return;
+        if (event.key === "Escape") {
           event.preventDefault(); event.stopPropagation(); onClose();
         }
         if (event.key === "Tab") {
@@ -58,7 +64,7 @@ export function CommandPalette({ commands, onClose, onRun, label = t("Command pa
       }}>
       <div className="palette-search"><Search size={17} aria-hidden="true"/><input ref={input} autoFocus role="combobox" aria-expanded="true" aria-controls={listId}
         aria-autocomplete="list" aria-activedescendant={current ? `${listId}-${selected}` : undefined} aria-label={placeholder} placeholder={placeholder}
-        value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(undefined); }} onKeyDown={onKeyDown} spellCheck={false}/><kbd>esc</kbd></div>
+        value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(undefined); }} onKeyDown={onKeyDown} spellCheck={false}/><kbd>Esc</kbd></div>
       {controls && <div className="palette-controls" onClick={() => { setSelectedId(undefined); input.current?.focus(); }}>{controls}</div>}
       {status && <div className="palette-status" role="status">{status}</div>}
       <div className="palette-results" id={listId} role="listbox" aria-label={label} ref={list}>
@@ -71,7 +77,9 @@ export function CommandPalette({ commands, onClose, onRun, label = t("Command pa
           </span> : <span className="palette-title" title={command.detail ?? command.label}>{command.label}</span>}
           {command.badge && <span className={command.badge.className}>{command.badge.label}</span>}
           {command.category && <span className="palette-category" title={command.category}>{command.category}</span>}
-          {!onFavorite && !preview && <kbd className="palette-shortcut" aria-hidden={!command.shortcut || undefined}>{command.shortcut || ""}</kbd>}
+          {!onFavorite && !preview && <span className="palette-shortcut" aria-hidden={!command.shortcut || undefined}>
+            {command.shortcut && <kbd>{command.shortcut}</kbd>}
+          </span>}
         </button>) : <div className="palette-empty">{empty}</div>}
       </div>
       {preview && current?.detail && <pre className="palette-preview">{current.detail}</pre>}
@@ -81,7 +89,7 @@ export function CommandPalette({ commands, onClose, onRun, label = t("Command pa
           <Star size={14} fill={current?.favorite ? "currentColor" : "none"} aria-hidden="true" />
           {t(current?.favorite ? "Remove favorite" : "Add favorite")}
         </button> : <span>{preview ? t("Load into editor") : t("Choose a command")}</span>}
-        <span>↑↓ · ↵</span>
+        <span className="palette-navigation"><kbd>↑</kbd><kbd>↓</kbd><kbd>↵</kbd></span>
       </div>
     </div>
   </div>;

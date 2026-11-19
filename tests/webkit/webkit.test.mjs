@@ -7,11 +7,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { createServer } from "vite";
 
-// Run on macOS with node --test tests/webkit/queryRunOptions.test.mjs.
-test("WebKit run options support mouse and keyboard ANALYZE confirmation", {
-  skip: process.platform !== "darwin",
-}, async () => {
-  const scratch = await mkdtemp(join(tmpdir(), "dbdock-run-options-"));
+// Run on macOS with node --test tests/webkit/webkit.test.mjs.
+async function runFixture(filename) {
+  const scratch = await mkdtemp(join(tmpdir(), "dbdock-webkit-"));
   const server = await createServer({ logLevel: "silent", server: { host: "127.0.0.1", port: 0, hmr: false } });
   try {
     const runner = join(scratch, "WebKitTest.swift");
@@ -45,11 +43,17 @@ app.run()
     await server.listen();
     const { port } = server.httpServer.address();
     const { stdout } = await promisify(execFile)("/usr/bin/swift", [
-      runner, `http://127.0.0.1:${port}/tests/webkit/queryRunOptions.html`,
+      runner, `http://127.0.0.1:${port}/tests/webkit/${filename}`,
     ], { timeout: 30_000 });
     assert.equal(stdout.trim(), "ok");
   } finally {
     await server.close();
     await rm(scratch, { recursive: true, force: true });
   }
-});
+}
+
+const macOSOnly = { skip: process.platform !== "darwin" };
+
+test("WebKit run options support mouse and keyboard ANALYZE confirmation", macOSOnly, () => runFixture("queryRunOptions.html"));
+
+test("WebKit command palette lets the input method commit text before running a command", macOSOnly, () => runFixture("commandPalette.html"));
