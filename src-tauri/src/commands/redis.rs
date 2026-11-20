@@ -3,7 +3,8 @@ use serde_json::Value;
 use tauri::State;
 
 use crate::redis_db::{KeyValue, RedisConn, ScanPage};
-use crate::{AppState, CmdResult, Conn, Session, err};
+use crate::sessions::{Conn, Session};
+use crate::{AppState, CmdResult, err};
 
 fn redis(s: &Session) -> CmdResult<&RedisConn> {
     match &s.conn {
@@ -20,7 +21,7 @@ pub(crate) async fn redis_scan(
     pattern: String,
     count: u32,
 ) -> CmdResult<ScanPage> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     redis(&s)?.scan(cursor, &pattern, count).await.map_err(err)
 }
 
@@ -30,7 +31,7 @@ pub(crate) async fn redis_get(
     session_id: String,
     key: String,
 ) -> CmdResult<KeyValue> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     redis(&s)?.get(&key).await.map_err(err)
 }
 
@@ -40,7 +41,7 @@ pub(crate) async fn redis_delete(
     session_id: String,
     key: String,
 ) -> CmdResult<i64> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     redis(&s)?.delete(&key).await.map_err(err)
 }
 
@@ -50,7 +51,7 @@ pub(crate) async fn redis_command(
     session_id: String,
     line: String,
 ) -> CmdResult<Value> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     redis(&s)?.command(&line).await.map_err(err)
 }
 
@@ -67,7 +68,7 @@ pub(crate) async fn redis_select(
     session_id: String,
     db: Option<i64>,
 ) -> CmdResult<RedisDbInfo> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     let r = redis(&s)?;
     if let Some(db) = db {
         r.select(db).await.map_err(err)?;

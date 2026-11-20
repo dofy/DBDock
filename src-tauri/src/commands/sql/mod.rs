@@ -3,11 +3,12 @@ pub(crate) mod files;
 
 use tauri::State;
 
+use crate::sessions::{Conn, Session};
 use crate::sql::{CompletionColumn, CompletionSession, QueryExecution, SqlConn};
 use crate::sql_browser::CompletionForeignKey;
 use crate::sql_plan::{ExecutionPlan, PlanMode};
 use crate::store::SqlProtection;
-use crate::{AppState, CmdResult, Conn, Session, err, sql_protection};
+use crate::{AppState, CmdResult, err, sql_protection};
 
 fn sql_connection(session: &Session) -> &SqlConn {
     let Conn::Sql(connection) = &session.conn else {
@@ -22,7 +23,7 @@ pub(crate) fn sql_needs_confirmation(
     session_id: String,
     sql: String,
 ) -> CmdResult<bool> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     Ok(s.sql_protection == SqlProtection::Confirm
         && sql_protection::needs_confirmation(&sql, sql_connection(&s).pool.dialect()))
 }
@@ -34,7 +35,7 @@ pub(crate) async fn sql_execute(
     sql: String,
     confirmed: bool,
 ) -> CmdResult<QueryExecution> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     let pool = &sql_connection(&s).pool;
     let metadata_changed = sql_protection::needs_confirmation(&sql, pool.dialect());
     if s.sql_protection != SqlProtection::Confirm || (!confirmed && metadata_changed) {
@@ -55,7 +56,7 @@ pub(crate) async fn sql_execution_plan(
     mode: PlanMode,
     confirmed: bool,
 ) -> CmdResult<ExecutionPlan> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     sql_connection(&s)
         .pool
         .execution_plan(&sql, mode, s.sql_protection, confirmed)
@@ -65,7 +66,7 @@ pub(crate) async fn sql_execution_plan(
 
 #[tauri::command]
 pub(crate) async fn sql_cancel(state: State<'_, AppState>, session_id: String) -> CmdResult<()> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     sql_connection(&s).cancel().await.map_err(err)
 }
 
@@ -74,7 +75,7 @@ pub(crate) async fn sql_completion_session(
     state: State<'_, AppState>,
     session_id: String,
 ) -> CmdResult<CompletionSession> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     sql_connection(&s)
         .pool
         .completion_session()
@@ -88,7 +89,7 @@ pub(crate) async fn sql_columns(
     session_id: String,
     schema: String,
 ) -> CmdResult<std::collections::BTreeMap<String, Vec<CompletionColumn>>> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     sql_connection(&s).pool.columns(&schema).await.map_err(err)
 }
 
@@ -99,7 +100,7 @@ pub(crate) async fn sql_completion_foreign_keys(
     schema: String,
     table: String,
 ) -> CmdResult<Vec<CompletionForeignKey>> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     sql_connection(&s)
         .pool
         .completion_foreign_keys(&schema, &table)

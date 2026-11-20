@@ -11,6 +11,7 @@ mod sql_plan;
 mod sql_protection;
 mod sql_schema;
 mod sql_transfer;
+mod sessions;
 mod sources;
 mod ssh;
 mod ssh_config;
@@ -20,15 +21,12 @@ mod store;
 mod transfer;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
-use serde::Serialize;
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, Manager};
 
-use redis_db::RedisConn;
-use sql::SqlConn;
-use ssh::Tunnel;
-use store::{ConnectionConfig, Kind, Secrets, SecretsInput, SqlProtection, Store};
+use sessions::Sessions;
+use store::{Kind, Store};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -59,171 +57,11 @@ pub(crate) fn default_port(kind: Kind) -> u16 {
     }
 }
 
-enum Conn {
-    Sql(SqlConn),
-    Redis(RedisConn),
-    Mongo(mongo_db::MongoConn),
-}
-
-struct Session {
-    conn: Conn,
-    sql_protection: SqlProtection,
-    // Dropped after `conn`, so the pool closes before the tunnel.
-    _tunnel: Option<Tunnel>,
-}
-
 struct AppState {
     store: Store,
     groups: groups::Groups,
-    sessions: Mutex<HashMap<String, Arc<Session>>>,
-    pending_connections: Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
+    sessions: Sessions,
     browser_requests: Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
-}
-
-impl AppState {
-    fn session(&self, id: &str) -> CmdResult<Arc<Session>> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .get(id)
-            .cloned()
-            .ok_or_else(|| "session closed; reconnect".to_string())
-    }
-
-    fn sql(&self, id: &str) -> CmdResult<Arc<Session>> {
-        let s = self.session(id)?;
-        match s.conn {
-            Conn::Sql(_) => Ok(s),
-            _ => Err("not a SQL session".into()),
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SessionInfo {
-    session_id: String,
-    kind: Kind,
-    server_version: String,
-    /// SQL: current database/schema. Redis: selected db index.
-    default_schema: String,
-    sql_protection: SqlProtection,
-}
-
-async fn open_session(cfg: &ConnectionConfig, secrets: Secrets) -> anyhow::Result<(Session, String, String)> {
-    let mut tunnel = None;
-    let (mut host, mut port) = (cfg.host.clone(), cfg.port);
-    if host.is_empty() {
-        host = "127.0.0.1".into();
-    }
-    let tunnelable = !matches!(cfg.kind, Kind::Sqlite | Kind::D1);
-    if cfg.ssh.enabled && tunnelable && host.starts_with("mongodb") {
-        anyhow::bail!("with SSH, enter the MongoDB host and port separately instead of a connection string");
-    }
-    if cfg.ssh.enabled && tunnelable {
-        let target_port = if port == 0 { default_port(cfg.kind) } else { port };
-        let t = ssh::open(&cfg.ssh, secrets.ssh_password, secrets.ssh_passphrase, host, target_port).await?;
-        host = "127.0.0.1".into();
-        port = t.local_port;
-        tunnel = Some(t);
-    }
-    let conn = match cfg.kind {
-        Kind::Redis => Conn::Redis(RedisConn::connect(&host, port, &cfg.user, secrets.password, cfg.redis_db).await?),
-        Kind::Mongodb => Conn::Mongo(mongo_db::MongoConn::connect(cfg, &host, port, secrets.password, tunnel.is_some()).await?),
-        _ => Conn::Sql(sql::connect(cfg, &host, port, secrets.password).await?),
-    };
-    let (version, schema) = match &conn {
-        Conn::Sql(c) => (c.pool.server_version().await?, c.pool.current_schema().await.unwrap_or_default()),
-        Conn::Redis(r) => (r.server_version().await?, r.db().await.to_string()),
-        Conn::Mongo(m) => (m.version().await?, m.default_db.clone()),
-    };
-    Ok((Session { conn, sql_protection: cfg.sql_protection.effective(&cfg.env), _tunnel: tunnel }, version, schema))
-}
-
-// ---------- connections ----------
-
-#[tauri::command]
-async fn test_connection(state: State<'_, AppState>, config: ConnectionConfig, secrets: SecretsInput) -> CmdResult<String> {
-    let resolved = state.store.resolve_secrets(&config.id, &secrets).map_err(err)?;
-    let (_session, version, _) = open_session(&config, resolved).await.map_err(err)?;
-    Ok(version)
-}
-
-/// Test a saved connection without creating a workspace session.
-#[tauri::command]
-async fn check_saved_connection(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    let cfg = state.store.get(&id).map_err(err)?;
-    if cfg.kind == Kind::Sqlite {
-        return tokio::time::timeout(std::time::Duration::from_secs(30), sql::check_sqlite_readonly(&cfg.file))
-            .await.map_err(|_| "connection check timed out".to_string())?.map_err(err);
-    }
-    let secrets = state.store.resolve_secrets(&id, &SecretsInput::default()).map_err(err)?;
-    tokio::time::timeout(std::time::Duration::from_secs(30), open_session(&cfg, secrets))
-        .await.map_err(|_| "connection check timed out".to_string())?.map_err(err)?;
-    Ok(())
-}
-
-#[tauri::command]
-fn begin_connect(state: State<'_, AppState>, attempt_id: String) -> CmdResult<()> {
-    let mut pending = state.pending_connections.lock().unwrap();
-    if pending.contains_key(&attempt_id) { return Err("connection attempt already exists".into()); }
-    let (sender, _) = tokio::sync::watch::channel(false);
-    pending.insert(attempt_id, sender);
-    Ok(())
-}
-
-#[tauri::command]
-fn cancel_connect(state: State<'_, AppState>, attempt_id: String) {
-    if let Some(sender) = state.pending_connections.lock().unwrap().get(&attempt_id) {
-        sender.send_replace(true);
-    }
-}
-
-async fn wait_for_connection<T>(cancelled: &mut tokio::sync::watch::Receiver<bool>, operation: impl std::future::Future<Output = CmdResult<T>>) -> CmdResult<T> {
-    if *cancelled.borrow() { return Err("connection cancelled".into()); }
-    tokio::select! {
-        biased;
-        _ = cancelled.changed() => Err("connection cancelled".into()),
-        result = operation => result,
-    }
-}
-
-#[tauri::command]
-async fn connect(state: State<'_, AppState>, id: String, attempt_id: String, database: Option<String>) -> CmdResult<SessionInfo> {
-    let mut cancelled = {
-        let pending = state.pending_connections.lock().unwrap();
-        pending.get(&attempt_id).ok_or("connection attempt not found")?.subscribe()
-    };
-    let result = async {
-        if *cancelled.borrow() { return Err("connection cancelled".into()); }
-        let mut cfg = state.store.get(&id).map_err(err)?;
-        if let Some(database) = database {
-            if !matches!(cfg.kind, Kind::Postgres | Kind::Mysql) || database.is_empty() || database.contains('\0') {
-                return Err("Invalid database for this connection".into());
-            }
-            // An alternate database is a separate session using the saved connection's credentials and protection.
-            cfg.database = database;
-        }
-        let secrets = state.store.resolve_secrets(&id, &SecretsInput::default()).map_err(err)?;
-        let opened = wait_for_connection(&mut cancelled, async { open_session(&cfg, secrets).await.map_err(err) }).await?;
-        let (session, server_version, default_schema) = opened;
-        // Serialize the final cancellation check and session insertion with cancel_connect.
-        let pending = state.pending_connections.lock().unwrap();
-        if pending.get(&attempt_id).is_none_or(|sender| *sender.borrow()) {
-            return Err("connection cancelled".into());
-        }
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let sql_protection = session.sql_protection;
-        state.sessions.lock().unwrap().insert(session_id.clone(), Arc::new(session));
-        Ok(SessionInfo { session_id, kind: cfg.kind, server_version, default_schema, sql_protection })
-    }.await;
-    state.pending_connections.lock().unwrap().remove(&attempt_id);
-    result
-}
-
-#[tauri::command]
-fn disconnect(state: State<'_, AppState>, session_id: String) {
-    state.sessions.lock().unwrap().remove(&session_id);
 }
 
 /// Before the rename to DBDock (xyz.phpz.app.dbdock) data lived under net.yahaha.dbdock.
@@ -253,14 +91,14 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             migrate_legacy_data(&dir);
             let store = Store::new(dir.clone());
-            app.manage(AppState { store, groups: groups::Groups::new(dir), sessions: Mutex::new(HashMap::new()), pending_connections: Mutex::new(HashMap::new()), browser_requests: Mutex::new(HashMap::new()) });
+            app.manage(AppState { store, groups: groups::Groups::new(dir), sessions: Sessions::default(), browser_requests: Mutex::new(HashMap::new()) });
             #[cfg(target_os = "macos")]
             menu::observe_tab_modifiers(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::configuration::list_connections,
-            check_saved_connection,
+            commands::connections::check_saved_connection,
             commands::configuration::save_connection,
             commands::configuration::delete_connection,
             commands::configuration::detect_import_file,
@@ -288,11 +126,11 @@ pub fn run() {
             commands::groups::delete_group,
             commands::groups::move_connections,
             commands::configuration::delete_connections,
-            test_connection,
-            begin_connect,
-            cancel_connect,
-            connect,
-            disconnect,
+            commands::connections::test_connection,
+            commands::connections::begin_connect,
+            commands::connections::cancel_connect,
+            commands::connections::connect,
+            commands::connections::disconnect,
             commands::sql::files::read_sql_file,
             commands::sql::files::read_table_file,
             commands::sql::files::write_sql_file,
@@ -348,7 +186,8 @@ pub fn run() {
 #[cfg(test)]
 mod it {
     use super::*;
-    use store::{SshAuth, SshConfig};
+    use crate::sessions::{Conn, open_session};
+    use crate::store::{ConnectionConfig, Secrets, SshAuth, SshConfig};
 
     fn cfg(kind: Kind, host: &str, port: u16, user: &str, db: &str) -> ConnectionConfig {
         ConnectionConfig {
@@ -610,32 +449,5 @@ mod it {
         let mut lite = cfg(Kind::Sqlite, "", 0, "", "");
         lite.file = "/tmp/dbdock-test.sqlite".into();
         edit_and_cancel(&lite, Secrets::default(), "main", "").await;
-    }
-}
-
-#[cfg(test)]
-mod connection_cancel_tests {
-    use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    #[tokio::test]
-    async fn cancelling_drops_an_in_progress_connection_and_pre_cancel_is_safe() {
-        struct Guard(Arc<AtomicBool>);
-        impl Drop for Guard { fn drop(&mut self) { self.0.store(true, Ordering::SeqCst); } }
-        let (sender, mut receiver) = tokio::sync::watch::channel(false);
-        let dropped = Arc::new(AtomicBool::new(false));
-        let guard = Guard(dropped.clone());
-        let task = tokio::spawn(async move {
-            wait_for_connection(&mut receiver, async move {
-                let _guard = guard;
-                std::future::pending::<CmdResult<()>>().await
-            }).await
-        });
-        tokio::task::yield_now().await;
-        sender.send_replace(true);
-        assert_eq!(task.await.unwrap().unwrap_err(), "connection cancelled");
-        assert!(dropped.load(Ordering::SeqCst));
-        let mut already_cancelled = sender.subscribe();
-        assert_eq!(wait_for_connection(&mut already_cancelled, async { Ok(()) }).await.unwrap_err(), "connection cancelled");
     }
 }

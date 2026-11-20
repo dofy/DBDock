@@ -1,7 +1,8 @@
 use serde_json::Value;
 use tauri::State;
 
-use crate::{AppState, CmdResult, Conn, Session, err, mongo_db};
+use crate::sessions::{Conn, Session};
+use crate::{AppState, CmdResult, err, mongo_db};
 
 fn mongo(s: &Session) -> CmdResult<&mongo_db::MongoConn> {
     match &s.conn {
@@ -15,7 +16,7 @@ pub(crate) async fn mongo_databases(
     state: State<'_, AppState>,
     session_id: String,
 ) -> CmdResult<Vec<String>> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.databases().await.map_err(err)
 }
 
@@ -25,7 +26,7 @@ pub(crate) async fn mongo_collections(
     session_id: String,
     db: String,
 ) -> CmdResult<Vec<String>> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.collections(&db).await.map_err(err)
 }
 
@@ -42,7 +43,7 @@ pub(crate) async fn mongo_find(
     skip: u64,
     limit: i64,
 ) -> CmdResult<mongo_db::FindPage> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?
         .find(&db, &coll, filter, sort, projection, skip, limit)
         .await
@@ -57,7 +58,7 @@ pub(crate) async fn mongo_count(
     coll: String,
     filter: Option<Value>,
 ) -> CmdResult<u64> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.count(&db, &coll, filter).await.map_err(err)
 }
 
@@ -69,7 +70,7 @@ pub(crate) async fn mongo_insert(
     coll: String,
     doc: Value,
 ) -> CmdResult<Value> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.insert(&db, &coll, doc).await.map_err(err)
 }
 
@@ -82,7 +83,7 @@ pub(crate) async fn mongo_replace(
     id: Value,
     doc: Value,
 ) -> CmdResult<()> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.replace(&db, &coll, id, doc).await.map_err(err)
 }
 
@@ -94,7 +95,7 @@ pub(crate) async fn mongo_delete(
     coll: String,
     ids: Vec<Value>,
 ) -> CmdResult<u64> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.delete(&db, &coll, ids).await.map_err(err)
 }
 
@@ -105,7 +106,7 @@ pub(crate) async fn mongo_indexes(
     db: String,
     coll: String,
 ) -> CmdResult<Vec<Value>> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.indexes(&db, &coll).await.map_err(err)
 }
 
@@ -116,6 +117,6 @@ pub(crate) async fn mongo_shell(
     db: String,
     line: String,
 ) -> CmdResult<mongo_db::ShellResult> {
-    let s = state.session(&session_id)?;
+    let s = state.sessions.get(&session_id)?;
     mongo(&s)?.shell(&db, &line).await.map_err(err)
 }

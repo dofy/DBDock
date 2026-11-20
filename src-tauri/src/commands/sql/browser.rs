@@ -1,12 +1,13 @@
 use serde_json::Value;
 use tauri::State;
 
+use crate::sessions::Session;
 use crate::sql::{Change, QueryResult, SqlPool, TableData, TableInfo};
 use crate::sql_browser::{TableFilter, TableMetadata};
 use crate::sql_schema::SchemaChange;
 use crate::sql_transfer::ExportFormat;
 use crate::store::SqlProtection;
-use crate::{AppState, CmdResult, Session, err};
+use crate::{AppState, CmdResult, err};
 
 use super::sql_connection;
 
@@ -74,7 +75,7 @@ pub(crate) async fn sql_schemas(
     state: State<'_, AppState>,
     session_id: String,
 ) -> CmdResult<Vec<String>> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     browser_pool(&s).schemas().await.map_err(err)
 }
 
@@ -83,7 +84,7 @@ pub(crate) async fn sql_databases(
     state: State<'_, AppState>,
     session_id: String,
 ) -> CmdResult<Vec<String>> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     browser_pool(&s).databases().await.map_err(err)
 }
 
@@ -93,7 +94,7 @@ pub(crate) async fn sql_tables(
     session_id: String,
     schema: String,
 ) -> CmdResult<Vec<TableInfo>> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     browser_pool(&s).tables(&schema).await.map_err(err)
 }
 
@@ -106,7 +107,7 @@ pub(crate) async fn sql_structure(
     request_id: String,
 ) -> CmdResult<QueryResult> {
     browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
+        let s = state.sessions.sql(&session_id)?;
         browser_pool(&s)
             .structure(&schema, &table)
             .await
@@ -125,7 +126,7 @@ pub(crate) async fn sql_table_metadata(
     request_id: String,
 ) -> CmdResult<QueryResult> {
     browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
+        let s = state.sessions.sql(&session_id)?;
         browser_pool(&s)
             .metadata(&schema, &table, kind)
             .await
@@ -151,7 +152,7 @@ pub(crate) async fn sql_table_data(
     request_id: String,
 ) -> CmdResult<TableData> {
     browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
+        let s = state.sessions.sql(&session_id)?;
         if filter.as_ref().is_some_and(|f| !f.trim().is_empty())
             && s.sql_protection != SqlProtection::Automatic
         {
@@ -184,7 +185,7 @@ pub(crate) async fn sql_preview_changes(
     table: String,
     changes: Vec<Change>,
 ) -> CmdResult<Vec<String>> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     browser_pool(&s)
         .change_sql(&schema, &table, &changes)
         .await
@@ -200,7 +201,7 @@ pub(crate) async fn sql_apply_changes(
     changes: Vec<Change>,
     confirmed: bool,
 ) -> CmdResult<usize> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     s.sql_protection.check_execution(confirmed).map_err(err)?;
     browser_pool(&s)
         .apply(&schema, &table, &changes)
@@ -216,7 +217,7 @@ pub(crate) fn sql_preview_schema(
     table: String,
     change: SchemaChange,
 ) -> CmdResult<String> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     browser_pool(&s)
         .schema_sql(&schema, &table, &change)
         .map_err(err)
@@ -231,7 +232,7 @@ pub(crate) async fn sql_apply_schema(
     change: SchemaChange,
     confirmed: bool,
 ) -> CmdResult<()> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     s.sql_protection.check_execution(confirmed).map_err(err)?;
     if matches!(&change, SchemaChange::Drop { .. }) && !confirmed {
         return Err("Confirm this SQL operation first".into());
@@ -251,7 +252,7 @@ pub(crate) async fn sql_import_rows(
     rows: Vec<Vec<Value>>,
     confirmed: bool,
 ) -> CmdResult<usize> {
-    let s = state.sql(&session_id)?;
+    let s = state.sessions.sql(&session_id)?;
     s.sql_protection.check_execution(confirmed).map_err(err)?;
     if !confirmed {
         return Err("Confirm this SQL operation first".into());
@@ -273,7 +274,7 @@ pub(crate) async fn sql_export_table(
     request_id: String,
 ) -> CmdResult<u64> {
     browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
+        let s = state.sessions.sql(&session_id)?;
         browser_pool(&s)
             .export_table(&schema, &table, std::path::Path::new(&path), format)
             .await
