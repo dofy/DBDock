@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Workspace lifecycle regressions</title></head>
+<body>
+<div id="root"></div>
+<script type="module">
+  import { EditorView } from "@codemirror/view";
+  import { createElement } from "react";
+  import { flushSync } from "react-dom";
+  import { createRoot } from "react-dom/client";
+  import App from "../../src/App";
+  import { updateSettings } from "../../src/settings";
+  import "../../src/styles.css";
+
+  const connection = {
+    id: "fixture", name: "Fixture", kind: "postgres", database: "fixture",
+    host: "127.0.0.1", port: 5432, user: "fixture", file: "", redisDb: 0,
+    cfAccountId: "", options: "", color: "", env: "local", group: "",
+    ssh: { enabled: false, host: "", user: "", port: 22, auth: "key", keyPath: "" },
+  };
+  const session = (sessionId) => ({
+    sessionId, kind: connection.kind, serverVersion: sessionId, defaultSchema: "public", sqlProtection: "automatic",
+  });
+  const result = (columns, rows) => ({ columns, rows, rowsAffected: null, truncated: false, elapsedMs: 1 });
+  const tableData = (table) => ({
+    sql: `SELECT * FROM ${table}`, result: result(["id", "name"], [[1, `${table} row`]]),
+    hasMore: false, rowVersions: ["fixture-version"],
+  });
+
+  const calls = [];
+  const attempts = new Map();
+  const reads = new Map();
+  const heldTables = new Set();
+  const unexpected = [];
+  window.__TAURI_INTERNALS__ = {
+    transformCallback() { return 1; },
+    invoke(command, args) {
+      calls.push({ command, ...args });
+      switch (command) {
+        case "plugin:event|listen": return Promise.resolve(1);
+        case "set_menu_language":
+        case "begin_connect":
+        case "cancel_connect":
+        case "disconnect":
+        case "begin_browser_request": return Promise.resolve();
+        case "connect": return new Promise(resolve => attempts.set(args.attemptId, resolve));
+        case "list_connections": return Promise.resolve([connection]);
+        case "list_groups": return Promise.resolve([]);
+        case "sql_schemas": return Promise.resolve(["public"]);
+        case "sql_databases": return Promise.resolve(["fixture"]);
+        case "sql_tables": return Promise.resolve(["first", "second"].map(name => ({ name, kind: "table" })));
+        case "sql_completion_session": return Promise.resolve({ schemas: ["public"], searchPath: ["public"] });
+        case "sql_columns": return Promise.resolve({});
+        case "sql_structure": return Promise.resolve(result(["name", "type", "key"], [["id", "integer", "PRI"], ["name", "text", ""]]));
+        case "sql_table_data":
+          if (heldTables.has(args.table)) {
+            return new Promise((resolve, reject) => reads.set(args.requestId, { resolve, reject }));
+          }
+          return Promise.resolve(tableData(args.table));
+        case "cancel_browser_request":
+          reads.get(args.requestId)?.reject(new Error("browser request cancelled"));
+          return Promise.resolve();
+        case "sql_execute": return Promise.resolve({ results: [result(["name"], [["query result"]])], metadataChanged: false });
+        default:
+          unexpected.push(command);
+          return Promise.reject(new Error(`Unexpected IPC command ${command}`));
+      }
+    },
+  };
+
+  function assert(condition, message) {
+    if (!condition) throw new Error(message);
+  }
+
+  async function waitFor(find, message) {
+    const deadline = performance.now() + 4000;
+    do {
+      const value = find();
+      if (value) return value;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    } while (performance.now() < deadline);
+    throw new Error(message);
+  }
+
+  const find = (selector) => document.querySelector(selector);
+  const click = (element) => {
+    assert(element && !element.disabled, "Expected an enabled control");
+    flushSync(() => element.click());
+  };
+  const selectTab = (name) => click(find(`.sql-tab-select[aria-label="${name}"]`));
+  const activePane = () => find(".session:not([hidden]) .tab-pane:not([hidden])");
+  const editor = () => EditorView.findFromDOM(activePane().querySelector(".cm-editor"));
+  const ipc = (command) => calls.filter(call => call.command === command);
+
+  async function startConnection() {
+    const count = attempts.size;
+    click(await waitFor(() => find(".card-connect"), "Connection card did not appear"));
+    await waitFor(() => attempts.size === count + 1, "Connection attempt did not start");
+    return [...attempts.keys()].at(-1);
+  }
+
+  async function openWorkspace() {
+    const attempt = await startConnection();
+    attempts.get(attempt)(session("current-session"));
+    await waitFor(() => find('.sql-tab-select[aria-label="Query 1"]'), "SQL workspace did not open");
+  }
+
+  async function openTable(name) {
+    const button = await waitFor(() => find(`button.link[title="${name}"]`), `Table ${name} did not appear`);
+    click(button);
+    return waitFor(() => ipc("sql_table_data").find(call => call.table === name), `No data read for ${name}`);
+  }
+
+  async function reconnect() {
+    const oldAttempt = await startConnection();
+    click(find('button[aria-label="Cancel connection"]'));
+    assert(ipc("cancel_connect").some(call => call.attemptId === oldAttempt), "Cancel targeted the wrong attempt");
+    assert(!find(".connecting-workspace"), "Cancelled connection remained open");
+    const newAttempt = await startConnection();
+    assert(newAttempt !== oldAttempt, "Reconnect reused the cancelled attempt ID");
+    attempts.get(newAttempt)(session("new-session"));
+    await waitFor(() => find('.top-tab.on[title="new-session"]'), "The replacement session did not open");
+
+    // Return a success even after cancellation to model an IPC result already in flight.
+    attempts.get(oldAttempt)(session("old-session"));
+    await waitFor(() => ipc("disconnect").some(call => call.sessionId === "old-session"), "Late session was not disposed");
+    assert(!find('.top-tab[title="old-session"]'), "Late attempt opened its own session tab");
+    assert(find('.top-tab.on[title="new-session"]'), "Late attempt replaced the active session");
+    assert(!ipc("disconnect").some(call => call.sessionId === "new-session"), "Late attempt disconnected the replacement");
+  }
+
+  async function closeTable() {
+    heldTables.add("first");
+    heldTables.add("second");
+    await openWorkspace();
+    const first = await openTable("first");
+    const second = await openTable("second");
+    click(find('button[aria-label="Close tab public.first"]'));
+    await waitFor(() => ipc("cancel_browser_request").some(call => call.requestId === first.requestId), "Closing the first table did not cancel its data read");
+    const firstReadIds = new Set(calls.filter(call => call.table === "first").map(call => call.requestId));
+    assert(ipc("cancel_browser_request").every(call => firstReadIds.has(call.requestId)), "Closing the first table cancelled a read it did not own");
+    assert(!find('.sql-tab-select[aria-label="public.first"]'), "Closed table tab is still present");
+
+    reads.get(second.requestId).resolve(tableData("second"));
+    await waitFor(() => activePane()?.textContent.includes("second row"), "The other table did not finish loading");
+  }
+
+  function enterSql(sql) {
+    flushSync(() => {
+      const view = editor();
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: sql } });
+    });
+  }
+
+  async function switchTabs() {
+    await openWorkspace();
+    await waitFor(() => activePane()?.querySelector(".cm-editor"), "The first editor did not mount");
+    const firstSql = "SELECT 'first draft';";
+    const secondSql = "SELECT 'second draft';";
+    enterSql(firstSql);
+    click(activePane().querySelector('.query-run button[aria-label^="Run ·"]'));
+    await waitFor(() => activePane()?.textContent.includes("query result"), "First query result did not appear");
+    assert(ipc("sql_execute").length === 1 && ipc("sql_execute")[0].sql === firstSql, "The first editor submitted different SQL");
+
+    await openTable("second");
+    const addRow = await waitFor(() => {
+      const button = activePane()?.querySelector('button[aria-label="Add a row"]');
+      return button && !button.disabled && button;
+    }, "The table did not become editable");
+    click(addRow);
+    assert(activePane().querySelector(".pending-bar")?.textContent.includes("pending change"), "Expected a pending row insertion");
+
+    click(find(".tab-add"));
+    await waitFor(() => activePane()?.querySelector(".cm-editor"), "The second editor did not mount");
+    enterSql(secondSql);
+    assert(!activePane().textContent.includes("query result"), "The second query inherited the first query's result");
+    selectTab("Query 1");
+    assert(editor().state.doc.toString() === firstSql, "First query draft was lost");
+    assert(activePane().textContent.includes("query result"), "First query result was lost");
+    selectTab("Query 2");
+    assert(editor().state.doc.toString() === secondSql, "Second query draft was lost");
+
+    selectTab("public.second");
+    assert(activePane().querySelector(".pending-bar")?.textContent.includes("pending change"), "Switching tabs discarded the pending edit");
+    click(find('button[aria-label="Close tab public.second"]'));
+    const dialog = await waitFor(() => find(".feedback-dialog[open]"), "Closing a dirty tab did not request confirmation");
+    click([...dialog.querySelectorAll("button")].find(button => button.textContent === "Cancel"));
+    assert(activePane().querySelector(".pending-bar"), "Cancelling the confirmation discarded the pending edit");
+  }
+
+  try {
+    updateSettings({ language: "en", vim: false });
+    const root = createRoot(find("#root"));
+    flushSync(() => root.render(createElement(App)));
+    const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs };
+    await cases[new URLSearchParams(location.search).get("case")]();
+    assert(unexpected.length === 0, `Unexpected IPC commands: ${unexpected.join(", ")}`);
+    window.webkit.messageHandlers.result.postMessage("ok");
+  } catch (error) {
+    window.webkit.messageHandlers.result.postMessage(String(error.stack ?? error));
+  }
+</script>
+</body>
+</html>

@@ -10,7 +10,7 @@ import { createServer } from "vite";
 // Run on macOS with node --test tests/webkit/webkit.test.mjs.
 async function runFixture(filename) {
   const scratch = await mkdtemp(join(tmpdir(), "dbdock-webkit-"));
-  const server = await createServer({ logLevel: "silent", server: { host: "127.0.0.1", port: 0, hmr: false } });
+  const server = await createServer({ logLevel: "silent", server: { host: "127.0.0.1", port: 0, hmr: false, ws: false } });
   try {
     const runner = join(scratch, "WebKitTest.swift");
     await writeFile(runner, `
@@ -57,3 +57,9 @@ const macOSOnly = { skip: process.platform !== "darwin" };
 test("WebKit run options support mouse and keyboard ANALYZE confirmation", macOSOnly, () => runFixture("queryRunOptions.html"));
 
 test("WebKit command palette lets the input method commit text before running a command", macOSOnly, () => runFixture("commandPalette.html"));
+
+test("WebKit reconnect ignores a late result from the cancelled connection", macOSOnly, () => runFixture("workspaceLifecycle.html?case=reconnect"));
+
+test("WebKit closing a table tab cancels only its own reads", macOSOnly, () => runFixture("workspaceLifecycle.html?case=close-table"));
+
+test("WebKit switching workspace tabs preserves SQL drafts, results and pending edits", macOSOnly, () => runFixture("workspaceLifecycle.html?case=switch-tabs"));

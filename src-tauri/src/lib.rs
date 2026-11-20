@@ -1,3 +1,4 @@
+mod commands;
 mod d1;
 mod groups;
 mod menu;
@@ -175,21 +176,6 @@ async fn open_session(cfg: &ConnectionConfig, secrets: Secrets) -> anyhow::Resul
 // ---------- connections ----------
 
 #[tauri::command]
-fn list_connections(state: State<'_, AppState>) -> CmdResult<Vec<ConnectionConfig>> {
-    state.store.list().map_err(err)
-}
-
-#[tauri::command]
-fn save_connection(state: State<'_, AppState>, config: ConnectionConfig, secrets: SecretsInput) -> CmdResult<ConnectionConfig> {
-    state.store.save(config, &secrets).map_err(err)
-}
-
-#[tauri::command]
-fn delete_connection(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    state.store.delete(&id).map_err(err)
-}
-
-#[tauri::command]
 async fn test_connection(state: State<'_, AppState>, config: ConnectionConfig, secrets: SecretsInput) -> CmdResult<String> {
     let resolved = state.store.resolve_secrets(&config.id, &secrets).map_err(err)?;
     let (_session, version, _) = open_session(&config, resolved).await.map_err(err)?;
@@ -274,81 +260,6 @@ fn disconnect(state: State<'_, AppState>, session_id: String) {
 }
 
 #[tauri::command]
-fn detect_import_file(path: String) -> CmdResult<sources::Detected> {
-    sources::detect(std::path::Path::new(&path)).map_err(err)
-}
-
-#[tauri::command]
-fn import_file(state: State<'_, AppState>, path: String, passphrase: Option<String>) -> CmdResult<sources::Report> {
-    sources::import_file(&state.store, std::path::Path::new(&path), passphrase).map_err(err)
-}
-
-#[tauri::command]
-fn import_text(state: State<'_, AppState>, text: String) -> CmdResult<sources::Report> {
-    sources::import_text(&state.store, &text).map_err(err)
-}
-
-/// Connections.plist of an installed TablePlus, offered as a one-click source.
-#[tauri::command]
-fn tableplus_file() -> Option<String> {
-    import::tableplus_file().map(|p| p.display().to_string())
-}
-
-#[tauri::command]
-fn export_connections(
-    state: State<'_, AppState>,
-    path: String,
-    ids: Option<Vec<String>>,
-    include_secrets: bool,
-    passphrase: Option<String>,
-) -> CmdResult<usize> {
-    transfer::export(&state.store, std::path::Path::new(&path), ids, include_secrets, passphrase).map_err(err)
-}
-
-#[tauri::command]
-fn inspect_connections_file(path: String) -> CmdResult<transfer::FileInfo> {
-    transfer::inspect(std::path::Path::new(&path)).map_err(err)
-}
-
-#[tauri::command]
-fn import_connections(state: State<'_, AppState>, path: String, passphrase: Option<String>) -> CmdResult<transfer::TransferReport> {
-    transfer::import(&state.store, std::path::Path::new(&path), passphrase).map_err(err)
-}
-
-#[tauri::command]
-fn list_groups(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
-    state.groups.list(&state.store).map_err(err)
-}
-
-#[tauri::command]
-fn create_group(state: State<'_, AppState>, path: String) -> CmdResult<String> {
-    state.groups.create(&path).map_err(err)
-}
-
-#[tauri::command]
-fn rename_group(state: State<'_, AppState>, from: String, to: String) -> CmdResult<usize> {
-    state.groups.rename(&state.store, &from, &to).map_err(err)
-}
-
-#[tauri::command]
-fn delete_group(state: State<'_, AppState>, path: String, move_to: String) -> CmdResult<usize> {
-    state.groups.delete(&state.store, &path, &move_to).map_err(err)
-}
-
-#[tauri::command]
-fn move_connections(state: State<'_, AppState>, ids: Vec<String>, group: String) -> CmdResult<usize> {
-    state.store.move_to_group(&ids, &group).map_err(err)
-}
-
-#[tauri::command]
-fn delete_connections(state: State<'_, AppState>, ids: Vec<String>) -> CmdResult<usize> {
-    for id in &ids {
-        state.store.delete(id).map_err(err)?;
-    }
-    Ok(ids.len())
-}
-
-#[tauri::command]
 fn ssh_hosts_list() -> CmdResult<Vec<ssh_config_edit::HostBlock>> {
     ssh_config_edit::list().map_err(err)
 }
@@ -386,28 +297,6 @@ async fn ssh_host_test(alias: String, password: Option<String>) -> CmdResult<Str
     let t = ssh::open(&cfg, password, None, "127.0.0.1".into(), 22).await.map_err(err)?;
     drop(t);
     Ok("SSH login OK".into())
-}
-
-#[tauri::command]
-fn open_help(app: tauri::AppHandle, section: Option<String>) -> CmdResult<()> {
-    menu::open_help(&app, section.as_deref()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn confirm_quit(app: tauri::AppHandle) {
-    app.exit(0);
-}
-
-#[tauri::command]
-fn set_menu_language(app: tauri::AppHandle, language: String) -> CmdResult<()> {
-    let menu = menu::build(&app, &language).map_err(|e| e.to_string())?;
-    app.set_menu(menu).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-fn open_github() {
-    menu::open_github();
 }
 
 /// Host aliases from ~/.ssh/config, offered in the SSH host field.
@@ -796,22 +685,22 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            list_connections,
+            commands::configuration::list_connections,
             check_saved_connection,
-            save_connection,
-            delete_connection,
-            detect_import_file,
-            import_file,
-            import_text,
-            tableplus_file,
-            export_connections,
-            inspect_connections_file,
-            import_connections,
+            commands::configuration::save_connection,
+            commands::configuration::delete_connection,
+            commands::configuration::detect_import_file,
+            commands::configuration::import_file,
+            commands::configuration::import_text,
+            commands::configuration::tableplus_file,
+            commands::configuration::export_connections,
+            commands::configuration::inspect_connections_file,
+            commands::configuration::import_connections,
             ssh_config_hosts,
-            open_help,
-            open_github,
-            set_menu_language,
-            confirm_quit,
+            commands::app::open_help,
+            commands::app::open_github,
+            commands::app::set_menu_language,
+            commands::app::confirm_quit,
             ssh_hosts_list,
             ssh_host_save,
             ssh_host_delete,
@@ -819,12 +708,12 @@ pub fn run() {
             ssh_config_raw,
             ssh_config_write,
             ssh_host_test,
-            list_groups,
-            create_group,
-            rename_group,
-            delete_group,
-            move_connections,
-            delete_connections,
+            commands::groups::list_groups,
+            commands::groups::create_group,
+            commands::groups::rename_group,
+            commands::groups::delete_group,
+            commands::groups::move_connections,
+            commands::configuration::delete_connections,
             test_connection,
             begin_connect,
             cancel_connect,
