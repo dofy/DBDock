@@ -23,10 +23,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
-use serde_json::Value;
 use tauri::{Emitter, Manager, State};
 
-use redis_db::{KeyValue, RedisConn, ScanPage};
+use redis_db::RedisConn;
 use sql::SqlConn;
 use ssh::Tunnel;
 use store::{ConnectionConfig, Kind, Secrets, SecretsInput, SqlProtection, Store};
@@ -97,20 +96,6 @@ impl AppState {
             Conn::Sql(_) => Ok(s),
             _ => Err("not a SQL session".into()),
         }
-    }
-}
-
-fn mongo(s: &Session) -> CmdResult<&mongo_db::MongoConn> {
-    match &s.conn {
-        Conn::Mongo(m) => Ok(m),
-        _ => Err("not a MongoDB session".into()),
-    }
-}
-
-fn redis(s: &Session) -> CmdResult<&RedisConn> {
-    match &s.conn {
-        Conn::Redis(r) => Ok(r),
-        _ => Err("not a Redis session".into()),
     }
 }
 
@@ -241,162 +226,6 @@ fn disconnect(state: State<'_, AppState>, session_id: String) {
     state.sessions.lock().unwrap().remove(&session_id);
 }
 
-#[tauri::command]
-fn ssh_hosts_list() -> CmdResult<Vec<ssh_config_edit::HostBlock>> {
-    ssh_config_edit::list().map_err(err)
-}
-
-#[tauri::command]
-fn ssh_host_save(original: Option<String>, form: ssh_config_edit::HostForm) -> CmdResult<()> {
-    ssh_config_edit::save(original, form).map_err(err)
-}
-
-#[tauri::command]
-fn ssh_host_delete(alias: String) -> CmdResult<()> {
-    ssh_config_edit::delete(&alias).map_err(err)
-}
-
-#[tauri::command]
-async fn ssh_host_open_terminal(alias: String, terminal: String) -> CmdResult<()> {
-    tauri::async_runtime::spawn_blocking(move || ssh_terminal::open(&alias, &terminal).map_err(err))
-        .await.map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-fn ssh_config_raw() -> CmdResult<String> {
-    ssh_config_edit::raw().map_err(err)
-}
-
-#[tauri::command]
-fn ssh_config_write(text: String) -> CmdResult<()> {
-    ssh_config_edit::write_raw(&text).map_err(err)
-}
-
-/// Log in to an SSH host (no tunnel) to check address, user and key.
-#[tauri::command]
-async fn ssh_host_test(alias: String, password: Option<String>) -> CmdResult<String> {
-    let cfg = store::SshConfig { enabled: true, host: alias, port: 22, user: String::new(), auth: if password.is_some() { store::SshAuth::Password } else { store::SshAuth::Key }, key_path: String::new() };
-    let t = ssh::open(&cfg, password, None, "127.0.0.1".into(), 22).await.map_err(err)?;
-    drop(t);
-    Ok("SSH login OK".into())
-}
-
-/// Host aliases from ~/.ssh/config, offered in the SSH host field.
-#[tauri::command]
-fn ssh_config_hosts() -> Vec<ssh_config::HostEntry> {
-    ssh_config::hosts()
-}
-
-// ---------- Redis ----------
-
-#[tauri::command]
-async fn redis_scan(state: State<'_, AppState>, session_id: String, cursor: u64, pattern: String, count: u32) -> CmdResult<ScanPage> {
-    let s = state.session(&session_id)?;
-    redis(&s)?.scan(cursor, &pattern, count).await.map_err(err)
-}
-
-#[tauri::command]
-async fn redis_get(state: State<'_, AppState>, session_id: String, key: String) -> CmdResult<KeyValue> {
-    let s = state.session(&session_id)?;
-    redis(&s)?.get(&key).await.map_err(err)
-}
-
-#[tauri::command]
-async fn redis_delete(state: State<'_, AppState>, session_id: String, key: String) -> CmdResult<i64> {
-    let s = state.session(&session_id)?;
-    redis(&s)?.delete(&key).await.map_err(err)
-}
-
-#[tauri::command]
-async fn redis_command(state: State<'_, AppState>, session_id: String, line: String) -> CmdResult<Value> {
-    let s = state.session(&session_id)?;
-    redis(&s)?.command(&line).await.map_err(err)
-}
-
-// ---------- MongoDB ----------
-
-#[tauri::command]
-async fn mongo_databases(state: State<'_, AppState>, session_id: String) -> CmdResult<Vec<String>> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.databases().await.map_err(err)
-}
-
-#[tauri::command]
-async fn mongo_collections(state: State<'_, AppState>, session_id: String, db: String) -> CmdResult<Vec<String>> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.collections(&db).await.map_err(err)
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-async fn mongo_find(
-    state: State<'_, AppState>,
-    session_id: String,
-    db: String,
-    coll: String,
-    filter: Option<Value>,
-    sort: Option<Value>,
-    projection: Option<Value>,
-    skip: u64,
-    limit: i64,
-) -> CmdResult<mongo_db::FindPage> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.find(&db, &coll, filter, sort, projection, skip, limit).await.map_err(err)
-}
-
-#[tauri::command]
-async fn mongo_count(state: State<'_, AppState>, session_id: String, db: String, coll: String, filter: Option<Value>) -> CmdResult<u64> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.count(&db, &coll, filter).await.map_err(err)
-}
-
-#[tauri::command]
-async fn mongo_insert(state: State<'_, AppState>, session_id: String, db: String, coll: String, doc: Value) -> CmdResult<Value> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.insert(&db, &coll, doc).await.map_err(err)
-}
-
-#[tauri::command]
-async fn mongo_replace(state: State<'_, AppState>, session_id: String, db: String, coll: String, id: Value, doc: Value) -> CmdResult<()> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.replace(&db, &coll, id, doc).await.map_err(err)
-}
-
-#[tauri::command]
-async fn mongo_delete(state: State<'_, AppState>, session_id: String, db: String, coll: String, ids: Vec<Value>) -> CmdResult<u64> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.delete(&db, &coll, ids).await.map_err(err)
-}
-
-#[tauri::command]
-async fn mongo_indexes(state: State<'_, AppState>, session_id: String, db: String, coll: String) -> CmdResult<Vec<Value>> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.indexes(&db, &coll).await.map_err(err)
-}
-
-#[tauri::command]
-async fn mongo_shell(state: State<'_, AppState>, session_id: String, db: String, line: String) -> CmdResult<mongo_db::ShellResult> {
-    let s = state.session(&session_id)?;
-    mongo(&s)?.shell(&db, &line).await.map_err(err)
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RedisDbInfo {
-    db: i64,
-    dbsize: i64,
-}
-
-#[tauri::command]
-async fn redis_select(state: State<'_, AppState>, session_id: String, db: Option<i64>) -> CmdResult<RedisDbInfo> {
-    let s = state.session(&session_id)?;
-    let r = redis(&s)?;
-    if let Some(db) = db {
-        r.select(db).await.map_err(err)?;
-    }
-    Ok(RedisDbInfo { db: r.db().await, dbsize: r.dbsize().await.map_err(err)? })
-}
-
 /// Before the rename to DBDock (xyz.phpz.app.dbdock) data lived under net.yahaha.dbdock.
 /// Copy connections and groups once; passwords are re-imported (Keychain entries are
 /// bound to the old signature and would prompt on every read).
@@ -441,18 +270,18 @@ pub fn run() {
             commands::configuration::export_connections,
             commands::configuration::inspect_connections_file,
             commands::configuration::import_connections,
-            ssh_config_hosts,
+            commands::ssh::ssh_config_hosts,
             commands::app::open_help,
             commands::app::open_github,
             commands::app::set_menu_language,
             commands::app::confirm_quit,
-            ssh_hosts_list,
-            ssh_host_save,
-            ssh_host_delete,
-            ssh_host_open_terminal,
-            ssh_config_raw,
-            ssh_config_write,
-            ssh_host_test,
+            commands::ssh::ssh_hosts_list,
+            commands::ssh::ssh_host_save,
+            commands::ssh::ssh_host_delete,
+            commands::ssh::ssh_host_open_terminal,
+            commands::ssh::ssh_config_raw,
+            commands::ssh::ssh_config_write,
+            commands::ssh::ssh_host_test,
             commands::groups::list_groups,
             commands::groups::create_group,
             commands::groups::rename_group,
@@ -488,20 +317,20 @@ pub fn run() {
             commands::sql::browser::sql_apply_schema,
             commands::sql::browser::sql_import_rows,
             commands::sql::browser::sql_export_table,
-            redis_scan,
-            redis_get,
-            redis_delete,
-            redis_command,
-            redis_select,
-            mongo_databases,
-            mongo_collections,
-            mongo_find,
-            mongo_count,
-            mongo_insert,
-            mongo_replace,
-            mongo_delete,
-            mongo_indexes,
-            mongo_shell,
+            commands::redis::redis_scan,
+            commands::redis::redis_get,
+            commands::redis::redis_delete,
+            commands::redis::redis_command,
+            commands::redis::redis_select,
+            commands::mongo::mongo_databases,
+            commands::mongo::mongo_collections,
+            commands::mongo::mongo_find,
+            commands::mongo::mongo_count,
+            commands::mongo::mongo_insert,
+            commands::mongo::mongo_replace,
+            commands::mongo::mongo_delete,
+            commands::mongo::mongo_indexes,
+            commands::mongo::mongo_shell,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
