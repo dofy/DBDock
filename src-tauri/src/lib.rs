@@ -27,11 +27,7 @@ use serde_json::Value;
 use tauri::{Emitter, Manager, State};
 
 use redis_db::{KeyValue, RedisConn, ScanPage};
-use sql::{Change, CompletionColumn, CompletionSession, QueryExecution, QueryResult, SqlConn, SqlPool, TableData, TableInfo};
-use sql_browser::{CompletionForeignKey, TableFilter, TableMetadata};
-use sql_plan::{ExecutionPlan, PlanMode};
-use sql_schema::SchemaChange;
-use sql_transfer::ExportFormat;
+use sql::SqlConn;
 use ssh::Tunnel;
 use store::{ConnectionConfig, Kind, Secrets, SecretsInput, SqlProtection, Store};
 
@@ -101,20 +97,6 @@ impl AppState {
             Conn::Sql(_) => Ok(s),
             _ => Err("not a SQL session".into()),
         }
-    }
-}
-
-fn pool(s: &Session) -> &SqlPool {
-    match &s.conn {
-        Conn::Sql(c) => &c.pool,
-        _ => unreachable!(),
-    }
-}
-
-fn browser_pool(s: &Session) -> &SqlPool {
-    match &s.conn {
-        Conn::Sql(c) => c.browser.as_ref().unwrap_or(&c.pool),
-        _ => unreachable!(),
     }
 }
 
@@ -305,243 +287,6 @@ fn ssh_config_hosts() -> Vec<ssh_config::HostEntry> {
     ssh_config::hosts()
 }
 
-// SQL files are chosen explicitly using the native open/save dialog.
-#[tauri::command]
-fn read_sql_file(path: String) -> CmdResult<String> {
-    read_text_file(path, "SQL file is larger than 5 MiB")
-}
-
-#[tauri::command]
-fn read_table_file(path: String) -> CmdResult<String> {
-    read_text_file(path, "Import file is larger than 5 MiB")
-}
-
-fn read_text_file(path: String, too_large: &str) -> CmdResult<String> {
-    use std::io::Read;
-    const LIMIT: usize = 5 * 1024 * 1024;
-    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    if file.metadata().map_err(|e| e.to_string())?.len() > LIMIT as u64 {
-        return Err(too_large.into());
-    }
-    let mut bytes = Vec::new();
-    file.take(LIMIT as u64 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-    if bytes.len() > LIMIT { return Err(too_large.into()); }
-    String::from_utf8(bytes).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn write_sql_file(path: String, contents: String) -> CmdResult<()> {
-    use std::io::Write;
-    let path = std::path::Path::new(&path);
-    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| std::path::Path::new("."));
-    let temporary = parent.join(format!(".dbdock-sql-{}.tmp", uuid::Uuid::new_v4()));
-    let result = (|| -> std::io::Result<()> {
-        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temporary)?;
-        if let Ok(meta) = std::fs::metadata(path) { file.set_permissions(meta.permissions())?; }
-        file.write_all(contents.as_bytes())?;
-        file.sync_all()?;
-        std::fs::rename(&temporary, path)
-    })();
-    if result.is_err() { let _ = std::fs::remove_file(&temporary); }
-    result.map_err(|e| e.to_string())
-}
-
-// ---------- SQL ----------
-
-// Each table read has its own cancellation token; closing one tab must not
-// interrupt another tab or the SQL editor.
-#[tauri::command]
-fn begin_browser_request(state: State<'_, AppState>, request_id: String) -> CmdResult<()> {
-    let mut requests = state.browser_requests.lock().unwrap();
-    if requests.contains_key(&request_id) { return Err("browser request already exists".into()); }
-    let (sender, _) = tokio::sync::watch::channel(false);
-    requests.insert(request_id, sender);
-    Ok(())
-}
-
-#[tauri::command]
-fn cancel_browser_request(state: State<'_, AppState>, request_id: String) {
-    if let Some(sender) = state.browser_requests.lock().unwrap().remove(&request_id) {
-        sender.send_replace(true);
-    }
-}
-
-async fn browser_request<T>(state: &AppState, request_id: &str, operation: impl std::future::Future<Output = CmdResult<T>>) -> CmdResult<T> {
-    let mut cancelled = {
-        let requests = state.browser_requests.lock().unwrap();
-        requests.get(request_id).ok_or("browser request cancelled")?.subscribe()
-    };
-    let result = wait_for_browser_request(&mut cancelled, operation).await;
-    state.browser_requests.lock().unwrap().remove(request_id);
-    result
-}
-
-
-async fn wait_for_browser_request<T>(cancelled: &mut tokio::sync::watch::Receiver<bool>, operation: impl std::future::Future<Output = CmdResult<T>>) -> CmdResult<T> {
-    if *cancelled.borrow() { return Err("browser request cancelled".into()); }
-    tokio::select! {
-        biased;
-        _ = cancelled.changed() => Err("browser request cancelled".into()),
-        result = operation => result,
-    }
-}
-
-#[tauri::command]
-async fn sql_schemas(state: State<'_, AppState>, session_id: String) -> CmdResult<Vec<String>> {
-    let s = state.sql(&session_id)?;
-    browser_pool(&s).schemas().await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_databases(state: State<'_, AppState>, session_id: String) -> CmdResult<Vec<String>> {
-    let s = state.sql(&session_id)?;
-    browser_pool(&s).databases().await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_tables(state: State<'_, AppState>, session_id: String, schema: String) -> CmdResult<Vec<TableInfo>> {
-    let s = state.sql(&session_id)?;
-    browser_pool(&s).tables(&schema).await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_structure(state: State<'_, AppState>, session_id: String, schema: String, table: String, request_id: String) -> CmdResult<QueryResult> {
-    browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
-        browser_pool(&s).structure(&schema, &table).await.map_err(err)
-    }).await
-}
-
-#[tauri::command]
-async fn sql_table_metadata(state: State<'_, AppState>, session_id: String, schema: String, table: String, kind: TableMetadata, request_id: String) -> CmdResult<QueryResult> {
-    browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
-        browser_pool(&s).metadata(&schema, &table, kind).await.map_err(err)
-    }).await
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-async fn sql_table_data(
-    state: State<'_, AppState>,
-    session_id: String,
-    schema: String,
-    table: String,
-    limit: u32,
-    offset: u64,
-    order_by: Option<String>,
-    order_desc: bool,
-    filter: Option<String>,
-    visual_filter: Option<TableFilter>,
-    capture_versions: bool,
-    request_id: String,
-) -> CmdResult<TableData> {
-    browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
-        if filter.as_ref().is_some_and(|f| !f.trim().is_empty()) && s.sql_protection != SqlProtection::Automatic {
-            return Err("Use visual filters on protected connections".into());
-        }
-        let capture_versions = capture_versions && s.sql_protection != SqlProtection::BrowseOnly;
-        browser_pool(&s).table_data(&schema, &table, limit, offset, order_by, order_desc, filter, visual_filter, capture_versions).await.map_err(err)
-    }).await
-}
-
-#[tauri::command]
-fn sql_needs_confirmation(state: State<'_, AppState>, session_id: String, sql: String) -> CmdResult<bool> {
-    let s = state.sql(&session_id)?;
-    Ok(s.sql_protection == SqlProtection::Confirm && sql_protection::needs_confirmation(&sql, pool(&s).dialect()))
-}
-
-#[tauri::command]
-async fn sql_execute(state: State<'_, AppState>, session_id: String, sql: String, confirmed: bool) -> CmdResult<QueryExecution> {
-    let s = state.sql(&session_id)?;
-    let pool = pool(&s);
-    let metadata_changed = sql_protection::needs_confirmation(&sql, pool.dialect());
-    if s.sql_protection != SqlProtection::Confirm || (!confirmed && metadata_changed) {
-        s.sql_protection.check_execution(confirmed).map_err(err)?;
-    }
-    let results = pool.execute(sql).await.map_err(err)?;
-    Ok(QueryExecution { results, metadata_changed })
-}
-
-#[tauri::command]
-async fn sql_execution_plan(state: State<'_, AppState>, session_id: String, sql: String, mode: PlanMode, confirmed: bool) -> CmdResult<ExecutionPlan> {
-    let s = state.sql(&session_id)?;
-    pool(&s).execution_plan(&sql, mode, s.sql_protection, confirmed).await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_cancel(state: State<'_, AppState>, session_id: String) -> CmdResult<()> {
-    let s = state.sql(&session_id)?;
-    let Conn::Sql(c) = &s.conn else { unreachable!() };
-    c.cancel().await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_completion_session(state: State<'_, AppState>, session_id: String) -> CmdResult<CompletionSession> {
-    let s = state.sql(&session_id)?;
-    pool(&s).completion_session().await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_columns(state: State<'_, AppState>, session_id: String, schema: String) -> CmdResult<std::collections::BTreeMap<String, Vec<CompletionColumn>>> {
-    let s = state.sql(&session_id)?;
-    pool(&s).columns(&schema).await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_completion_foreign_keys(state: State<'_, AppState>, session_id: String, schema: String, table: String) -> CmdResult<Vec<CompletionForeignKey>> {
-    let s = state.sql(&session_id)?;
-    pool(&s).completion_foreign_keys(&schema, &table).await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_preview_changes(state: State<'_, AppState>, session_id: String, schema: String, table: String, changes: Vec<Change>) -> CmdResult<Vec<String>> {
-    let s = state.sql(&session_id)?;
-    browser_pool(&s).change_sql(&schema, &table, &changes).await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_apply_changes(state: State<'_, AppState>, session_id: String, schema: String, table: String, changes: Vec<Change>, confirmed: bool) -> CmdResult<usize> {
-    let s = state.sql(&session_id)?;
-    s.sql_protection.check_execution(confirmed).map_err(err)?;
-    browser_pool(&s).apply(&schema, &table, &changes).await.map_err(err)
-}
-
-#[tauri::command]
-fn sql_preview_schema(state: State<'_, AppState>, session_id: String, schema: String, table: String, change: SchemaChange) -> CmdResult<String> {
-    let s = state.sql(&session_id)?;
-    browser_pool(&s).schema_sql(&schema, &table, &change).map_err(err)
-}
-
-#[tauri::command]
-async fn sql_apply_schema(state: State<'_, AppState>, session_id: String, schema: String, table: String, change: SchemaChange, confirmed: bool) -> CmdResult<()> {
-    let s = state.sql(&session_id)?;
-    s.sql_protection.check_execution(confirmed).map_err(err)?;
-    if matches!(&change, SchemaChange::Drop { .. }) && !confirmed {
-        return Err("Confirm this SQL operation first".into());
-    }
-    let db = browser_pool(&s);
-    let sql = db.schema_sql(&schema, &table, &change).map_err(err)?;
-    db.apply_schema(sql).await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_import_rows(state: State<'_, AppState>, session_id: String, schema: String, table: String, columns: Vec<String>, rows: Vec<Vec<Value>>, confirmed: bool) -> CmdResult<usize> {
-    let s = state.sql(&session_id)?;
-    s.sql_protection.check_execution(confirmed).map_err(err)?;
-    if !confirmed { return Err("Confirm this SQL operation first".into()); }
-    browser_pool(&s).import_rows(&schema, &table, columns, rows).await.map_err(err)
-}
-
-#[tauri::command]
-async fn sql_export_table(state: State<'_, AppState>, session_id: String, schema: String, table: String, path: String, format: ExportFormat, request_id: String) -> CmdResult<u64> {
-    browser_request(&state, &request_id, async {
-        let s = state.sql(&session_id)?;
-        browser_pool(&s).export_table(&schema, &table, std::path::Path::new(&path), format).await.map_err(err)
-    }).await
-}
-
 // ---------- Redis ----------
 
 #[tauri::command]
@@ -719,30 +464,30 @@ pub fn run() {
             cancel_connect,
             connect,
             disconnect,
-            read_sql_file,
-            read_table_file,
-            write_sql_file,
-            sql_schemas,
-            sql_databases,
-            sql_tables,
-            begin_browser_request,
-            cancel_browser_request,
-            sql_structure,
-            sql_table_metadata,
-            sql_table_data,
-            sql_needs_confirmation,
-            sql_execute,
-            sql_execution_plan,
-            sql_completion_session,
-            sql_cancel,
-            sql_columns,
-            sql_completion_foreign_keys,
-            sql_preview_changes,
-            sql_apply_changes,
-            sql_preview_schema,
-            sql_apply_schema,
-            sql_import_rows,
-            sql_export_table,
+            commands::sql::files::read_sql_file,
+            commands::sql::files::read_table_file,
+            commands::sql::files::write_sql_file,
+            commands::sql::browser::sql_schemas,
+            commands::sql::browser::sql_databases,
+            commands::sql::browser::sql_tables,
+            commands::sql::browser::begin_browser_request,
+            commands::sql::browser::cancel_browser_request,
+            commands::sql::browser::sql_structure,
+            commands::sql::browser::sql_table_metadata,
+            commands::sql::browser::sql_table_data,
+            commands::sql::sql_needs_confirmation,
+            commands::sql::sql_execute,
+            commands::sql::sql_execution_plan,
+            commands::sql::sql_completion_session,
+            commands::sql::sql_cancel,
+            commands::sql::sql_columns,
+            commands::sql::sql_completion_foreign_keys,
+            commands::sql::browser::sql_preview_changes,
+            commands::sql::browser::sql_apply_changes,
+            commands::sql::browser::sql_preview_schema,
+            commands::sql::browser::sql_apply_schema,
+            commands::sql::browser::sql_import_rows,
+            commands::sql::browser::sql_export_table,
             redis_scan,
             redis_get,
             redis_delete,
@@ -1041,46 +786,8 @@ mod it {
 
 #[cfg(test)]
 mod connection_cancel_tests {
-    #[tokio::test]
-    async fn browser_cancellation_drops_only_its_own_read() {
-        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-        struct DropFlag(Arc<AtomicBool>);
-        impl Drop for DropFlag { fn drop(&mut self) { self.0.store(true, Ordering::SeqCst); } }
-        let (sender, mut receiver) = tokio::sync::watch::channel(false);
-        let (_other_sender, mut other_receiver) = tokio::sync::watch::channel(false);
-        let dropped = Arc::new(AtomicBool::new(false));
-        let flag = DropFlag(dropped.clone());
-        let task = tokio::spawn(async move {
-            super::wait_for_browser_request(&mut receiver, async move {
-                let _flag = flag;
-                std::future::pending::<super::CmdResult<()>>().await
-            }).await
-        });
-        tokio::task::yield_now().await;
-        sender.send_replace(true);
-        assert_eq!(task.await.unwrap().unwrap_err(), "browser request cancelled");
-        assert!(dropped.load(Ordering::SeqCst));
-        assert_eq!(super::wait_for_browser_request(&mut other_receiver, async { Ok(42) }).await.unwrap(), 42);
-        let mut already_cancelled = sender.subscribe();
-        assert!(super::wait_for_browser_request(&mut already_cancelled, async { Ok(()) }).await.is_err());
-    }
-
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
-
-    #[test]
-    fn sql_file_roundtrip_and_reject_large_file() {
-        let dir = std::env::temp_dir().join(format!("dbdock-sql-file-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("query.sql");
-        let name = path.to_str().unwrap().to_string();
-        let sql = "SELECT '日本語';\nSELECT 2;";
-        write_sql_file(name.clone(), sql.into()).unwrap();
-        assert_eq!(read_sql_file(name.clone()).unwrap(), sql);
-        std::fs::write(&path, vec![b'x'; 5 * 1024 * 1024 + 1]).unwrap();
-        assert!(read_sql_file(name).unwrap_err().contains("5 MiB"));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
 
     #[tokio::test]
     async fn cancelling_drops_an_in_progress_connection_and_pre_cancel_is_safe() {
