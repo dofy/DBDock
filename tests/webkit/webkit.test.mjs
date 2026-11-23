@@ -69,3 +69,5 @@ test("WebKit a failed imported connection does not reopen the import dialog", ma
 test("WebKit a single URL fills a new connection and saves only on confirmation", macOSOnly, () => runFixture("workspaceLifecycle.html?case=new-url"));
 
 test("WebKit routes native menu events and shortcuts and cleans up listeners", macOSOnly, () => runFixture("workspaceLifecycle.html?case=menu-shortcuts"));
+
+test("WebKit restores palette focus on dismissal and executes commands after closing", macOSOnly, () => runFixture("workspaceLifecycle.html?case=palettes-focus"));

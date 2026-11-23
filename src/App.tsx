@@ -11,7 +11,7 @@ import { DbIcon } from "./components/DbIcon";
 import { ToastProvider, useToast } from "./components/Toast";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { CommandPalette } from "./components/CommandPalette";
-import type { PaletteCommand } from "./commandPalette";
+import { appPaletteCommands } from "./appPaletteCommands";
 import { AboutDialog } from "./components/AboutDialog";
 import "./styles.css";
 import { Database, Search, X } from "lucide-react";
@@ -22,8 +22,7 @@ import { clearHealth } from "./healthHistory";
 import { SqlHistory } from "./sqlHistory";
 import { quitDecision } from "./quitGuard";
 import { QuickNavigation } from "./components/QuickNavigation";
-import { pruneNavigation, readNavigation, saveNavigation, toggleFavorite, visitTarget,
-  type NavigationCatalog, type NavigationTarget } from "./navigation";
+import { useAppPalettes } from "./useAppPalettes";
 import { useAppMenu } from "./useAppMenu";
 import { pendingConnectionTabId, useConnectionSessions } from "./useConnectionSessions";
 
@@ -54,32 +53,10 @@ function Shell() {
   const [editing, setEditing] = useState<ConnectionConfig | { newInGroup: string; fromUrl?: boolean } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
-  const [showCommand, setShowCommand] = useState(false);
-  const [showQuick, setShowQuick] = useState(false);
-  const [navigation, setNavigation] = useState(() => readNavigation(localStorage));
-  const [catalog, setCatalog] = useState<NavigationCatalog>();
-  const recordVisit = useCallback((target: NavigationTarget) => setNavigation((current) => visitTarget(current, target)), []);
-  useEffect(() => { saveNavigation(localStorage, navigation); }, [navigation]);
-  const previousFocus = useRef<HTMLElement | null>(null);
-  const pendingCommand = useRef<PaletteCommand | null>(null);
-  const openCommands = () => {
-    if (document.querySelector('.modal-backdrop:not([hidden])') || document.querySelector('.palette-backdrop')) return;
-    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setShowCommand(true);
-  };
-  const openQuick = () => {
-    if (document.querySelector('.modal-backdrop:not([hidden]), .palette-backdrop')) return;
-    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setShowQuick(true);
-  };
-  useEffect(() => {
-    if (showCommand || showQuick) return;
-    const command = pendingCommand.current; pendingCommand.current = null;
-    const focus = previousFocus.current;
-    previousFocus.current = null;
-    if (command) { command.run(); return; }
-    focus?.focus();
-  }, [showCommand, showQuick]);
+  const {
+    showCommand, showQuick, openCommands, openQuick, closeCommands, closeQuick, runCommand,
+    catalog, setCatalog, navigation, recordVisit, pruneConnectionHistory, toggleFavoriteTarget, navigate,
+  } = useAppPalettes(conns, connect);
   const [sqlHistory] = useState(() => new SqlHistory());
   const quitPending = useRef(false);
 
@@ -88,22 +65,15 @@ function Shell() {
       const [c, g] = await Promise.all([api.listConnections(), api.listGroups()]);
       setConns(c);
       setGroups(g);
-      const ids = new Set(c.map(({ id }) => id));
-      setNavigation((current) => pruneNavigation(current, ids));
+      pruneConnectionHistory(c);
     } catch (e) {
       toast("error", errText(e));
     }
-  }, [toast]);
+  }, [toast, pruneConnectionHistory]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  const navigate = (target: NavigationTarget) => {
-    setShowQuick(false);
-    const connection = conns.find((item) => item.id === target.connectionId);
-    if (connection) void connect(connection, target);
-  };
 
   const quit = async () => {
     if (quitPending.current) return;
@@ -144,38 +114,7 @@ function Shell() {
     }
   }, [activeSession, recordVisit]);
 
-  const noteCategory = t("Connections"), settingsCategory = t("Settings"), databaseCategory = t("Database");
-  const action = (id: string, label: string, category: string, keywords: string, shortcut?: string): PaletteCommand => ({ id, label: t(label), category, keywords, shortcut, run: () => dispatchMenu(id) });
-  const commands: PaletteCommand[] = [
-    action("new-connection", "New connection", noteCategory, "create connection", "⌘N"),
-    action("new-connection-url", "New connection from URL…", noteCategory, "paste URL create connection", "⇧⌘I"),
-    action("quick-switch", "Quick switch", databaseCategory, "go to table database schema favorite recent", "⌘K"),
-    action("home", "Connections", noteCategory, "home connections"),
-    action("find", "Search connections", noteCategory, "search find connection", "⌘F"),
-    action("new-group", "New group", noteCategory, "create group", "⌘⇧N"),
-    action("import", "Import connections", noteCategory, "import connections", "⌘O"),
-    action("export", "Export connections", noteCategory, "export connections", "⌘⇧E"),
-    action("ssh-hosts", "SSH Hosts", noteCategory, "ssh hosts", "⌘⇧H"),
-    action("settings", "Open settings", settingsCategory, "preferences settings", "⌘,"),
-    { id:"vim",label:t(settings.vim ? "Disable Vim mode" : "Enable Vim mode"),category:settingsCategory,keywords:"vim editor toggle",run:()=>updateSettings({vim:!settings.vim}) },
-    ...(["system","light","dark"] as const).map((theme): PaletteCommand => ({id:`theme-${theme}`,label:`${t("Theme")}: ${t(theme === "system" ? "System" : theme === "light" ? "Light" : "Dark")}`,category:settingsCategory,keywords:`appearance theme ${theme}`,run:()=>updateSettings({theme})})),
-    ...(["system","en","zh-CN","zh-TW","ja"] as const).map((language): PaletteCommand => ({id:`language-${language}`,label:`${t("Language")}: ${language === "system" ? t("System") : ({en:"English", "zh-CN":"简体中文", "zh-TW":"繁體中文", ja:"日本語"} as Record<string,string>)[language]}`,category:settingsCategory,keywords:`language locale ${language}`,run:()=>updateSettings({language})})),
-    { id:"help",label:t("Help"),category:settingsCategory,keywords:"help documentation",run:()=>{void invoke("open_help").catch((error)=>toast("error",errText(error)));} },
-  ];
-  if (activeSession && !["redis", "mongodb"].includes(activeSession.session.kind)) {
-    commands.splice(1, 0,
-      action("new-sql-tab", "New query", databaseCategory, "new sql query", "⌘T"),
-      action("focus-sql-editor", "Focus SQL editor", databaseCategory, "focus input editor query", "⌘L"),
-      action("format-sql", "Format SQL", databaseCategory, "beautify format indent query", "⌘I"),
-    );
-  }
-  if (active) commands.push(
-    action("close-database-tab", "Close tab or connection", databaseCategory, "close table query tab session", "⌘W"),
-    action("close-tab", "Close connection", databaseCategory, "close session", "⌥⌘W"),
-  );
-  for (const connection of conns) commands.push({id:`connection-${connection.id}`,label:tf("Connect to {name}",{name:connection.name}),category:noteCategory,keywords:`connect ${connection.kind}`,run:()=>{
-    void connect(connection);
-  }});
+  const commands = appPaletteCommands({ conns, active, activeSession, settings, dispatchMenu, connect, toast });
 
   return (
     <div className="app">
@@ -238,9 +177,9 @@ function Shell() {
         </div>
       ))}
 
-      {showCommand && <CommandPalette commands={commands} onClose={() => setShowCommand(false)} onRun={(command) => { pendingCommand.current = command; setShowCommand(false); }} />}
+      {showCommand && <CommandPalette commands={commands} onClose={closeCommands} onRun={runCommand} />}
       {showQuick && <QuickNavigation connections={conns} catalog={catalog?.sessionId === active ? catalog : undefined} history={navigation}
-        onClose={() => setShowQuick(false)} onNavigate={navigate} onFavorite={(target) => setNavigation((current) => toggleFavorite(current, target))} />}
+        onClose={closeQuick} onNavigate={navigate} onFavorite={toggleFavoriteTarget} />}
       {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
 

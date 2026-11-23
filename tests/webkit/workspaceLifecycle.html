@@ -154,6 +154,34 @@
 
   const menuAction = (id) => flushSync(() => window.dispatchEvent(new CustomEvent("dbdock:menu", { detail: id })));
 
+  async function palettesAndFocus() {
+    const search = await waitFor(() => find("input.search"), "Connection search was not available");
+    const choose = (name) => click([...document.querySelectorAll(".palette-item")]
+      .find(item => item.querySelector(".palette-title")?.textContent === name));
+
+    for (const action of ["command-palette", "quick-switch"]) {
+      search.focus();
+      menuAction(action);
+      const input = await waitFor(() => find(".palette-backdrop input"), `The ${action} input did not open`);
+      assert(document.activeElement === input, `The ${action} input should take focus`);
+      flushSync(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+      assert(!find(".palette-backdrop") && document.activeElement === search, `Dismissing ${action} should restore focus`);
+    }
+
+    let restored = 0;
+    const focus = search.focus.bind(search);
+    search.focus = (...args) => { restored++; focus(...args); };
+    menuAction("command-palette");
+    choose("Quick switch");
+    await waitFor(() => find('.command-palette[aria-label="Quick switch"]'), "The command did not open Quick Switch after the first palette closed");
+    assert(restored === 0, "Running a command should not restore focus before executing it");
+    choose("Fixture");
+    const attempt = await waitFor(() => [...attempts.keys()][0], "Quick Switch did not route to the selected connection");
+    assert(!find(".palette-backdrop") && ipc("connect").length === 1, "Quick Switch should close and start one connection");
+    attempts.get(attempt).resolve(session("quick-session"));
+    await waitFor(() => find('.top-tab.on[title="quick-session"]'), "The selected connection did not become active");
+  }
+
   async function menuAndShortcuts(root) {
     await openWorkspace();
     const native = (event, payload) => {
@@ -310,6 +338,7 @@
     const root = createRoot(find("#root"));
     flushSync(() => root.render(createElement(App)));
     const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs, "menu-shortcuts": menuAndShortcuts,
+      "palettes-focus": palettesAndFocus,
       "no-import-replay": failureDoesNotReopenImport, "new-url": newConnectionFromUrl };
     await cases[new URLSearchParams(location.search).get("case")](root);
     assert(unexpected.length === 0, `Unexpected IPC commands: ${unexpected.join(", ")}`);
