@@ -9,6 +9,7 @@
   import { flushSync } from "react-dom";
   import { createRoot } from "react-dom/client";
   import App from "../../src/App";
+  import { beginHealthCheck, finishHealthCheck } from "../../src/healthHistory";
   import { updateSettings } from "../../src/settings";
   import "../../src/styles.css";
 
@@ -37,6 +38,10 @@
   const url = "postgres://reader:p%40ss@sample.invalid:6543/new_db";
   const draft = { ...connection, id: "", group: "", name: "sample.invalid/new_db",
     host: "sample.invalid", port: 6543, database: "new_db", user: "reader" };
+  let savedConnection;
+  let finishGroupReload;
+  let finishCommit;
+  let finishQuit;
   window.__TAURI_INTERNALS__ = {
     transformCallback(callback) {
       const id = callbacks.size + 1;
@@ -56,14 +61,23 @@
         case "disconnect":
         case "begin_browser_request": return Promise.resolve();
         case "connect": return new Promise((resolve, reject) => attempts.set(args.attemptId, { resolve, reject }));
-        case "list_connections": return Promise.resolve([connection]);
-        case "list_groups": return Promise.resolve(["Imported"]);
+        case "list_connections": return Promise.resolve([savedConnection ?? connection]);
+        case "list_groups":
+          if (savedConnection) return new Promise(resolve => { finishGroupReload = () => resolve(["Imported", savedConnection.group]); });
+          return Promise.resolve(["Imported"]);
         case "tableplus_file": return Promise.resolve(null);
         case "ssh_config_hosts": return Promise.resolve([]);
         case "parse_connection_url":
           if (args.url !== url) return Promise.reject("Enter one supported connection URL.");
           return Promise.resolve({ config: draft, password: "p@ss" });
-        case "save_connection": return Promise.resolve({ ...args.config, id: "new-connection" });
+        case "save_connection":
+          if (args.config.id === connection.id) {
+            savedConnection = args.config;
+            return Promise.resolve(savedConnection);
+          }
+          return Promise.resolve({ ...args.config, id: "new-connection" });
+        case "confirm_quit": return new Promise(resolve => { finishQuit = resolve; });
+        case "sql_apply_changes": return new Promise(resolve => { finishCommit = () => resolve(1); });
         case "sql_schemas": return Promise.resolve(["public"]);
         case "sql_databases": return Promise.resolve(["fixture"]);
         case "sql_tables": return Promise.resolve(["first", "second"].map(name => ({ name, kind: "table" })));
@@ -153,6 +167,82 @@
   }
 
   const menuAction = (id) => flushSync(() => window.dispatchEvent(new CustomEvent("dbdock:menu", { detail: id })));
+  const buttonWithText = (root, label) => [...root.querySelectorAll("button")].find(button => button.textContent.trim() === label);
+  const dialog = () => find(".feedback-dialog[open]");
+
+  async function saveConnectionAndReload() {
+    await waitFor(() => find('.tree-name[title="Imported"]') && find('.card-title b[title="Fixture"]'),
+      "The connection and group lists did not load");
+    flushSync(() => finishHealthCheck(beginHealthCheck(connection), "ok"));
+    assert(find(".card-health"), "The fixture should have a saved health result");
+    click(find('button[aria-label="Edit"]'));
+    const form = await waitFor(() => find(".connection-form"), "Edit connection did not open");
+    for (const [field, value] of [[form.querySelector('input[value="Fixture"]'), "Updated fixture"], [form.querySelector('input[list="group-options"]'), "New group"]]) {
+      flushSync(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, value);
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    click(buttonWithText(form, "Save"));
+    await waitFor(() => finishGroupReload && !find(".connection-form") && find(".toast-text")?.textContent === "Saved Updated fixture",
+      "Saving should close the form, show success, and request a list reload");
+    assert(ipc("list_connections").length === 2 && ipc("list_groups").length === 2, "Saving should request both lists once");
+    assert(!find(".card-health"), "Saving should clear the old health result");
+    assert(find('.card-title b[title="Fixture"]') && !find('.card-title b[title="Updated fixture"]'),
+      "The card should await both list responses");
+    finishGroupReload();
+    await waitFor(() => find('.tree-name[title="New group"]') && find('.card-title b[title="Updated fixture"]'),
+      "The refreshed connection and group were not shown");
+  }
+
+  async function quitGuard() {
+    await waitFor(() => find(".card-connect"), "The connection list did not load");
+    menuAction("quit-app");
+    menuAction("quit-app");
+    assert(ipc("confirm_quit").length === 1 && !dialog(), "Idle quit should invoke IPC once without confirmation");
+    finishQuit();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    menuAction("new-connection");
+    const form = await waitFor(() => find(".connection-form"), "The connection form did not open");
+    menuAction("quit-app");
+    const editing = await waitFor(dialog, "Quit should ask when a form is open");
+    click(buttonWithText(editing, "Cancel"));
+    assert(find(".connection-form") && ipc("confirm_quit").length === 1, "Cancelling quit should preserve the form");
+    flushSync(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    assert(!form.isConnected, "The form did not close");
+
+    const attempt = await startConnection();
+    menuAction("quit-app");
+    const pending = await waitFor(dialog, "Quit should ask during a connection attempt");
+    click(buttonWithText(pending, "Cancel"));
+    assert(ipc("confirm_quit").length === 1 && find(".connecting-workspace"), "Cancelling quit should keep the attempt");
+    attempts.get(attempt).resolve(session("quit-session"));
+    await openTable("first");
+    const add = await waitFor(() => {
+      const button = find('button[aria-label="Add a row"]');
+      return button && !button.disabled && button;
+    }, "The table did not become editable");
+    click(add);
+    click(buttonWithText(find(".pending-bar"), "Commit ⌘S"));
+    await waitFor(() => add.disabled && finishCommit, "Commit did not start");
+    menuAction("quit-app");
+    const busy = await waitFor(dialog, "Quit should report a commit in progress");
+    assert(busy.textContent.includes("Wait for the commit to finish before quitting.") && !buttonWithText(busy, "Quit"),
+      "A commit in progress should block quitting");
+    click(buttonWithText(busy, "OK"));
+    assert(ipc("confirm_quit").length === 1, "Blocked quit must not invoke IPC");
+    finishCommit();
+    await waitFor(() => !find(".pending-bar") && !add.disabled, "Commit did not finish");
+
+    menuAction("quit-app");
+    const open = await waitFor(dialog, "Quit should ask with an open connection");
+    menuAction("quit-app");
+    click(buttonWithText(open, "Quit"));
+    await waitFor(() => ipc("confirm_quit").length === 2, "Confirming quit did not invoke IPC");
+    assert(!dialog(), "Repeated quit should not queue another confirmation");
+    finishQuit();
+  }
 
   async function palettesAndFocus() {
     const search = await waitFor(() => find("input.search"), "Connection search was not available");
@@ -338,7 +428,7 @@
     const root = createRoot(find("#root"));
     flushSync(() => root.render(createElement(App)));
     const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs, "menu-shortcuts": menuAndShortcuts,
-      "palettes-focus": palettesAndFocus,
+      "palettes-focus": palettesAndFocus, "save-reload": saveConnectionAndReload, "quit-guard": quitGuard,
       "no-import-replay": failureDoesNotReopenImport, "new-url": newConnectionFromUrl };
     await cases[new URLSearchParams(location.search).get("case")](root);
     assert(unexpected.length === 0, `Unexpected IPC commands: ${unexpected.join(", ")}`);

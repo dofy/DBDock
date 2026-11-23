@@ -71,3 +71,7 @@ test("WebKit a single URL fills a new connection and saves only on confirmation"
 test("WebKit routes native menu events and shortcuts and cleans up listeners", macOSOnly, () => runFixture("workspaceLifecycle.html?case=menu-shortcuts"));
 
 test("WebKit restores palette focus on dismissal and executes commands after closing", macOSOnly, () => runFixture("workspaceLifecycle.html?case=palettes-focus"));
+
+test("WebKit refreshes connections and groups and clears health after saving", macOSOnly, () => runFixture("workspaceLifecycle.html?case=save-reload"));
+
+test("WebKit confirms quitting with open work and blocks it during commits", macOSOnly, () => runFixture("workspaceLifecycle.html?case=quit-guard"));

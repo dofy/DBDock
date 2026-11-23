@@ -5,7 +5,7 @@ import { pruneNavigation, readNavigation, saveNavigation, toggleFavorite, visitT
   type NavigationCatalog, type NavigationTarget } from "./navigation";
 import type { useConnectionSessions } from "./useConnectionSessions";
 
-export function useAppPalettes(conns: ConnectionConfig[], connect: ReturnType<typeof useConnectionSessions>["connect"]) {
+export function useAppPalettes(connect: ReturnType<typeof useConnectionSessions>["connect"]) {
   const [showCommand, setShowCommand] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
   const [navigation, setNavigation] = useState(() => readNavigation(localStorage));
@@ -32,7 +32,7 @@ export function useAppPalettes(conns: ConnectionConfig[], connect: ReturnType<ty
     focus?.focus();
   }, [showCommand, showQuick]);
 
-  const navigate = (target: NavigationTarget) => {
+  const navigate = (conns: ConnectionConfig[], target: NavigationTarget) => {
     closeQuick();
     const connection = conns.find((item) => item.id === target.connectionId);
     if (connection) void connect(connection, target);

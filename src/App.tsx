@@ -1,6 +1,5 @@
 import { t, tf } from "./i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api, errText, type ConnectionConfig } from "./api";
+import { useEffect, useState } from "react";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { EnvBadge, Home } from "./components/Home";
 import { invoke } from "@tauri-apps/api/core";
@@ -15,15 +14,16 @@ import { appPaletteCommands } from "./appPaletteCommands";
 import { AboutDialog } from "./components/AboutDialog";
 import "./styles.css";
 import { Database, Search, X } from "lucide-react";
-import { FeedbackDialogProvider, useFeedbackDialog } from "./components/FeedbackDialog";
+import { FeedbackDialogProvider } from "./components/FeedbackDialog";
 import { updateSettings, useDarkMode, useSettings } from "./settings";
 import { resolveLocale } from "./i18n";
-import { clearHealth } from "./healthHistory";
 import { SqlHistory } from "./sqlHistory";
-import { quitDecision } from "./quitGuard";
 import { QuickNavigation } from "./components/QuickNavigation";
+import type { NavigationTarget } from "./navigation";
 import { useAppPalettes } from "./useAppPalettes";
 import { useAppMenu } from "./useAppMenu";
+import { useAppQuit } from "./useAppQuit";
+import { useConnectionProfiles } from "./useConnectionProfiles";
 import { pendingConnectionTabId, useConnectionSessions } from "./useConnectionSessions";
 
 function Shell() {
@@ -42,64 +42,31 @@ function Shell() {
     return () => window.removeEventListener("languagechange", changed);
   }, []);
   const toast = useToast();
-  const { ask, message } = useFeedbackDialog();
   const sessions = useConnectionSessions();
   const {
     opened, active, setActive, connecting, navigationRequest, dirtyTabs,
     connect, cancelPending, close,
   } = sessions;
-  const [conns, setConns] = useState<ConnectionConfig[]>([]);
-  const [groups, setGroups] = useState<string[]>([]);
-  const [editing, setEditing] = useState<ConnectionConfig | { newInGroup: string; fromUrl?: boolean } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const {
     showCommand, showQuick, openCommands, openQuick, closeCommands, closeQuick, runCommand,
-    catalog, setCatalog, navigation, recordVisit, pruneConnectionHistory, toggleFavoriteTarget, navigate,
-  } = useAppPalettes(conns, connect);
+    catalog, setCatalog, navigation, recordVisit, pruneConnectionHistory, toggleFavoriteTarget, navigate: navigateToTarget,
+  } = useAppPalettes(connect);
+  const {
+    conns, groups, editing, setEditing, reload, openNewConnection, openNewConnectionFromUrl, closeEditor, onSaved,
+  } = useConnectionProfiles(pruneConnectionHistory);
+  const navigate = (target: NavigationTarget) => navigateToTarget(conns, target);
   const [sqlHistory] = useState(() => new SqlHistory());
-  const quitPending = useRef(false);
-
-  const reload = useCallback(async () => {
-    try {
-      const [c, g] = await Promise.all([api.listConnections(), api.listGroups()]);
-      setConns(c);
-      setGroups(g);
-      pruneConnectionHistory(c);
-    } catch (e) {
-      toast("error", errText(e));
-    }
-  }, [toast, pruneConnectionHistory]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  const quit = async () => {
-    if (quitPending.current) return;
-    quitPending.current = true;
-    try {
-      const busy = [...dirtyTabs.current.values()].some((tabs) => [...tabs.values()].includes("busy"));
-      const decision = quitDecision(opened.length, connecting.length, !!document.querySelector('.modal-backdrop:not([hidden])'), busy);
-      if (decision === "blocked") { await message(t("Wait for the commit to finish before quitting."), { kind: "warning" }); return; }
-      if (decision === "confirm" && !(await ask(t("Quit DBDock? Open connections will close and unsaved edits will be lost."), {
-        title: t("Quit DBDock"), kind: "warning", okLabel: t("Quit"),
-      }))) return;
-      await invoke("confirm_quit");
-    } catch (e) {
-      toast("error", errText(e));
-    } finally {
-      quitPending.current = false;
-    }
-  };
+  const quit = useAppQuit(sessions);
 
   const { dispatchMenu, heldTabModifier, homeAction, consumeHomeAction } = useAppMenu({
     sessions,
     quit,
     openCommands,
     openQuick,
-    openNewConnection: () => setEditing({ newInGroup: "" }),
-    openNewConnectionFromUrl: () => setEditing((current) => current ?? { newInGroup: "", fromUrl: true }),
+    openNewConnection,
+    openNewConnectionFromUrl,
     openSettings: () => setShowSettings(true),
     openAbout: () => setShowAbout(true),
   });
@@ -189,13 +156,8 @@ function Shell() {
           initialGroup={"newInGroup" in editing ? editing.newInGroup : undefined}
           fromUrl={"newInGroup" in editing && editing.fromUrl}
           groups={groups}
-          onClose={() => setEditing(null)}
-          onSaved={(c) => {
-            clearHealth([c.id]);
-            setEditing(null);
-            toast("ok", tf("Saved {name}", { name: c.name }));
-            void reload();
-          }}
+          onClose={closeEditor}
+          onSaved={onSaved}
         />
       )}
     </div>
