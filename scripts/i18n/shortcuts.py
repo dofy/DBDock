@@ -9,7 +9,7 @@ ROWS = [
     ("⌘K", "Quick switch", "快速切换", "快速切換", "クイック切替"),
     ("⇧⌘P", "Open command palette", "打开命令面板", "開啟命令面板", "コマンドパレットを開く"),
     ("⌘O", "Import connections", "导入连接", "匯入連線", "接続をインポート"),
-    ("⇧⌘I", "Paste connection URLs", "粘贴连接 URL", "貼上連線 URL", "接続 URL を貼り付け"),
+    ("⇧⌘I", "New connection from URL", "从 URL 新增连接", "從 URL 新增連線", "URL から新規接続"),
     ("⇧⌘E", "Export connections", "导出连接", "匯出連線", "接続をエクスポート"),
     ("⇧⌘H", "Open SSH hosts", "打开 SSH 主机", "開啟 SSH 主機", "SSH ホストを開く"),
     ("⌘,", "Open settings", "打开设置", "開啟設定", "設定を開く"),

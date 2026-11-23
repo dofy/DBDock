@@ -38,18 +38,17 @@ type Dialog =
   | { kind: "delete-group"; path: string }
   | { kind: "move"; ids: string[] }
   | { kind: "export"; ids?: string[] }
-  | { kind: "import"; paste?: boolean }
+  | { kind: "import" }
   | { kind: "ssh-hosts" }
   | { kind: "health"; connections: ConnectionConfig[]; sequence: number };
 
 export interface MenuAction {
   id: string;
-  /** Changes on every menu click so repeated clicks fire again. */
-  seq: number;
 }
 
 interface Props {
   action?: MenuAction | null;
+  onActionHandled: (action: MenuAction) => void;
   conns: ConnectionConfig[];
   groups: string[];
   reload: () => Promise<void>;
@@ -58,7 +57,7 @@ interface Props {
   onEdit: (c: ConnectionConfig | { newInGroup: string }) => void;
 }
 
-export function Home({ conns, groups, reload, connecting, onConnect, onEdit, action }: Props) {
+export function Home({ conns, groups, reload, connecting, onConnect, onEdit, action, onActionHandled }: Props) {
   const toast = useToast();
   const { ask } = useFeedbackDialog();
   const health = useSyncExternalStore(subscribeHealth, healthSnapshot);
@@ -79,11 +78,10 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
   // Native menu actions that belong to the home screen.
   useEffect(() => {
     if (!action) return;
+    onActionHandled(action);
     switch (action.id) {
       case "import":
         return setDialog({ kind: "import" });
-      case "import-urls":
-        return setDialog({ kind: "import", paste: true });
       case "export":
         return setDialog({ kind: "export", ids: picked.size ? [...picked] : undefined });
       case "ssh-hosts":
@@ -98,7 +96,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
     }
     // Only react to new actions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [action?.seq]);
+  }, [action, onActionHandled]);
 
   // Forget a selected group that no longer exists.
   useEffect(() => {
@@ -603,7 +601,7 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
         await reload();
         toast("ok", tf("Deleted {name}", { name: c.name }));
       }} />}
-      {dialog?.kind === "import" && <ImportDialog pasteFirst={dialog.paste} onClose={() => setDialog(null)} onDone={imported} />}
+      {dialog?.kind === "import" && <ImportDialog onClose={() => setDialog(null)} onDone={imported} />}
       {dialog?.kind === "export" && (
         <TransferDialog
           mode={{ kind: "export", ids: dialog.ids }}

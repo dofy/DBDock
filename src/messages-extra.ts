@@ -273,6 +273,7 @@ export const extraMessages: Record<string, readonly [string, string, string]> = 
 
 /** Messages owned by DBDock; driver and server details stay verbatim. */
 export const backendMessages: Record<string, readonly [string, string, string]> = {
+  "Enter one supported connection URL.": ["请输入一条受支持的连接 URL。", "請輸入一條支援的連線 URL。", "対応する接続 URL を 1 件入力してください。"],
   'Row conflict': ['原始行已改变或删除，本次提交已回滚。', '原始列已變更或刪除，本次提交已回復。', '行が変更または削除されたため、コミットを取り消しました。'],
   'This connection is in browse-only mode': ['此连接处于仅浏览模式', '此連線處於僅瀏覽模式', 'この接続は閲覧専用です'],
   'Use visual filters on protected connections': ['受保护的连接请使用可视化筛选', '受保護的連線請使用視覺化篩選', '保護された接続では視覚フィルターを使ってください'],

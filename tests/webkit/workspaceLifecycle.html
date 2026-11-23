@@ -15,7 +15,7 @@
   const connection = {
     id: "fixture", name: "Fixture", kind: "postgres", database: "fixture",
     host: "127.0.0.1", port: 5432, user: "fixture", file: "", redisDb: 0,
-    cfAccountId: "", options: "", color: "", env: "local", group: "",
+    cfAccountId: "", options: "", color: "", env: "local", group: "Imported",
     ssh: { enabled: false, host: "", user: "", port: 22, auth: "key", keyPath: "" },
   };
   const session = (sessionId) => ({
@@ -32,6 +32,9 @@
   const reads = new Map();
   const heldTables = new Set();
   const unexpected = [];
+  const url = "postgres://reader:p%40ss@sample.invalid:6543/new_db";
+  const draft = { ...connection, id: "", group: "", name: "sample.invalid/new_db",
+    host: "sample.invalid", port: 6543, database: "new_db", user: "reader" };
   window.__TAURI_INTERNALS__ = {
     transformCallback() { return 1; },
     invoke(command, args) {
@@ -43,9 +46,15 @@
         case "cancel_connect":
         case "disconnect":
         case "begin_browser_request": return Promise.resolve();
-        case "connect": return new Promise(resolve => attempts.set(args.attemptId, resolve));
+        case "connect": return new Promise((resolve, reject) => attempts.set(args.attemptId, { resolve, reject }));
         case "list_connections": return Promise.resolve([connection]);
-        case "list_groups": return Promise.resolve([]);
+        case "list_groups": return Promise.resolve(["Imported"]);
+        case "tableplus_file": return Promise.resolve(null);
+        case "ssh_config_hosts": return Promise.resolve([]);
+        case "parse_connection_url":
+          if (args.url !== url) return Promise.reject("Enter one supported connection URL.");
+          return Promise.resolve({ config: draft, password: "p@ss" });
+        case "save_connection": return Promise.resolve({ ...args.config, id: "new-connection" });
         case "sql_schemas": return Promise.resolve(["public"]);
         case "sql_databases": return Promise.resolve(["fixture"]);
         case "sql_tables": return Promise.resolve(["first", "second"].map(name => ({ name, kind: "table" })));
@@ -101,7 +110,7 @@
 
   async function openWorkspace() {
     const attempt = await startConnection();
-    attempts.get(attempt)(session("current-session"));
+    attempts.get(attempt).resolve(session("current-session"));
     await waitFor(() => find('.sql-tab-select[aria-label="Query 1"]'), "SQL workspace did not open");
   }
 
@@ -118,15 +127,48 @@
     assert(!find(".connecting-workspace"), "Cancelled connection remained open");
     const newAttempt = await startConnection();
     assert(newAttempt !== oldAttempt, "Reconnect reused the cancelled attempt ID");
-    attempts.get(newAttempt)(session("new-session"));
+    attempts.get(newAttempt).resolve(session("new-session"));
     await waitFor(() => find('.top-tab.on[title="new-session"]'), "The replacement session did not open");
 
     // Return a success even after cancellation to model an IPC result already in flight.
-    attempts.get(oldAttempt)(session("old-session"));
+    attempts.get(oldAttempt).resolve(session("old-session"));
     await waitFor(() => ipc("disconnect").some(call => call.sessionId === "old-session"), "Late session was not disposed");
     assert(!find('.top-tab[title="old-session"]'), "Late attempt opened its own session tab");
     assert(find('.top-tab.on[title="new-session"]'), "Late attempt replaced the active session");
     assert(!ipc("disconnect").some(call => call.sessionId === "new-session"), "Late attempt disconnected the replacement");
+  }
+
+  const menuAction = (id) => flushSync(() => window.dispatchEvent(new CustomEvent("dbdock:menu", { detail: id })));
+
+  async function failureDoesNotReopenImport() {
+    menuAction("import");
+    const close = await waitFor(() => find('.modal-head button[aria-label="Close"]'), "Import did not open");
+    click(close);
+    const attempt = await startConnection();
+    attempts.get(attempt).reject("pool timed out while waiting for an open connection");
+    await waitFor(() => find(".card-connect") && find(".toast-text")?.textContent.includes("pool timed out"), "The failure did not return to the connection list");
+    assert(!find(".modal-backdrop"), "The previous import menu action reopened after the connection failure");
+    assert(ipc("tableplus_file").length === 1, "Import mounted again");
+  }
+
+  async function newConnectionFromUrl() {
+    menuAction("new-connection-url");
+    const field = await waitFor(() => find('.connection-form input[aria-label="Connection URL"]'), "The new connection URL field did not open");
+    assert(field.type === "text", "The connection URL should be displayed without masking");
+    assert(find(".connection-form h2").textContent === "New connection", "URL did not open New Connection");
+    assert(!ipc("tableplus_file").length, "URL opened the import dialog");
+    flushSync(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, url);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(find('.connection-form button[type="submit"]'));
+    await waitFor(() => !find('.connection-form input[aria-label="Connection URL"]') && find(".connection-form .kind-btn.active")?.textContent.includes("PostgreSQL"), "The URL did not populate the draft");
+    assert(ipc("parse_connection_url").length === 1 && !ipc("save_connection").length, "Applying a URL saved a connection before confirmation");
+    click([...document.querySelectorAll(".connection-form-actions button")].find(button => button.textContent.trim() === "Save"));
+    const saved = await waitFor(() => ipc("save_connection")[0], "No new connection was saved");
+    assert(saved.config.id === "" && saved.config.group === "" && saved.config.database === draft.database &&
+      saved.config.host === draft.host && saved.config.port === draft.port && saved.secrets.password === "p@ss",
+      "The form did not save a new ungrouped connection with the URL settings");
   }
 
   async function closeTable() {
@@ -192,12 +234,13 @@
     updateSettings({ language: "en", vim: false });
     const root = createRoot(find("#root"));
     flushSync(() => root.render(createElement(App)));
-    const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs };
+    const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs,
+      "no-import-replay": failureDoesNotReopenImport, "new-url": newConnectionFromUrl };
     await cases[new URLSearchParams(location.search).get("case")]();
     assert(unexpected.length === 0, `Unexpected IPC commands: ${unexpected.join(", ")}`);
     window.webkit.messageHandlers.result.postMessage("ok");
   } catch (error) {
-    window.webkit.messageHandlers.result.postMessage(String(error.stack ?? error));
+    window.webkit.messageHandlers.result.postMessage(error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error));
   }
 </script>
 </body>

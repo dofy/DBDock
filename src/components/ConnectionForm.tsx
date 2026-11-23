@@ -1,10 +1,10 @@
 import { t, tf } from "../i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { inEditor } from "../settings";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "./Toast";
-import { ArrowRight, BookUser, Server } from "lucide-react";
+import { ArrowRight, BookUser, ClipboardPaste, Server } from "lucide-react";
 
 interface SshHost {
   alias: string;
@@ -21,6 +21,7 @@ interface Props {
   initial?: ConnectionConfig;
   /** Group for a new connection. */
   initialGroup?: string;
+  fromUrl?: boolean;
   groups: string[];
   onClose: () => void;
   onSaved: (c: ConnectionConfig) => void;
@@ -28,13 +29,38 @@ interface Props {
 
 const KINDS: Kind[] = ["mysql", "postgres", "sqlite", "redis", "mongodb", "d1"];
 
-export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved }: Props) {
+export function ConnectionForm({ initial, initialGroup, fromUrl = false, groups, onClose, onSaved }: Props) {
   const editing = !!initial?.id;
   const [c, setC] = useState<ConnectionConfig>(initial ?? { ...blankConnection(), group: initialGroup ?? "" });
   // Secrets are never read back from the keychain into the form.
   const [secrets, setSecrets] = useState<SecretsInput>({});
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [showUrl, setShowUrl] = useState(fromUrl);
+  const [url, setUrl] = useState("");
+  const urlId = useId();
+
+  const applyUrl = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (busy || !url.trim()) return;
+    setBusy(true);
+    try {
+      const { config, password } = await api.parseConnectionUrl(url);
+      setC((current) => ({
+        ...config,
+        name: current.name.trim() ? current.name : config.name,
+        group: current.group, env: current.env, color: current.color,
+        sqlProtection: current.sqlProtection, ssh: current.ssh,
+      }));
+      setSecrets((current) => ({ ...current, password: password ?? undefined }));
+      setUrl("");
+      setShowUrl(false);
+    } catch (e) {
+      toast("error", errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !inEditor(e) && onClose();
@@ -129,6 +155,18 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
         <h2>{editing ? t("Edit connection") : t("New connection")}</h2>
 
         <div className="connection-form-body">
+        {!editing && <div className="connection-url">
+          <button type="button" aria-expanded={showUrl} aria-controls={urlId} disabled={busy}
+            onClick={() => { setShowUrl(!showUrl); if (showUrl) setUrl(""); }}>
+            <ClipboardPaste size={14} />{t("Paste connection URL…")}
+          </button>
+          {showUrl && <form id={urlId} className="connection-url-input" onSubmit={applyUrl}>
+            <input aria-label={t("Connection URL")} type="text" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)}
+              placeholder="postgres://user@localhost:5432/app" autoComplete="off" autoCorrect="off" autoCapitalize="none"
+              spellCheck={false} autoFocus disabled={busy} />
+            <button type="submit" disabled={busy || !url.trim()}>{t("Apply URL")}</button>
+          </form>}
+        </div>}
         <div className="kind-picker">
           {KINDS.map((k) => (
             <button key={k} className={`kind-btn ${c.kind === k ? "active" : ""}`} onClick={() => changeKind(k)}>
@@ -339,11 +377,11 @@ export function ConnectionForm({ initial, initialGroup, groups, onClose, onSaved
         </div>
 
         <div className="actions connection-form-actions">
-          <button onClick={test} disabled={busy}>
+          <button onClick={test} disabled={busy || !!url.trim()}>
             <Zap size={14} />{t("Test")} </button>
           <span className="spacer" />
           <button onClick={onClose}>{t("Cancel")}</button>
-          <button className="primary" onClick={save} disabled={busy || (c.kind === "sqlite" && !c.file) || (c.kind === "d1" && (!c.cfAccountId || !c.database))}>
+          <button className="primary" onClick={save} disabled={busy || !!url.trim() || (c.kind === "sqlite" && !c.file) || (c.kind === "d1" && (!c.cfAccountId || !c.database))}>
             <Save size={14} />{t("Save")} </button>
         </div>
       </div>

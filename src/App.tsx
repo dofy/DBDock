@@ -1,6 +1,6 @@
 import { t, tf } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, errText, type ConnectionConfig, type SessionInfo } from "./api";
+import { api, errText, type ConnectionConfig } from "./api";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { EnvBadge, Home, type MenuAction } from "./components/Home";
 import { listen } from "@tauri-apps/api/event";
@@ -23,24 +23,9 @@ import { clearHealth } from "./healthHistory";
 import { SqlHistory } from "./sqlHistory";
 import { quitDecision } from "./quitGuard";
 import { QuickNavigation } from "./components/QuickNavigation";
-import { destinationKey, pruneNavigation, readNavigation, saveNavigation, sessionDatabase, toggleFavorite, visitTarget,
+import { pruneNavigation, readNavigation, saveNavigation, toggleFavorite, visitTarget,
   type NavigationCatalog, type NavigationTarget } from "./navigation";
-
-interface Open {
-  conn: ConnectionConfig;
-  session: SessionInfo;
-  database: string;
-  destination: string;
-  alternate: boolean;
-}
-
-interface PendingConnection {
-  key: string;
-  conn: ConnectionConfig;
-  database?: string;
-}
-
-type ObjectTarget = Extract<NavigationTarget, { type: "schema" | "table" }>;
+import { pendingConnectionTabId, useConnectionSessions } from "./useConnectionSessions";
 
 function Shell() {
   const dark = useDarkMode();
@@ -59,21 +44,23 @@ function Shell() {
   }, []);
   const toast = useToast();
   const { ask, message } = useFeedbackDialog();
+  const {
+    opened, active, setActive, connecting, navigationRequest, dirtyTabs,
+    connect, cancelPending, close, closeActive,
+  } = useConnectionSessions();
   const [conns, setConns] = useState<ConnectionConfig[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
-  const [opened, setOpened] = useState<Open[]>([]);
-  const [active, setActive] = useState<string | null>(null); // sessionId, null = home
-  const [editing, setEditing] = useState<ConnectionConfig | { newInGroup: string } | null>(null);
-  const [connecting, setConnecting] = useState<PendingConnection[]>([]);
-  const connectingIds = useRef(new Map<string, { attemptId: string; target?: ObjectTarget }>());
+  const [editing, setEditing] = useState<ConnectionConfig | { newInGroup: string; fromUrl?: boolean } | null>(null);
   const [homeAction, setHomeAction] = useState<MenuAction | null>(null);
+  const consumeHomeAction = useCallback((action: MenuAction) => {
+    setHomeAction((current) => current === action ? null : current);
+  }, []);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
   const [showQuick, setShowQuick] = useState(false);
   const [navigation, setNavigation] = useState(() => readNavigation(localStorage));
   const [catalog, setCatalog] = useState<NavigationCatalog>();
-  const [navigationRequest, setNavigationRequest] = useState<{ sessionId: string; target: ObjectTarget }>();
   const recordVisit = useCallback((target: NavigationTarget) => setNavigation((current) => visitTarget(current, target)), []);
   useEffect(() => { saveNavigation(localStorage, navigation); }, [navigation]);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -98,8 +85,6 @@ function Shell() {
   }, [showCommand, showQuick]);
   const [heldTabModifier, setHeldTabModifier] = useState<"cmd" | "ctrl" | null>(null);
   const [sqlHistory] = useState(() => new SqlHistory());
-  const dirtyTabs = useRef(new Map<string, Map<string, "dirty" | "busy">>());
-  const closingSessions = useRef(new Set<string>());
   const quitPending = useRef(false);
 
   const reload = useCallback(async () => {
@@ -118,91 +103,10 @@ function Shell() {
     void reload();
   }, [reload]);
 
-  const cancelPending = (key: string) => {
-    const attempt = connectingIds.current.get(key);
-    if (!attempt) return;
-    connectingIds.current.delete(key);
-    setConnecting((pending) => pending.filter((item) => item.key !== key));
-    setActive((current) => current === `connecting:${key}` ? null : current);
-    void api.cancelConnect(attempt.attemptId).catch(() => {});
-  };
-
-  const connect = async (conn: ConnectionConfig, target?: NavigationTarget) => {
-    const database = target && "database" in target && ["mysql", "postgres"].includes(conn.kind) ? target.database : undefined;
-    const wanted = sessionDatabase(conn.kind, database ?? conn.database, "");
-    const key = destinationKey(conn.id, wanted);
-    const objectTarget = target?.type === "table" || target?.type === "schema" ? target : undefined;
-    const existing = opened.find((item) => item.conn.id === conn.id && (item.destination === key || item.database === wanted));
-    if (existing) {
-      setActive(existing.session.sessionId);
-      if (objectTarget) setNavigationRequest({ sessionId: existing.session.sessionId, target: objectTarget });
-      return;
-    }
-    const pendingId = `connecting:${key}`;
-    const pending = connectingIds.current.get(key);
-    if (pending) {
-      pending.target = objectTarget;
-      setActive(pendingId);
-      return;
-    }
-    const attemptId = crypto.randomUUID();
-    const attempt = { attemptId, target: objectTarget };
-    connectingIds.current.set(key, attempt);
-    setConnecting((items) => [...items, { key, conn, database }]);
-    setActive(pendingId);
-    const stillPending = () => connectingIds.current.get(key) === attempt;
-    try {
-      await api.beginConnect(attemptId);
-      // Cancellation may have happened before the backend registered the attempt.
-      if (!stillPending()) await api.cancelConnect(attemptId);
-      const session = await api.connect(conn.id, attemptId, database || undefined);
-      if (!stillPending()) { await api.disconnect(session.sessionId); return; }
-      const actual = sessionDatabase(conn.kind, database ?? conn.database, session.defaultSchema);
-      const alternate = !!database && database !== sessionDatabase(conn.kind, conn.database, "");
-      setOpened((items) => [...items, { conn, session, database: actual, destination: key, alternate }]);
-      if (attempt.target) setNavigationRequest({ sessionId: session.sessionId, target: attempt.target });
-      setActive((current) => current === pendingId ? session.sessionId : current);
-    } catch (e) {
-      if (stillPending()) {
-        const name = database ? `${conn.name} / ${database}` : conn.name;
-        toast("error", `${name}: ${errText(e)}`);
-        setActive((current) => current === pendingId ? null : current);
-      }
-    } finally {
-      if (stillPending()) {
-        connectingIds.current.delete(key);
-        setConnecting((items) => items.filter((item) => item.key !== key));
-      }
-    }
-  };
-
   const navigate = (target: NavigationTarget) => {
     setShowQuick(false);
     const connection = conns.find((item) => item.id === target.connectionId);
     if (connection) void connect(connection, target);
-  };
-
-  const close = async (sessionId: string, confirmClose = false) => {
-    if (closingSessions.current.has(sessionId)) return;
-    closingSessions.current.add(sessionId);
-    try {
-      const tabs = dirtyTabs.current.get(sessionId);
-      if (tabs && [...tabs.values()].includes("busy")) { await message(t("Wait for the commit to finish before closing this connection."), { kind: "warning" }); return; }
-      if (confirmClose) {
-        const item = opened.find((entry) => entry.session.sessionId === sessionId);
-        const name = item?.alternate ? `${item.conn.name} / ${item.database}` : item?.conn.name ?? "";
-        const question = tabs?.size
-          ? tf('Close connection "{name}" and discard its uncommitted changes?', { name })
-          : tf('Close connection "{name}"?', { name });
-        if (!(await ask(question, { title: t("Close connection"), kind: tabs?.size ? "warning" : "question", okLabel: t("Close connection") }))) return;
-      } else if (tabs?.size && !(await ask(t("Discard uncommitted changes in this connection?"), { title: t("Discard changes"), kind: "warning", okLabel: t("Discard") }))) return;
-      dirtyTabs.current.delete(sessionId);
-      void api.disconnect(sessionId);
-      setOpened((o) => o.filter((x) => x.session.sessionId !== sessionId));
-      setActive((current) => current === sessionId ? null : current);
-    } finally {
-      closingSessions.current.delete(sessionId);
-    }
   };
 
   const quit = async () => {
@@ -227,7 +131,7 @@ function Shell() {
   const menuRef = useRef<(id: string) => void>(() => {});
   menuRef.current = (id: string) => {
     if (document.querySelector(".feedback-dialog[open]")) return;
-    const ids = [null, ...connecting.map(({ key }) => `connecting:${key}`), ...opened.map((o) => o.session.sessionId)];
+    const ids = [null, ...connecting.map(({ key }) => pendingConnectionTabId(key)), ...opened.map((o) => o.session.sessionId)];
     const cycle = (d: number) => setActive(ids[(ids.indexOf(active) + d + ids.length) % ids.length]);
     if ((id.includes("-slot-") || ["next-tab", "prev-tab", "next-database-tab", "prev-database-tab"].includes(id))
       && document.querySelector(".palette-backdrop")) return;
@@ -250,6 +154,8 @@ function Shell() {
         return openQuick();
       case "new-connection":
         return setEditing({ newInGroup: "" });
+      case "new-connection-url":
+        return setEditing((current) => current ?? { newInGroup: "", fromUrl: true });
       case "settings":
         return setShowSettings(true);
       case "about":
@@ -267,10 +173,7 @@ function Shell() {
           detail: { sessionId: active, action: id },
           cancelable: true,
         }));
-        if (unhandled && (id === "close-tab" || id === "close-database-tab")) {
-          if (active.startsWith("connecting:")) cancelPending(active.slice("connecting:".length));
-          else void close(active, true);
-        }
+        if (unhandled && (id === "close-tab" || id === "close-database-tab")) closeActive();
         return;
       }
       case "next-database-tab":
@@ -283,7 +186,7 @@ function Shell() {
         return cycle(-1);
       default:
         setActive(null);
-        setHomeAction((a) => ({ id, seq: (a?.seq ?? 0) + 1 }));
+        setHomeAction({ id });
     }
   };
   useEffect(() => {
@@ -341,6 +244,7 @@ function Shell() {
   const action = (id: string, label: string, category: string, keywords: string, shortcut?: string): PaletteCommand => ({ id, label: t(label), category, keywords, shortcut, run: () => menuRef.current(id) });
   const commands: PaletteCommand[] = [
     action("new-connection", "New connection", noteCategory, "create connection", "⌘N"),
+    action("new-connection-url", "New connection from URL…", noteCategory, "paste URL create connection", "⇧⌘I"),
     action("quick-switch", "Quick switch", databaseCategory, "go to table database schema favorite recent", "⌘K"),
     action("home", "Connections", noteCategory, "home connections"),
     action("find", "Search connections", noteCategory, "search find connection", "⌘F"),
@@ -374,7 +278,7 @@ function Shell() {
       <header className="topbar">
         <button className={`top-tab home ${active === null ? "on" : ""}`} onClick={() => setActive(null)}>
            {t("Connections")} {heldTabModifier === "ctrl" && <kbd className="tab-number" aria-hidden="true">1</kbd>}</button>
-        {connecting.map(({ key, conn, database }, index) => <div key={key} className={`top-tab ${active === `connecting:${key}` ? "on" : ""}`} onClick={() => setActive(`connecting:${key}`)}>
+        {connecting.map(({ key, conn, database }, index) => <div key={key} className={`top-tab ${active === pendingConnectionTabId(key) ? "on" : ""}`} onClick={() => setActive(pendingConnectionTabId(key))}>
           <span className="loading-spinner" aria-hidden="true" />{database ? `${conn.name} / ${database}` : conn.name}<EnvBadge env={conn.env} />{heldTabModifier === "ctrl" && index < 8 && <kbd className="tab-number" aria-hidden="true">{index + 2}</kbd>}<button className="x" title={t("Cancel connection")} aria-label={t("Cancel connection")} onClick={(e) => { e.stopPropagation(); cancelPending(key); }}><X size={12} /></button>
         </div>)}
         {opened.map(({ conn, session, database, alternate }, index) => (
@@ -404,9 +308,9 @@ function Shell() {
         </button>
       </header>
 
-      {active === null && <Home action={homeAction} conns={conns} groups={groups} reload={reload} connecting={connecting.filter((item) => !item.database).map(({ conn }) => conn.id)} onConnect={(c) => void connect(c)} onEdit={setEditing} />}
+      {active === null && <Home action={homeAction} onActionHandled={consumeHomeAction} conns={conns} groups={groups} reload={reload} connecting={connecting.filter((item) => !item.database).map(({ conn }) => conn.id)} onConnect={(c) => void connect(c)} onEdit={setEditing} />}
 
-      {connecting.map(({ key, conn, database }) => <div key={key} className="session connecting-workspace" hidden={active !== `connecting:${key}`}>
+      {connecting.map(({ key, conn, database }) => <div key={key} className="session connecting-workspace" hidden={active !== pendingConnectionTabId(key)}>
         <aside className="connecting-sidebar" aria-hidden="true"><span /><span /><span /><span /></aside>
         <div className="connecting-content" role="status" aria-live="polite">
           <div className="connecting-icon"><Database size={26} aria-hidden="true" /><span className="connecting-spinner" aria-hidden="true"><span className="loading-spinner" /></span></div>
@@ -440,6 +344,7 @@ function Shell() {
         <ConnectionForm
           initial={"newInGroup" in editing ? undefined : editing}
           initialGroup={"newInGroup" in editing ? editing.newInGroup : undefined}
+          fromUrl={"newInGroup" in editing && editing.fromUrl}
           groups={groups}
           onClose={() => setEditing(null)}
           onSaved={(c) => {

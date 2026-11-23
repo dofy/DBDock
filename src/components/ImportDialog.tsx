@@ -24,7 +24,6 @@ export interface ImportReport {
 
 interface Props {
   /** Start on the paste tab (File → Paste Connection URLs). */
-  pasteFirst?: boolean;
   onClose: () => void;
   onDone: (r: ImportReport) => void;
 }
@@ -37,8 +36,8 @@ const FORMATS = [
 ] as const;
 
 /** One import for every source: pick a file (format is detected), use TablePlus, or paste URLs. */
-export function ImportDialog({ pasteFirst, onClose, onDone }: Props) {
-  const [tab, setTab] = useState<"file" | "paste">(pasteFirst ? "paste" : "file");
+export function ImportDialog({ onClose, onDone }: Props) {
+  const [tab, setTab] = useState<"file" | "paste">("file");
   const [tableplus, setTableplus] = useState<string | null>(null);
   const [file, setFile] = useState<{ path: string; info: Detected } | null>(null);
   const [pass, setPass] = useState("");
@@ -93,7 +92,7 @@ export function ImportDialog({ pasteFirst, onClose, onDone }: Props) {
           <button className={tab === "file" ? "on" : ""} onClick={() => setTab("file")}>
             <FolderOpen size={14} />  {t("From a file")} </button>
           <button className={tab === "paste" ? "on" : ""} onClick={() => setTab("paste")}>
-            <ClipboardPaste size={14} />  {t("Paste URLs")} </button>
+            <ClipboardPaste size={14} />  {t("Paste URLs or .env")} </button>
         </div>
 
         {tab === "file" ? (

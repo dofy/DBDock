@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use serde::Serialize;
 use tauri::State;
 
 use crate::store::{ConnectionConfig, SecretsInput};
@@ -17,6 +18,25 @@ pub(crate) fn save_connection(
     secrets: SecretsInput,
 ) -> CmdResult<ConnectionConfig> {
     state.store.save(config, &secrets).map_err(err)
+}
+
+#[derive(Serialize)]
+pub(crate) struct ParsedConnectionUrl {
+    config: ConnectionConfig,
+    password: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) fn parse_connection_url(url: String) -> CmdResult<ParsedConnectionUrl> {
+    let url = url.trim();
+    let invalid = "Enter one supported connection URL.";
+    if url.is_empty() || url.contains(char::is_whitespace) {
+        return Err(invalid.into());
+    }
+    // The underlying parser also serves bulk imports and may include the input in errors.
+    let (mut config, password) = sources::from_url(url, None).map_err(|_| invalid.to_string())?;
+    config.id.clear();
+    Ok(ParsedConnectionUrl { config, password })
 }
 
 #[tauri::command]
@@ -87,4 +107,34 @@ pub(crate) fn import_connections(
     passphrase: Option<String>,
 ) -> CmdResult<transfer::TransferReport> {
     transfer::import(&state.store, Path::new(&path), passphrase).map_err(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_connection_url_creates_an_unsaved_draft() {
+        let draft = parse_connection_url("postgres://user:p%40ss@localhost:6543/lab".into())
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(draft.config.id.is_empty() && draft.config.group.is_empty());
+        assert_eq!(draft.config.database, "lab");
+        assert_eq!(draft.config.port, 6543);
+        assert_eq!(draft.password.as_deref(), Some("p@ss"));
+    }
+
+    #[test]
+    fn connection_url_errors_do_not_echo_credentials_or_accept_batches() {
+        for url in [
+            "postgres://user:example@host:invalid/lab",
+            "postgres://host/first\npostgres://host/second",
+            "DATABASE_URL=postgres://host/lab",
+            "rediss://host:6380",
+        ] {
+            assert_eq!(
+                parse_connection_url(url.into()).err().as_deref(),
+                Some("Enter one supported connection URL.")
+            );
+        }
+    }
 }

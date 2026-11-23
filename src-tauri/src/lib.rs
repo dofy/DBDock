@@ -100,6 +100,7 @@ pub fn run() {
             commands::configuration::list_connections,
             commands::connections::check_saved_connection,
             commands::configuration::save_connection,
+            commands::configuration::parse_connection_url,
             commands::configuration::delete_connection,
             commands::configuration::detect_import_file,
             commands::configuration::import_file,

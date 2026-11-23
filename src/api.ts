@@ -207,6 +207,8 @@ export function blankConnection(kind: Kind = "mysql"): ConnectionConfig {
 
 export const api = {
   listConnections: () => invoke<ConnectionConfig[]>("list_connections"),
+  parseConnectionUrl: (url: string) =>
+    invoke<{ config: ConnectionConfig; password: string | null }>("parse_connection_url", { url }),
   saveConnection: (config: ConnectionConfig, secrets: SecretsInput) =>
     invoke<ConnectionConfig>("save_connection", { config, secrets }),
   deleteConnection: (id: string) => invoke<void>("delete_connection", { id }),

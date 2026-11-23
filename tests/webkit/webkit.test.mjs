@@ -63,3 +63,7 @@ test("WebKit reconnect ignores a late result from the cancelled connection", mac
 test("WebKit closing a table tab cancels only its own reads", macOSOnly, () => runFixture("workspaceLifecycle.html?case=close-table"));
 
 test("WebKit switching workspace tabs preserves SQL drafts, results and pending edits", macOSOnly, () => runFixture("workspaceLifecycle.html?case=switch-tabs"));
+
+test("WebKit a failed imported connection does not reopen the import dialog", macOSOnly, () => runFixture("workspaceLifecycle.html?case=no-import-replay"));
+
+test("WebKit a single URL fills a new connection and saves only on confirmation", macOSOnly, () => runFixture("workspaceLifecycle.html?case=new-url"));

@@ -145,6 +145,9 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
 .modal.connection-form { display: flex; flex-direction: column; overflow: hidden; }
 .connection-form > h2, .connection-form-actions { flex: none; }
 .connection-form-body { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
+.connection-url { display: grid; justify-items: start; gap: 8px; margin-bottom: 12px; }
+.connection-url-input { display: flex; gap: 8px; width: 100%; }
+.connection-url-input input { flex: 1; min-width: 0; }
 .kind-picker { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-bottom: 14px; }
 .kind-btn { font-size: 12px; white-space: normal; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; text-align: center; }
 .kind-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px; background: var(--bg2); }
