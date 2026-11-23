@@ -32,15 +32,24 @@
   const reads = new Map();
   const heldTables = new Set();
   const unexpected = [];
+  const callbacks = new Map();
+  const nativeListeners = new Map();
   const url = "postgres://reader:p%40ss@sample.invalid:6543/new_db";
   const draft = { ...connection, id: "", group: "", name: "sample.invalid/new_db",
     host: "sample.invalid", port: 6543, database: "new_db", user: "reader" };
   window.__TAURI_INTERNALS__ = {
-    transformCallback() { return 1; },
+    transformCallback(callback) {
+      const id = callbacks.size + 1;
+      callbacks.set(id, callback);
+      return id;
+    },
     invoke(command, args) {
       calls.push({ command, ...args });
       switch (command) {
-        case "plugin:event|listen": return Promise.resolve(1);
+        case "plugin:event|listen":
+          nativeListeners.set(args.event, args.handler);
+          return Promise.resolve(args.handler);
+        case "plugin:event|unlisten": return Promise.resolve();
         case "set_menu_language":
         case "begin_connect":
         case "cancel_connect":
@@ -74,6 +83,11 @@
           unexpected.push(command);
           return Promise.reject(new Error(`Unexpected IPC command ${command}`));
       }
+    },
+  };
+  window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener(event, id) {
+      if (nativeListeners.get(event) === id) nativeListeners.delete(event);
     },
   };
 
@@ -139,6 +153,67 @@
   }
 
   const menuAction = (id) => flushSync(() => window.dispatchEvent(new CustomEvent("dbdock:menu", { detail: id })));
+
+  async function menuAndShortcuts(root) {
+    await openWorkspace();
+    const native = (event, payload) => {
+      const id = nativeListeners.get(event);
+      assert(id !== undefined, `Missing native listener for ${event}`);
+      flushSync(() => callbacks.get(id)({ event, id, payload }));
+    };
+    const key = (type, options, target = window) => {
+      const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, ...options });
+      flushSync(() => target.dispatchEvent(event));
+      return event.defaultPrevented;
+    };
+    const tab = () => find('.sql-tab-select[aria-pressed="true"]')?.getAttribute("aria-label");
+
+    native("menu", "new-sql-tab");
+    assert(tab() === "Query 2", "Native menu did not target the active workspace");
+    assert(key("keydown", { key: "1", code: "Digit1", ctrlKey: true }), "Control+1 was not handled");
+    assert(find(".top-tab.home.on .tab-number")?.textContent === "1", "Control+1 should select Home and show session numbers");
+    key("keydown", { key: "2", code: "Digit2", ctrlKey: true });
+    assert(find('.top-tab.on[title="current-session"]') && tab() === "Query 2", "Control+2 did not restore the session");
+    assert(key("keydown", { key: "1", code: "Digit1", metaKey: true }), "Command+1 was not handled");
+    assert(tab() === "Query 1" && find('.sql-tab-select[aria-label="Query 2"] .tab-number')?.textContent === "2",
+      "Command+1 should select the first database tab and show database numbers");
+    assert(!key("keydown", { key: "2", code: "Digit2", metaKey: true, isComposing: true }) && tab() === "Query 1",
+      "A composing keystroke switched tabs");
+    key("keyup", { key: "Meta" });
+    assert(!find(".tab-number"), "Releasing Command should hide number hints");
+    native("tab-modifier", "ctrl");
+    assert(find(".top-tab.home .tab-number"), "The native modifier should show session hints");
+    flushSync(() => window.dispatchEvent(new Event("blur")));
+    assert(!find(".tab-number"), "Window blur should clear native hints");
+
+    key("keydown", { key: "k", metaKey: true });
+    assert(find(".palette-backdrop"), "Command+K should open Quick Switch");
+    native("menu", "session-slot-1");
+    assert(find('.top-tab.on[title="current-session"]'), "Quick Switch should block session-slot actions");
+    key("keydown", { key: "Escape" }, find(".palette-backdrop input"));
+    key("keydown", { key: "P", metaKey: true, shiftKey: true, repeat: true });
+    assert(!find(".palette-backdrop"), "Holding the palette shortcut should not reopen it");
+    key("keydown", { key: "P", metaKey: true, shiftKey: true });
+    assert(find(".palette-backdrop"), "Command+Shift+P should open the command palette");
+    click([...document.querySelectorAll(".palette-item")].find(item => item.querySelector(".palette-title")?.textContent === "New query"));
+    await waitFor(() => tab() === "Query 3", "A palette command should reach the workspace after the palette closes");
+
+    for (const name of ["Query 3", "Query 2", "Query 1"]) {
+      selectTab(name);
+      native("menu", "close-database-tab");
+      assert(!find(`.sql-tab-select[aria-label="${name}"]`) && !find(".feedback-dialog[open]"),
+        "Close should be claimed by the current database tab");
+    }
+    native("menu", "close-database-tab");
+    const confirm = await waitFor(() => find(".feedback-dialog[open]"), "With no database tabs, Close should ask before closing the session");
+    click([...confirm.querySelectorAll("button")].find(button => button.textContent === "Cancel"));
+    assert(find('.top-tab.on[title="current-session"]') && !ipc("disconnect").length, "Cancelling Close should keep the session");
+
+    assert(ipc("plugin:event|listen").length === 2, "Session changes should not resubscribe native listeners");
+    flushSync(() => root.unmount());
+    await waitFor(() => ipc("plugin:event|unlisten").length === 2, "Both native listeners should be released on unmount");
+    assert(nativeListeners.size === 0, "A native listener survived unmount");
+  }
 
   async function failureDoesNotReopenImport() {
     menuAction("import");
@@ -234,9 +309,9 @@
     updateSettings({ language: "en", vim: false });
     const root = createRoot(find("#root"));
     flushSync(() => root.render(createElement(App)));
-    const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs,
+    const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs, "menu-shortcuts": menuAndShortcuts,
       "no-import-replay": failureDoesNotReopenImport, "new-url": newConnectionFromUrl };
-    await cases[new URLSearchParams(location.search).get("case")]();
+    await cases[new URLSearchParams(location.search).get("case")](root);
     assert(unexpected.length === 0, `Unexpected IPC commands: ${unexpected.join(", ")}`);
     window.webkit.messageHandlers.result.postMessage("ok");
   } catch (error) {

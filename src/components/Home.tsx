@@ -1,4 +1,5 @@
 import { t, tf } from "../i18n";
+import type { MenuAction } from "../useAppMenu";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useFeedbackDialog } from "./FeedbackDialog";
 import { api, ENV_LABEL, ENVS, errText, type ConnectionConfig } from "../api";
@@ -41,10 +42,6 @@ type Dialog =
   | { kind: "import" }
   | { kind: "ssh-hosts" }
   | { kind: "health"; connections: ConnectionConfig[]; sequence: number };
-
-export interface MenuAction {
-  id: string;
-}
 
 interface Props {
   action?: MenuAction | null;

@@ -2,8 +2,7 @@ import { t, tf } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errText, type ConnectionConfig } from "./api";
 import { ConnectionForm } from "./components/ConnectionForm";
-import { EnvBadge, Home, type MenuAction } from "./components/Home";
-import { listen } from "@tauri-apps/api/event";
+import { EnvBadge, Home } from "./components/Home";
 import { invoke } from "@tauri-apps/api/core";
 import { SqlWorkspace } from "./components/SqlWorkspace";
 import { RedisWorkspace } from "./components/RedisWorkspace";
@@ -25,6 +24,7 @@ import { quitDecision } from "./quitGuard";
 import { QuickNavigation } from "./components/QuickNavigation";
 import { pruneNavigation, readNavigation, saveNavigation, toggleFavorite, visitTarget,
   type NavigationCatalog, type NavigationTarget } from "./navigation";
+import { useAppMenu } from "./useAppMenu";
 import { pendingConnectionTabId, useConnectionSessions } from "./useConnectionSessions";
 
 function Shell() {
@@ -44,17 +44,14 @@ function Shell() {
   }, []);
   const toast = useToast();
   const { ask, message } = useFeedbackDialog();
+  const sessions = useConnectionSessions();
   const {
     opened, active, setActive, connecting, navigationRequest, dirtyTabs,
-    connect, cancelPending, close, closeActive,
-  } = useConnectionSessions();
+    connect, cancelPending, close,
+  } = sessions;
   const [conns, setConns] = useState<ConnectionConfig[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
   const [editing, setEditing] = useState<ConnectionConfig | { newInGroup: string; fromUrl?: boolean } | null>(null);
-  const [homeAction, setHomeAction] = useState<MenuAction | null>(null);
-  const consumeHomeAction = useCallback((action: MenuAction) => {
-    setHomeAction((current) => current === action ? null : current);
-  }, []);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
@@ -83,7 +80,6 @@ function Shell() {
     if (command) { command.run(); return; }
     focus?.focus();
   }, [showCommand, showQuick]);
-  const [heldTabModifier, setHeldTabModifier] = useState<"cmd" | "ctrl" | null>(null);
   const [sqlHistory] = useState(() => new SqlHistory());
   const quitPending = useRef(false);
 
@@ -127,108 +123,16 @@ function Shell() {
     }
   };
 
-  // Native menu: session-level items here, the rest go to the home screen.
-  const menuRef = useRef<(id: string) => void>(() => {});
-  menuRef.current = (id: string) => {
-    if (document.querySelector(".feedback-dialog[open]")) return;
-    const ids = [null, ...connecting.map(({ key }) => pendingConnectionTabId(key)), ...opened.map((o) => o.session.sessionId)];
-    const cycle = (d: number) => setActive(ids[(ids.indexOf(active) + d + ids.length) % ids.length]);
-    if ((id.includes("-slot-") || ["next-tab", "prev-tab", "next-database-tab", "prev-database-tab"].includes(id))
-      && document.querySelector(".palette-backdrop")) return;
-    if (id.startsWith("session-slot-")) {
-      const index = Number(id.slice("session-slot-".length)) - 1;
-      if (index >= 0 && index < ids.length) setActive(ids[index]);
-      return;
-    }
-    if (id.startsWith("database-slot-")) {
-      if (active) window.dispatchEvent(new CustomEvent("dbdock:cycle-database-tab", { detail: { sessionId: active, index: Number(id.slice("database-slot-".length)) - 1 } }));
-      return;
-    }
-    switch (id) {
-      case "quit-app":
-        void quit();
-        return;
-      case "command-palette":
-        return openCommands();
-      case "quick-switch":
-        return openQuick();
-      case "new-connection":
-        return setEditing({ newInGroup: "" });
-      case "new-connection-url":
-        return setEditing((current) => current ?? { newInGroup: "", fromUrl: true });
-      case "settings":
-        return setShowSettings(true);
-      case "about":
-        return setShowAbout(true);
-      case "home":
-        return setActive(null);
-      case "close-tab":
-      case "new-sql-tab":
-      case "focus-sql-editor":
-      case "format-sql":
-      case "close-database-tab": {
-        if (!active || Array.from(document.querySelectorAll(".modal-backdrop, .palette-backdrop"))
-          .some((overlay) => !overlay.closest("[hidden]"))) return;
-        const unhandled = id === "close-tab" || window.dispatchEvent(new CustomEvent("dbdock:database-action", {
-          detail: { sessionId: active, action: id },
-          cancelable: true,
-        }));
-        if (unhandled && (id === "close-tab" || id === "close-database-tab")) closeActive();
-        return;
-      }
-      case "next-database-tab":
-      case "prev-database-tab":
-        if (active) window.dispatchEvent(new CustomEvent("dbdock:cycle-database-tab", { detail: { sessionId: active, direction: id === "next-database-tab" ? 1 : -1 } }));
-        return;
-      case "next-tab":
-        return cycle(1);
-      case "prev-tab":
-        return cycle(-1);
-      default:
-        setActive(null);
-        setHomeAction({ id });
-    }
-  };
-  useEffect(() => {
-    const un = listen<string>("menu", (e) => menuRef.current(e.payload));
-    const unModifier = listen<string>("tab-modifier", (e) => setHeldTabModifier(e.payload === "cmd" ? "cmd" : e.payload === "ctrl" ? "ctrl" : null));
-    // Buttons inside the page can trigger the same actions.
-    const local = (e: Event) => menuRef.current((e as CustomEvent<string>).detail);
-    window.addEventListener("dbdock:menu", local);
-    const modifier = (e: KeyboardEvent) => setHeldTabModifier(e.metaKey && !e.ctrlKey ? "cmd" : e.ctrlKey && !e.metaKey ? "ctrl" : null);
-    const clearModifier = () => setHeldTabModifier(null);
-    const numberedTab = (e: KeyboardEvent) => {
-      modifier(e);
-      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
-      if (!digit || e.altKey || e.shiftKey || e.isComposing) return;
-      if (e.ctrlKey && !e.metaKey) menuRef.current(`session-slot-${digit}`);
-      else if (e.metaKey && !e.ctrlKey) menuRef.current(`database-slot-${digit}`);
-      else return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    const paletteKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.isComposing) return;
-      const key = e.key.toLowerCase();
-      const action = e.shiftKey && key === "p" ? "command-palette" : !e.shiftKey && key === "k" ? "quick-switch" : null;
-      if (!action || document.querySelector('.modal-backdrop:not([hidden]), .palette-backdrop')) return;
-      e.preventDefault(); e.stopPropagation();
-      if (!e.repeat) menuRef.current(action);
-    };
-    window.addEventListener("keydown", paletteKey, true);
-    window.addEventListener("keydown", numberedTab, true);
-    window.addEventListener("keyup", modifier, true);
-    window.addEventListener("blur", clearModifier);
-    return () => {
-      void un.then((f) => f());
-      void unModifier.then((f) => f());
-      window.removeEventListener("dbdock:menu", local);
-      window.removeEventListener("keydown", paletteKey, true);
-      window.removeEventListener("keydown", numberedTab, true);
-      window.removeEventListener("keyup", modifier, true);
-      window.removeEventListener("blur", clearModifier);
-    };
-  }, []);
+  const { dispatchMenu, heldTabModifier, homeAction, consumeHomeAction } = useAppMenu({
+    sessions,
+    quit,
+    openCommands,
+    openQuick,
+    openNewConnection: () => setEditing({ newInGroup: "" }),
+    openNewConnectionFromUrl: () => setEditing((current) => current ?? { newInGroup: "", fromUrl: true }),
+    openSettings: () => setShowSettings(true),
+    openAbout: () => setShowAbout(true),
+  });
 
   const activeSession = opened.find((item) => item.session.sessionId === active);
   useEffect(() => {
@@ -241,7 +145,7 @@ function Shell() {
   }, [activeSession, recordVisit]);
 
   const noteCategory = t("Connections"), settingsCategory = t("Settings"), databaseCategory = t("Database");
-  const action = (id: string, label: string, category: string, keywords: string, shortcut?: string): PaletteCommand => ({ id, label: t(label), category, keywords, shortcut, run: () => menuRef.current(id) });
+  const action = (id: string, label: string, category: string, keywords: string, shortcut?: string): PaletteCommand => ({ id, label: t(label), category, keywords, shortcut, run: () => dispatchMenu(id) });
   const commands: PaletteCommand[] = [
     action("new-connection", "New connection", noteCategory, "create connection", "⌘N"),
     action("new-connection-url", "New connection from URL…", noteCategory, "paste URL create connection", "⇧⌘I"),
