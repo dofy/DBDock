@@ -1,0 +1,7 @@
+{
+  "identifier": "macos-updater",
+  "description": "Check for and install signed DBDock updates",
+  "platforms": ["macOS"],
+  "windows": ["main"],
+  "permissions": ["updater:allow-check", "updater:allow-download-and-install"]
+}

@@ -13,7 +13,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { appPaletteCommands } from "./appPaletteCommands";
 import { AboutDialog } from "./components/AboutDialog";
 import "./styles.css";
-import { Database, Search, X } from "lucide-react";
+import { ArrowDownToLine, Database, Search, X } from "lucide-react";
 import { FeedbackDialogProvider } from "./components/FeedbackDialog";
 import { updateSettings, useDarkMode, useSettings } from "./settings";
 import { resolveLocale } from "./i18n";
@@ -23,6 +23,7 @@ import type { NavigationTarget } from "./navigation";
 import { useAppPalettes } from "./useAppPalettes";
 import { useAppMenu } from "./useAppMenu";
 import { useAppQuit } from "./useAppQuit";
+import { useAppUpdate } from "./useAppUpdate";
 import { useConnectionProfiles } from "./useConnectionProfiles";
 import { pendingConnectionTabId, useConnectionSessions } from "./useConnectionSessions";
 
@@ -59,6 +60,7 @@ function Shell() {
   const navigate = (target: NavigationTarget) => navigateToTarget(conns, target);
   const [sqlHistory] = useState(() => new SqlHistory());
   const quit = useAppQuit(sessions);
+  const appUpdate = useAppUpdate(settings.automaticallyCheckForUpdates, () => quit(true));
 
   const { dispatchMenu, heldTabModifier, homeAction, consumeHomeAction } = useAppMenu({
     sessions,
@@ -116,6 +118,9 @@ function Shell() {
         <button className="top-tab quick-switch" type="button" title={`${t("Quick switch")} (⌘K)`} aria-label={t("Quick switch")} onClick={openQuick}>
           <Search size={15} aria-hidden="true" />
         </button>
+        {appUpdate.pending && <button className="top-tab" type="button" disabled={appUpdate.busy} onClick={() => void appUpdate.run()}>
+          <ArrowDownToLine size={15} aria-hidden="true" /> {appUpdate.label}
+        </button>}
       </header>
 
       {active === null && <Home action={homeAction} onActionHandled={consumeHomeAction} conns={conns} groups={groups} reload={reload} connecting={connecting.filter((item) => !item.database).map(({ conn }) => conn.id)} onConnect={(c) => void connect(c)} onEdit={setEditing} />}
@@ -147,7 +152,7 @@ function Shell() {
       {showCommand && <CommandPalette commands={commands} onClose={closeCommands} onRun={runCommand} />}
       {showQuick && <QuickNavigation connections={conns} catalog={catalog?.sessionId === active ? catalog : undefined} history={navigation}
         onClose={closeQuick} onNavigate={navigate} onFavorite={toggleFavoriteTarget} />}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} appUpdate={appUpdate} />}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
 
       {editing && (

@@ -75,3 +75,5 @@ test("WebKit restores palette focus on dismissal and executes commands after clo
 test("WebKit refreshes connections and groups and clears health after saving", macOSOnly, () => runFixture("workspaceLifecycle.html?case=save-reload"));
 
 test("WebKit confirms quitting with open work and blocks it during commits", macOSOnly, () => runFixture("workspaceLifecycle.html?case=quit-guard"));
+
+test("WebKit can disable automatic checks and still manually check, install and restart", macOSOnly, () => runFixture("workspaceLifecycle.html?case=app-update"));

@@ -8,6 +8,7 @@ export interface Settings {
   language: "system" | "en" | "zh-CN" | "zh-TW" | "ja";
   sshTerminal: "terminal" | "iterm";
   sqlEditorShare: number;
+  automaticallyCheckForUpdates: boolean;
 }
 
 export const DEFAULT_SQL_EDITOR_SHARE = 38;
@@ -20,7 +21,14 @@ export function clampSqlEditorShare(value: unknown): number {
 }
 
 const KEY = "dbdock.settings";
-const DEFAULTS: Settings = { vim: false, theme: "system", language: "system", sshTerminal: "terminal", sqlEditorShare: DEFAULT_SQL_EDITOR_SHARE };
+const DEFAULTS: Settings = {
+  vim: false,
+  theme: "system",
+  language: "system",
+  sshTerminal: "terminal",
+  sqlEditorShare: DEFAULT_SQL_EDITOR_SHARE,
+  automaticallyCheckForUpdates: true,
+};
 
 function load(): Settings {
   try {
@@ -31,6 +39,7 @@ function load(): Settings {
       language: ["system", "en", "zh-CN", "zh-TW", "ja"].includes(saved.language) ? saved.language : DEFAULTS.language,
       sshTerminal: saved.sshTerminal === "iterm" ? "iterm" : "terminal",
       sqlEditorShare: clampSqlEditorShare(saved.sqlEditorShare),
+      automaticallyCheckForUpdates: saved.automaticallyCheckForUpdates !== false,
     };
   } catch {
     return DEFAULTS;

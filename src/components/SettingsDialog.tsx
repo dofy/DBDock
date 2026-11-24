@@ -3,11 +3,12 @@ import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { siGithub } from "simple-icons";
-import { BookOpen, Info, Keyboard, Settings as SettingsIcon, X } from "lucide-react";
+import { BookOpen, Info, Keyboard, RefreshCw, Settings as SettingsIcon, X } from "lucide-react";
 import { inEditor, updateSettings, useSettings } from "../settings";
+import type { useAppUpdate } from "../useAppUpdate";
 
 /** App preferences. */
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsDialog({ onClose, appUpdate }: { onClose: () => void; appUpdate: ReturnType<typeof useAppUpdate> }) {
   const s = useSettings();
   const [version, setVersion] = useState("");
   useEffect(() => {
@@ -20,7 +21,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop settings-backdrop" onMouseDown={onClose}>
       <div className="modal small" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>
@@ -66,6 +67,20 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </div>
           </label>
         </section>
+
+        {appUpdate.supported && <section className="settings-section">
+          <h3><RefreshCw size={14} /> {t("Updates")}</h3>
+          <label className="setting-row">
+            <span className="switch">
+              <input type="checkbox" checked={s.automaticallyCheckForUpdates} onChange={(e) => updateSettings({ automaticallyCheckForUpdates: e.target.checked })} />
+              <span />
+            </span>
+            <b>{t("Check for updates automatically")}</b>
+          </label>
+          <div className="row settings-links">
+            <button type="button" disabled={appUpdate.busy} onClick={() => void appUpdate.run()}>{appUpdate.label}</button>
+          </div>
+        </section>}
 
         <section className="settings-section">
           <h3>

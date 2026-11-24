@@ -82,7 +82,10 @@ fn migrate_legacy_data(dir: &std::path::Path) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .menu(|app| menu::build(app, "en"))
@@ -113,6 +116,7 @@ pub fn run() {
             commands::app::open_help,
             commands::app::open_github,
             commands::app::set_menu_language,
+            commands::app::supports_app_updates,
             commands::app::confirm_quit,
             commands::ssh::ssh_hosts_list,
             commands::ssh::ssh_host_save,

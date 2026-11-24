@@ -42,6 +42,14 @@
   let finishGroupReload;
   let finishCommit;
   let finishQuit;
+  let finishUpdateCheck;
+  const scenario = new URLSearchParams(location.search).get("case");
+  if (scenario === "app-update") {
+    window.isTauri = true;
+    const schedule = window.setTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) => schedule(callback, delay === 10_000 ? 50 : delay, ...args);
+    updateSettings({ automaticallyCheckForUpdates: true });
+  }
   window.__TAURI_INTERNALS__ = {
     transformCallback(callback) {
       const id = callbacks.size + 1;
@@ -77,6 +85,11 @@
           }
           return Promise.resolve({ ...args.config, id: "new-connection" });
         case "confirm_quit": return new Promise(resolve => { finishQuit = resolve; });
+        case "supports_app_updates": return Promise.resolve(scenario === "app-update");
+        case "plugin:app|version": return Promise.resolve("1.1.1");
+        case "plugin:updater|check": return new Promise(resolve => { finishUpdateCheck = resolve; });
+        case "plugin:updater|download_and_install":
+        case "plugin:resources|close": return Promise.resolve();
         case "sql_apply_changes": return new Promise(resolve => { finishCommit = () => resolve(1); });
         case "sql_schemas": return Promise.resolve(["public"]);
         case "sql_databases": return Promise.resolve(["fixture"]);
@@ -241,6 +254,31 @@
     click(buttonWithText(open, "Quit"));
     await waitFor(() => ipc("confirm_quit").length === 2, "Confirming quit did not invoke IPC");
     assert(!dialog(), "Repeated quit should not queue another confirmation");
+    finishQuit();
+  }
+
+  async function appUpdate() {
+    const update = { rid: 71, currentVersion: "1.1.1", version: "1.2.0", rawJson: {} };
+    menuAction("settings");
+    await waitFor(() => finishUpdateCheck, "The automatic check did not run");
+    const settings = find(".settings-backdrop");
+    const panel = [...settings.querySelectorAll("section")].find(section => section.querySelector("h3").textContent.trim() === "Updates");
+    const toggle = panel.querySelector('input[type="checkbox"]');
+    assert(toggle.checked, "Automatic checks should be enabled");
+    click(toggle);
+    assert(JSON.parse(localStorage.getItem("dbdock.settings")).automaticallyCheckForUpdates === false, "The toggle did not persist");
+    finishUpdateCheck(update);
+    await waitFor(() => buttonWithText(panel, "Check for Updates"), "A background result remained visible after disabling checks");
+    assert(ipc("plugin:resources|close").length === 1, "The ignored update should be released");
+    assert(!buttonWithText(find(".topbar"), "Install 1.2.0"), "A background result must not prompt after disabling checks");
+
+    click(buttonWithText(panel, "Check for Updates"));
+    assert(ipc("plugin:updater|check").length === 2, "Manual checking should remain available");
+    finishUpdateCheck(update);
+    click(await waitFor(() => buttonWithText(panel, "Install 1.2.0"), "The available update was not offered"));
+    assert(ipc("plugin:updater|download_and_install").length === 1, "Installation should require an explicit click");
+    click(await waitFor(() => buttonWithText(panel, "Restart to finish update"), "Restart was not offered after installation"));
+    assert(ipc("confirm_quit")[0]?.restart === true && !dialog(), "Restart should use the existing quit guard");
     finishQuit();
   }
 
@@ -428,9 +466,9 @@
     const root = createRoot(find("#root"));
     flushSync(() => root.render(createElement(App)));
     const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs, "menu-shortcuts": menuAndShortcuts,
-      "palettes-focus": palettesAndFocus, "save-reload": saveConnectionAndReload, "quit-guard": quitGuard,
+      "palettes-focus": palettesAndFocus, "save-reload": saveConnectionAndReload, "quit-guard": quitGuard, "app-update": appUpdate,
       "no-import-replay": failureDoesNotReopenImport, "new-url": newConnectionFromUrl };
-    await cases[new URLSearchParams(location.search).get("case")](root);
+    await cases[scenario](root);
     assert(unexpected.length === 0, `Unexpected IPC commands: ${unexpected.join(", ")}`);
     window.webkit.messageHandlers.result.postMessage("ok");
   } catch (error) {

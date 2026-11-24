@@ -1,0 +1,9 @@
+{
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE4Mzg3M0RFMTc5Mzk1QjkKUldTNWxaTVgzbk00R015d3Y0VXlXekU2V3NwcVpHVVNYZUYyOTJoWWo3L2tnN0lHVWpqWmlrTk0K",
+      "endpoints": ["https://github.com/dofy/DBDock/releases/latest/download/latest.json"],
+      "requireSignedVersion": true
+    }
+  }
+}
