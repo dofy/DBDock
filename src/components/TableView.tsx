@@ -1,7 +1,7 @@
 import { t, tf } from "../i18n";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFeedbackDialog } from "./FeedbackDialog";
-import { api, cancellableBrowserRequest, errText, type Cell, type Change, type Kind, type MetadataKind, type QueryResult, type SqlProtection, type TableData, type TableFilter } from "../api";
+import { api, cancellableBrowserRequest, errorDiagnostic, errText, type Cell, type Change, type Kind, type MetadataKind, type QueryResult, type SqlProtection, type TableData, type TableFilter } from "../api";
 import { DataGrid, ResultEmpty, type GridEditing, type Selection } from "./DataGrid";
 import { SqlInput } from "./SqlInput";
 import { describeVisualFilter, VisualFilter } from "./VisualFilter";
@@ -21,23 +21,30 @@ interface Props {
   env: string;
   dark: boolean;
   onSchemaChanged: () => void;
+  onReconnected: () => void;
   onDirtyChange: (dirty: boolean, busy: boolean) => void;
 }
 
-const PAGE_SIZES = [5, 25, 100, 300, 1000];
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 1000;
 const BINARY = /blob|binary|bytea|bit\b|geometry|point|polygon/i;
+const CONNECTION_ERROR = /error communicating with database|database connection wait timed out|connection (?:reset|aborted|refused)|broken pipe|unexpected eof|unexpected end of (?:file|stream)|without sending tls close_notify|server closed the connection|terminating connection due to idle|server has gone away|lost connection to (?:mysql |mariadb )?server/i;
 
-export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, env, dark, onSchemaChanged, onDirtyChange }: Props) {
+export function TableView({ sessionId, kind, schema, table, isView, protection, connectionName, env, dark, onSchemaChanged, onReconnected, onDirtyChange }: Props) {
   const { ask } = useFeedbackDialog();
   const [mode, setMode] = useState<"data" | "structure" | MetadataKind>("data");
   const [data, setData] = useState<TableData | null>(null);
+  const [loadedOffset, setLoadedOffset] = useState(0);
   const [structure, setStructure] = useState<QueryResult | null>(null);
   const [structureLoading, setStructureLoading] = useState(true);
   const [structureReload, setStructureReload] = useState(0);
   const [structureError, setStructureError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ text: string; reconnectable?: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [limit, setLimit] = useState(5);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+  const [limitDraft, setLimitDraft] = useState(String(DEFAULT_PAGE_SIZE));
+  const [invalidLimit, setInvalidLimit] = useState(false);
+  const limitErrorId = useId();
   const [page, setPage] = useState(0);
   const [orderBy, setOrderBy] = useState<string | undefined>();
   const [orderDesc, setOrderDesc] = useState(false);
@@ -56,10 +63,27 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
   const [inserted, setInserted] = useState<(Cell | undefined)[][]>([]);
   const [sel, setSel] = useState<Selection | null>(null);
   const [preview, setPreview] = useState<string[] | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [working, setBusy] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const busy = working || reconnecting;
   const root = useRef<HTMLDivElement>(null);
   const request = useRef(0);
   const currentRead = useRef<{ cancel: () => void } | null>(null);
+  const countScope = useMemo(() => ({ sessionId, schema, table, filter: filter || undefined, visualFilter }),
+    [sessionId, schema, table, filter, visualFilter]);
+  const currentCount = useRef<{ scope: typeof countScope; cancel?: () => void } | null>(null);
+  const [total, setTotal] = useState<{ scope: typeof countScope; result: string; error?: string }>();
+
+  const resetTotal = useCallback(() => {
+    currentCount.current?.cancel?.();
+    currentCount.current = null;
+    setTotal(undefined);
+  }, []);
+
+  useEffect(() => () => {
+    currentCount.current?.cancel?.();
+    currentCount.current = null;
+  }, []);
 
   const clearPending = () => {
     setEdits({});
@@ -67,10 +91,12 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
     setInserted([]);
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (recount = false) => {
     const current = ++request.current;
     currentRead.current?.cancel();
-    const read = cancellableBrowserRequest((requestId) => api.tableData({ sessionId, requestId, schema, table, limit, offset: page * limit, orderBy, orderDesc, filter: filter || undefined, visualFilter, captureVersions: !isView && protection !== "browseOnly" }));
+    if (recount || (currentCount.current && currentCount.current.scope !== countScope)) resetTotal();
+    const offset = page * limit;
+    const read = cancellableBrowserRequest((requestId) => api.tableData({ ...countScope, requestId, limit, offset, orderBy, orderDesc, captureVersions: !isView && protection !== "browseOnly" }));
     currentRead.current = read;
     setLoading(true);
     setError(null);
@@ -79,13 +105,33 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
       const d = await read.promise;
       if (current !== request.current) return;
       setData(d);
+      setLoadedOffset(offset);
       clearPending();
+      if (!currentCount.current) {
+        if (offset === 0 && !d.hasMore) {
+          currentCount.current = { scope: countScope };
+          setTotal({ scope: countScope, result: String(d.result.rows.length) });
+        } else {
+          const count = cancellableBrowserRequest((requestId) => api.tableCount({ ...countScope, requestId }));
+          const tracked = { scope: countScope, cancel: count.cancel };
+          currentCount.current = tracked;
+          void count.promise.then((result) => {
+            if (currentCount.current === tracked) setTotal({ scope: countScope, result });
+          }).catch((e) => {
+            if (currentCount.current === tracked) setTotal({ scope: countScope, result: "", error: errText(e) });
+          });
+        }
+      }
     } catch (e) {
-      if (current === request.current) setError(errText(e));
+      if (current === request.current) {
+        const reconnectable = (kind === "postgres" || kind === "mysql") && CONNECTION_ERROR.test(errorDiagnostic(e));
+        if (reconnectable) resetTotal();
+        setError({ text: errText(e), reconnectable });
+      }
     } finally {
       if (current === request.current) { currentRead.current = null; setLoading(false); }
     }
-  }, [sessionId, schema, table, limit, page, orderBy, orderDesc, filter, visualFilter, isView, protection]);
+  }, [countScope, kind, limit, page, orderBy, orderDesc, isView, protection, resetTotal]);
 
   useEffect(() => {
     void load();
@@ -186,7 +232,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
     try {
       setPreview(await api.previewChanges(sessionId, schema, table, buildChanges()));
     } catch (e) {
-      setError(errText(e));
+      setError({ text: errText(e) });
     }
   };
 
@@ -212,10 +258,10 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
       await api.applyChanges(sessionId, schema, table, changes, confirmed);
       clearPending();
       setPreview(null);
-      await load();
+      await load(true);
     } catch (e) {
       setConflict(String(e).startsWith("Row conflict:"));
-      setError(errText(e));
+      setError({ text: errText(e) });
     } finally {
       setBusy(false);
     }
@@ -240,6 +286,44 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
     if (pendingCount && !(await ask(tf("Discard {count} uncommitted change(s)?", { count: pendingCount }), { title: t("Discard changes"), kind: "warning", okLabel: t("Discard") }))) return;
     fn();
   };
+
+  const applyLimit = () => {
+    const raw = limitDraft.trim();
+    const next = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || next < 1 || next > MAX_PAGE_SIZE) {
+      setInvalidLimit(true);
+      return;
+    }
+    setInvalidLimit(false);
+    setLimitDraft(String(limit));
+    if (next === limit) return;
+    const changeLimit = () => {
+      setLimitDraft(String(next));
+      setLimit(next);
+      setPage(0);
+    };
+    if (data) void guard(changeLimit);
+    else changeLimit();
+  };
+
+  const reconnect = () => void guard(async () => {
+    setReconnecting(true);
+    try {
+      if (!(await ask(t("Reconnecting resets database session settings and rolls back any open transaction."), {
+        title: t("Reconnect and refresh"), kind: "warning", okLabel: t("Reconnect and refresh"),
+      })) || !root.current) return;
+      await api.reconnectSql(sessionId);
+      if (!root.current) return;
+      onReconnected();
+      setStructureReload((revision) => revision + 1);
+      setMetadataReload((revision) => revision + 1);
+      await load(true);
+    } catch (e) {
+      if (root.current) setError({ text: errText(e), reconnectable: true });
+    } finally {
+      setReconnecting(false);
+    }
+  });
 
   const sort = (col: string) =>
     void guard(() => {
@@ -293,13 +377,26 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
       setMetadataReload((n) => n + 1);
     } else if (mode === "structure") {
       setStructureReload((n) => n + 1);
+    } else if (error?.reconnectable) {
+      reconnect();
     } else {
       void guard(() => {
         if (!structure) setStructureReload((n) => n + 1);
-        void load();
+        void load(true);
       });
     }
   };
+
+  const count = total?.scope === countScope ? total : undefined;
+  const locale = document.documentElement.lang || undefined;
+  const range = baseRows
+    ? `${(loadedOffset + 1).toLocaleString(locale)}–${(loadedOffset + baseRows).toLocaleString(locale)}`
+    : "0";
+  const totalText = count && !count.error ? BigInt(count.result).toLocaleString(locale) : undefined;
+  const rangeText = totalText !== undefined
+    ? baseRows ? tf("{range} of {total} rows", { range, total: totalText })
+      : tf("{total} total rows", { total: totalText })
+    : tf("{range} rows", { range });
 
   return (
     <div className="tableview" ref={root}>
@@ -362,12 +459,19 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
           <button onClick={clearPending} disabled={busy || loading}><Undo2 size={14} />{t("Discard")}</button>
           <button className="primary" onClick={() => void commit()} disabled={busy}>
             <Check size={14} />
-            {busy ? t("Committing…") : t("Commit ⌘S")}
+            {working ? t("Committing…") : t("Commit ⌘S")}
           </button>
         </div>
       )}
 
-      {error && mode === "data" && <pre className="error">{error}</pre>}
+      {error && mode === "data" && <div>
+        <pre className="error">{error.text}</pre>
+        {error.reconnectable && <div className="toolbar">
+          <button type="button" onClick={reconnect} disabled={busy || loading}>
+            <RefreshCw size={14} />{t(reconnecting ? "Reconnecting…" : "Reconnect and refresh")}
+          </button>
+        </div>}
+      </div>}
       {conflict && mode === "data" && <div className="toolbar">
         <button onClick={refresh}><RefreshCw size={14} />{t("Discard and reload rows")}</button>
       </div>}
@@ -391,7 +495,7 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
             orderBy={orderBy}
             orderDesc={orderDesc}
             onSort={sort}
-            rowOffset={page * limit}
+            rowOffset={loadedOffset}
             editing={editing}
             resetKey={data}
             onSelect={setSel}
@@ -404,28 +508,37 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
             <button disabled={page === 0 || loading || busy} title={t("Previous page")} aria-label={t("Previous page")} onClick={() => void guard(() => setPage((p) => p - 1))}>
               ‹
             </button>
-            <span>{!display ? "—" : baseRows ? `${t("rows")} ${page * limit + 1}–${page * limit + baseRows}` : t("0 rows")}</span>
+            <span className="table-row-count" aria-live="polite" title={count?.error}>
+              {data ? rangeText : "—"}
+              {data && totalText === undefined && ` · ${t(count?.error || error ? "Total unavailable" : "Counting…")}`}
+            </span>
             <button disabled={!data?.hasMore || loading || busy} title={t("Next page")} aria-label={t("Next page")} onClick={() => void guard(() => setPage((p) => p + 1))}>
               ›
             </button>
-            <select
-              value={limit} aria-label={t("Rows per page")} disabled={busy || (loading && !!data)}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                const changePageSize = () => {
-                  setLimit(n);
-                  setPage(0);
-                };
-                if (data) void guard(changePageSize);
-                else changePageSize();
+            <input
+              className="table-page-size" type="text" inputMode="numeric" autoComplete="off" spellCheck={false}
+              value={limitDraft} aria-label={t("Rows per page")} aria-invalid={invalidLimit}
+              aria-describedby={invalidLimit ? limitErrorId : undefined}
+              title={t("Rows per page · Enter to apply")} disabled={busy || (loading && !!data)}
+              onChange={(e) => { setLimitDraft(e.target.value); setInvalidLimit(false); }}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  applyLimit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLimitDraft(String(limit));
+                  setInvalidLimit(false);
+                }
               }}
-            >
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>
-                  {n}  {t("/ page")} </option>
-              ))}
-            </select>
+            />
+            <span className="muted">{t("/ page")}</span>
           </div>
+          {invalidLimit && <span className="table-page-error" id={limitErrorId} role="alert">
+            {tf("Enter a whole number from 1 to {max}.", { max: MAX_PAGE_SIZE })}
+          </span>}
           {loading ? <span className="loading-status" role="status"><span className="loading-spinner" aria-hidden="true" />{t("Loading rows…")}</span> : data && <>
             {(kind === "postgres" || kind === "mysql") && <span className="muted table-info" title={t("Table browsing uses a separate connection and shows committed data.")} aria-label={t("Table browsing uses a separate connection and shows committed data.")}><Info size={14} /></span>}
             {!editable && structure && protection !== "browseOnly" && <span className="muted">{t(isView ? "view · read-only" : "no primary key · read-only")}</span>}
@@ -457,13 +570,14 @@ export function TableView({ sessionId, kind, schema, table, isView, protection, 
           setFilterDraft("");
           setVisualFilter(undefined);
           setData(null);
-          if (!changedQuery) void load();
+          if (changedQuery) resetTotal();
+          else void load(true);
           onSchemaChanged();
         }}
       />}
       {(operation === "import" || operation === "export") && <TableTransfer sessionId={sessionId} schema={schema} table={table}
         connectionName={connectionName} env={env} columns={colNames} mode={operation} onBusy={setBusy} onClose={() => setOperation(undefined)}
-        onImported={() => { setOperation(undefined); void load(); }} />}
+        onImported={() => { setOperation(undefined); void load(true); }} />}
 
       {preview && (
         <div className="modal-backdrop" onMouseDown={() => setPreview(null)}>

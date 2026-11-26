@@ -60,6 +60,10 @@ test("WebKit command palette lets the input method commit text before running a 
 
 test("WebKit reconnect ignores a late result from the cancelled connection", macOSOnly, () => runFixture("workspaceLifecycle.html?case=reconnect"));
 
+test("WebKit reconnects a failed table read in place and preserves the SQL draft", macOSOnly, () => runFixture("workspaceLifecycle.html?case=reconnect-table"));
+
+test("WebKit validates custom page sizes and displays the filtered row total", macOSOnly, () => runFixture("workspaceLifecycle.html?case=table-pagination"));
+
 test("WebKit closing a table tab cancels only its own reads", macOSOnly, () => runFixture("workspaceLifecycle.html?case=close-table"));
 
 test("WebKit switching workspace tabs preserves SQL drafts, results and pending edits", macOSOnly, () => runFixture("workspaceLifecycle.html?case=switch-tabs"));

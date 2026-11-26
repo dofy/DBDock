@@ -43,6 +43,10 @@
   let finishCommit;
   let finishQuit;
   let finishUpdateCheck;
+  let tableReadError;
+  let reconnectAttempt;
+  let refreshed = false;
+  const pendingCounts = [];
   const scenario = new URLSearchParams(location.search).get("case");
   if (scenario === "app-update") {
     window.isTauri = true;
@@ -69,6 +73,12 @@
         case "disconnect":
         case "begin_browser_request": return Promise.resolve();
         case "connect": return new Promise((resolve, reject) => attempts.set(args.attemptId, { resolve, reject }));
+        case "reconnect_sql": return new Promise((resolve, reject) => {
+          reconnectAttempt = {
+            reject,
+            resolve: () => { tableReadError = undefined; refreshed = true; resolve(); },
+          };
+        });
         case "list_connections": return Promise.resolve([savedConnection ?? connection]);
         case "list_groups":
           if (savedConnection) return new Promise(resolve => { finishGroupReload = () => resolve(["Imported", savedConnection.group]); });
@@ -98,10 +108,24 @@
         case "sql_columns": return Promise.resolve({});
         case "sql_structure": return Promise.resolve(result(["name", "type", "key"], [["id", "integer", "PRI"], ["name", "text", ""]]));
         case "sql_table_data":
+          if (scenario === "table-pagination") {
+            const size = args.filter ? 60 : 1660;
+            const count = Math.max(0, Math.min(args.limit, size - args.offset));
+            const rows = Array.from({ length: count }, (_, i) => [args.offset + i + 1, `row ${args.offset + i + 1}`]);
+            return Promise.resolve({
+              ...tableData(args.table), result: result(["id", "name"], rows),
+              hasMore: args.offset + count < size, rowVersions: rows.map(() => "fixture-version"),
+            });
+          }
+          if (tableReadError) return Promise.reject(tableReadError);
+          if (refreshed) return Promise.resolve({
+            ...tableData(args.table), result: result(["id", "name"], [[1, "fresh row"]]),
+          });
           if (heldTables.has(args.table)) {
             return new Promise((resolve, reject) => reads.set(args.requestId, { resolve, reject }));
           }
           return Promise.resolve(tableData(args.table));
+        case "sql_table_count": return new Promise((resolve, reject) => pendingCounts.push({ resolve, reject }));
         case "cancel_browser_request":
           reads.get(args.requestId)?.reject(new Error("browser request cancelled"));
           return Promise.resolve();
@@ -182,6 +206,106 @@
   const menuAction = (id) => flushSync(() => window.dispatchEvent(new CustomEvent("dbdock:menu", { detail: id })));
   const buttonWithText = (root, label) => [...root.querySelectorAll("button")].find(button => button.textContent.trim() === label);
   const dialog = () => find(".feedback-dialog[open]");
+
+  async function tablePagination() {
+    await openWorkspace();
+    const initial = await openTable("first");
+    const input = () => activePane().querySelector('input[aria-label="Rows per page"]');
+    const caption = () => activePane().querySelector(".table-row-count")?.textContent ?? "";
+    const key = (element, name) => flushSync(() => element.dispatchEvent(
+      new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }),
+    ));
+    const applySize = (value) => {
+      const field = input();
+      flushSync(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, value);
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      key(field, "Enter");
+    };
+
+    assert(initial.limit === 100 && initial.offset === 0 && input()?.value === "100", "The default page size should be 100");
+    await waitFor(() => pendingCounts.length === 1 && caption().includes("1–100 rows") && !input().disabled,
+      "The first page should render while its total is pending");
+    pendingCounts[0].resolve("1660");
+    await waitFor(() => caption().includes("1–100 of 1,660 rows"), "The first page total was not shown");
+    click(activePane().querySelector('button[aria-label="Next page"]'));
+    await waitFor(() => caption().includes("101–200 of 1,660 rows"), "The range did not advance to page two");
+    assert(ipc("sql_table_data").at(-1).offset === 100 && pendingCounts.length === 1,
+      "Paging should use the selected limit and reuse the total");
+
+    for (const invalid of ["", "0", "-3", "4.5", "1e2", "1001"]) {
+      applySize(invalid);
+      assert(input().getAttribute("aria-invalid") === "true", `Invalid page size was accepted: ${invalid}`);
+      assert(ipc("sql_table_data").length === 2, "An invalid size started a query");
+    }
+    key(input(), "Escape");
+    assert(input().value === "100" && input().getAttribute("aria-invalid") === "false", "Escape should restore the current size");
+    applySize("37");
+    await waitFor(() => caption().includes("1–37 of 1,660 rows"), "Applying a custom limit did not return to the first page");
+    assert(ipc("sql_table_data").at(-1).limit === 37 && ipc("sql_table_data").at(-1).offset === 0
+      && pendingCounts.length === 1, "Changing page size should reset the offset and reuse the total");
+
+    const sql = EditorView.findFromDOM(activePane().querySelector(".filter .cm-editor"));
+    flushSync(() => sql.dispatch({ changes: { from: 0, to: sql.state.doc.length, insert: "id > 1600" } }));
+    key(sql.contentDOM, "Enter");
+    await waitFor(() => pendingCounts.length === 2 && caption().includes("Counting"), "Applying the filter did not start a new count");
+    assert(ipc("sql_table_count").at(-1).filter === "id > 1600" && !caption().includes("1,660"),
+      "The total should use the current filter and hide the old count");
+    pendingCounts[1].resolve("60");
+    await waitFor(() => caption().includes("1–37 of 60 rows"), "The filtered total was not shown");
+    click(activePane().querySelector('button[aria-label="Refresh"]'));
+    await waitFor(() => pendingCounts.length === 3, "Refresh did not recalculate the total");
+    pendingCounts[2].reject("Total count timed out");
+    await waitFor(() => caption().includes("1–37 rows") && caption().includes("Total unavailable"),
+      "A count timeout should leave the row range visible");
+    assert(activePane().querySelector(".grid") && !activePane().querySelector('button[aria-label="Next page"]').disabled,
+      "A count timeout should leave the grid and pagination usable");
+  }
+
+  async function reconnectAfterTableReadFailure() {
+    await openWorkspace();
+    await waitFor(() => activePane()?.querySelector(".cm-editor"), "Editor did not mount");
+    const draft = "SELECT 'keep this draft';";
+    enterSql(draft);
+    await openTable("first");
+    await waitFor(() => activePane()?.textContent.includes("first row"), "Initial table read did not complete");
+    const refresh = () => activePane().querySelector('button[aria-label="Refresh"]');
+    const reconnect = () => buttonWithText(activePane(), "Reconnect and refresh");
+    tableReadError = "syntax error near WHERE";
+    click(refresh());
+    await waitFor(() => activePane()?.textContent.includes(tableReadError), "The syntax error did not appear");
+    assert(!reconnect(), "SQL syntax errors should not trigger reconnection");
+    tableReadError = "error communicating with database: Connection reset by peer (os error 54)";
+    click(refresh());
+    await waitFor(reconnect, "A connection reset did not offer reconnection");
+    assert(activePane().textContent.includes("first row"), "The previous rows were lost");
+
+    click(refresh());
+    const confirmation = await waitFor(dialog, "Refresh did not offer reconnection after a reset");
+    click(buttonWithText(confirmation, "Cancel"));
+    assert(!ipc("reconnect_sql").length, "Cancelling the confirmation should not reconnect");
+    await waitFor(() => reconnect() && !reconnect().disabled, "Reconnect did not become available after cancelling");
+    click(reconnect());
+    click(buttonWithText(await waitFor(dialog, "Missing reconnection confirmation"), "Reconnect and refresh"));
+    await waitFor(() => reconnectAttempt, "Reconnection did not start");
+    assert(refresh().disabled && buttonWithText(activePane(), "Reconnecting…")?.disabled,
+      "A new refresh should wait for the current reconnect to finish");
+    reconnectAttempt.reject("SSH connect timed out");
+    await waitFor(() => activePane().textContent.includes("SSH connect timed out") && reconnect() && !reconnect().disabled,
+      "A failed reconnect should show the error and allow another attempt");
+    click(reconnect());
+    click(buttonWithText(await waitFor(dialog, "Missing retry confirmation"), "Reconnect and refresh"));
+    await waitFor(() => ipc("reconnect_sql").length === 2, "Reconnection retry did not start");
+    reconnectAttempt.resolve();
+    await waitFor(() => activePane()?.textContent.includes("fresh row"), "The same tab did not load fresh rows");
+    assert(!activePane().querySelector("pre.error"), "The previous network error persisted after a successful refresh");
+    assert(ipc("reconnect_sql").every(call => call.sessionId === "current-session"), "Reconnection targeted a different session");
+    assert(ipc("connect").length === 1 && !ipc("disconnect").length && !ipc("sql_execute").length,
+      "Reconnection closed the workspace, opened another session, or replayed editor SQL");
+    selectTab("Query 1");
+    assert(editor().state.doc.toString() === draft, "Reconnection lost the SQL draft");
+  }
 
   async function saveConnectionAndReload() {
     await waitFor(() => find('.tree-name[title="Imported"]') && find('.card-title b[title="Fixture"]'),
@@ -465,7 +589,7 @@
     updateSettings({ language: "en", vim: false });
     const root = createRoot(find("#root"));
     flushSync(() => root.render(createElement(App)));
-    const cases = { reconnect, "close-table": closeTable, "switch-tabs": switchTabs, "menu-shortcuts": menuAndShortcuts,
+    const cases = { reconnect, "reconnect-table": reconnectAfterTableReadFailure, "table-pagination": tablePagination, "close-table": closeTable, "switch-tabs": switchTabs, "menu-shortcuts": menuAndShortcuts,
       "palettes-focus": palettesAndFocus, "save-reload": saveConnectionAndReload, "quit-guard": quitGuard, "app-update": appUpdate,
       "no-import-replay": failureDoesNotReopenImport, "new-url": newConnectionFromUrl };
     await cases[scenario](root);

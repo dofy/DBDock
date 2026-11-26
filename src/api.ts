@@ -230,6 +230,7 @@ export const api = {
   cancelConnect: (attemptId: string) => invoke<void>("cancel_connect", { attemptId }),
   connect: (id: string, attemptId: string, database?: string) => invoke<SessionInfo>("connect", { id, attemptId, database }),
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
+  reconnectSql: (sessionId: string) => invoke<void>("reconnect_sql", { sessionId }),
 
   readSqlFile: (path: string) => invoke<string>("read_sql_file", { path }),
   writeSqlFile: (path: string, contents: string) => invoke<void>("write_sql_file", { path, contents }),
@@ -254,6 +255,8 @@ export const api = {
     visualFilter?: TableFilter;
     captureVersions: boolean;
   }) => invoke<TableData>("sql_table_data", args),
+  tableCount: (args: { sessionId: string; requestId: string; schema: string; table: string; filter?: string; visualFilter?: TableFilter }) =>
+    invoke<string>("sql_table_count", args),
   sqlNeedsConfirmation: (sessionId: string, sql: string) =>
     invoke<boolean>("sql_needs_confirmation", { sessionId, sql }),
   execute: (sessionId: string, sql: string, confirmed: boolean) => invoke<QueryExecution>("sql_execute", { sessionId, sql, confirmed }),

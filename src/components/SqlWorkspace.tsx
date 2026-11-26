@@ -384,6 +384,7 @@ export function SqlWorkspace({ session, connectionId, connectionName, database, 
                   env={env}
                   dark={dark}
                   onSchemaChanged={() => refreshTables(t.schema)}
+                  onReconnected={() => refreshCompletion(true)}
                   onDirtyChange={(dirty, busy) => {
                     const tabs = dirtyTabs.current.get(sid) ?? new Map<string, "dirty" | "busy">();
                     if (busy) tabs.set(t.id, "busy"); else if (dirty) tabs.set(t.id, "dirty"); else tabs.delete(t.id);

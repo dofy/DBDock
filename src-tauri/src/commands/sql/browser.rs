@@ -16,6 +16,13 @@ fn browser_pool(s: &Session) -> &SqlPool {
     connection.browser.as_ref().unwrap_or(&connection.pool)
 }
 
+fn check_browser_filter(s: &Session, filter: Option<&str>) -> CmdResult<()> {
+    if filter.is_some_and(|f| !f.trim().is_empty()) && s.sql_protection != SqlProtection::Automatic {
+        return Err("Use visual filters on protected connections".into());
+    }
+    Ok(())
+}
+
 // Each table read has its own cancellation token; closing one tab must not
 // interrupt another tab or the SQL editor.
 #[tauri::command]
@@ -153,11 +160,7 @@ pub(crate) async fn sql_table_data(
 ) -> CmdResult<TableData> {
     browser_request(&state, &request_id, async {
         let s = state.sessions.sql(&session_id)?;
-        if filter.as_ref().is_some_and(|f| !f.trim().is_empty())
-            && s.sql_protection != SqlProtection::Automatic
-        {
-            return Err("Use visual filters on protected connections".into());
-        }
+        check_browser_filter(&s, filter.as_deref())?;
         let capture_versions = capture_versions && s.sql_protection != SqlProtection::BrowseOnly;
         browser_pool(&s)
             .table_data(
@@ -171,6 +174,27 @@ pub(crate) async fn sql_table_data(
                 visual_filter,
                 capture_versions,
             )
+            .await
+            .map_err(err)
+    })
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn sql_table_count(
+    state: State<'_, AppState>,
+    session_id: String,
+    schema: String,
+    table: String,
+    filter: Option<String>,
+    visual_filter: Option<TableFilter>,
+    request_id: String,
+) -> CmdResult<String> {
+    browser_request(&state, &request_id, async {
+        let s = state.sessions.sql(&session_id)?;
+        check_browser_filter(&s, filter.as_deref())?;
+        browser_pool(&s)
+            .table_count(&schema, &table, filter, visual_filter)
             .await
             .map_err(err)
     })

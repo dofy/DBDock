@@ -921,6 +921,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); box-s
 .applied-filter button { flex: none; }
 .table-status { margin-top: auto; flex-wrap: wrap; }
 .table-status .workspace-tools { white-space: nowrap; }
+.table-status .table-page-size { width: 54px; height: 23px; padding: 1px 5px; font: inherit; text-align: right; }
+.table-page-size[aria-invalid="true"] { border-color: var(--danger); }
+.table-page-error { color: var(--danger-text); }
 .table-status .sql-line { flex: 1 1 60px; }
 .table-elapsed, .table-info { flex: none; }
 .table-edit-hint { white-space: nowrap; }

@@ -646,6 +646,47 @@ impl SqlPool {
         Ok(chunks.join(" || '|' || "))
     }
 
+    fn table_rows_source(
+        &self,
+        schema: &str,
+        table: &str,
+        filter: Option<&str>,
+        visual_filter: Option<TableFilter>,
+    ) -> Result<String> {
+        let mut sql = format!(" FROM {}", self.table_ref(schema, table));
+        let raw = filter.map(str::trim).unwrap_or_default();
+        let visual = visual_filter.map(|f| self.visual_predicate(f)).transpose()?.unwrap_or_default();
+        anyhow::ensure!(raw.is_empty() || visual.is_empty(), "Choose one filter mode");
+        let predicate = if raw.is_empty() { visual.as_str() } else { raw };
+        if !predicate.is_empty() {
+            sql.push_str(&format!(" WHERE {predicate}"));
+        }
+        Ok(sql)
+    }
+
+    pub(crate) async fn table_count(
+        &self,
+        schema: &str,
+        table: &str,
+        filter: Option<String>,
+        visual_filter: Option<TableFilter>,
+    ) -> Result<String> {
+        let predicate = filter.as_deref().map(str::trim).filter(|raw| !raw.is_empty())
+            .map(|raw| format!("({raw}\n)"));
+        let source = self.table_rows_source(schema, table, predicate.as_deref(), visual_filter)?;
+        let text_type = if self.dialect() == Kind::Mysql { "CHAR" } else { "TEXT" };
+        let sql = format!("SELECT CAST(COUNT(*) AS {text_type}){source}");
+        if predicate.is_some() {
+            anyhow::ensure!(crate::sql_protection::is_single_read(&sql, self.dialect()),
+                "Total count is unavailable for this SQL filter");
+        }
+        let count = tokio::time::timeout(Duration::from_secs(10), self.scalar(&sql))
+            .await
+            .context("Total count timed out")??;
+        anyhow::ensure!(count.parse::<u64>().is_ok(), "Invalid total count");
+        Ok(count)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn table_data(
         &self,
@@ -660,14 +701,7 @@ impl SqlPool {
         capture_versions: bool,
     ) -> Result<TableData> {
         anyhow::ensure!((1..=1000).contains(&limit), "Invalid table page size");
-        let mut sql = format!(" FROM {}", self.table_ref(schema, table));
-        let raw = filter.as_deref().map(str::trim).unwrap_or_default();
-        let visual = visual_filter.map(|f| self.visual_predicate(f)).transpose()?.unwrap_or_default();
-        anyhow::ensure!(raw.is_empty() || visual.is_empty(), "Choose one filter mode");
-        let predicate = if raw.is_empty() { visual.as_str() } else { raw };
-        if !predicate.is_empty() {
-            sql.push_str(&format!(" WHERE {predicate}"));
-        }
+        let mut sql = self.table_rows_source(schema, table, filter.as_deref(), visual_filter)?;
         if let Some(col) = order_by.filter(|c| !c.is_empty()) {
             sql.push_str(&format!(
                 " ORDER BY {} {}",
@@ -1327,6 +1361,11 @@ mod tests {
         assert_eq!(initial.result.rows.len(), 1);
         assert_eq!(initial.result.rows[0][0], Value::from(1));
         assert_eq!(initial.result.columns, ["id", "label", "parent"]);
+        assert_eq!(db.table_count(schema, "dbdock_children", None, None).await.unwrap(), "3");
+        assert_eq!(db.table_count(schema, "dbdock_children", None, Some(contains_filter())).await.unwrap(), "1");
+        assert_eq!(db.table_count(schema, "dbdock_children", Some("id > 1".into()), None).await.unwrap(), "2");
+        assert_eq!(db.table_count(schema, "dbdock_children", Some("id > 9".into()), None).await.unwrap(), "0");
+        assert!(db.table_count(schema, "dbdock_children", Some("id > 1; SELECT 1".into()), None).await.is_err());
 
         let change = || Change::Update {
             key: BTreeMap::from([("id".into(), Value::from(1))]),

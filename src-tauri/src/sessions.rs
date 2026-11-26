@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -18,24 +19,37 @@ pub(crate) enum Conn {
 pub(crate) struct Session {
     pub(crate) conn: Conn,
     pub(crate) sql_protection: SqlProtection,
+    reconnect: Option<ReconnectConfig>,
     // Dropped after `conn`, so the pool closes before the tunnel.
     _tunnel: Option<Tunnel>,
 }
 
+#[derive(Clone)]
+struct ReconnectConfig {
+    config: ConnectionConfig,
+    secrets: Secrets,
+}
+
+struct ActiveSession {
+    session: Arc<Session>,
+    reconnect_gate: Arc<tokio::sync::Mutex<()>>,
+}
+
 #[derive(Default)]
 pub(crate) struct Sessions {
-    active: Mutex<HashMap<String, Arc<Session>>>,
+    active: Mutex<HashMap<String, ActiveSession>>,
     pending: Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
 }
 
 impl Sessions {
     pub(crate) fn get(&self, id: &str) -> CmdResult<Arc<Session>> {
-        self.active
-            .lock()
-            .unwrap()
-            .get(id)
-            .cloned()
-            .ok_or_else(|| "session closed; reconnect".to_string())
+        let active = self.active.lock().unwrap();
+        let entry = active.get(id).ok_or("session closed; reconnect")?;
+        let _guard = entry
+            .reconnect_gate
+            .try_lock()
+            .map_err(|_| "Connection is reconnecting")?;
+        Ok(entry.session.clone())
     }
 
     pub(crate) fn sql(&self, id: &str) -> CmdResult<Arc<Session>> {
@@ -109,10 +123,13 @@ impl Sessions {
             }
             let session_id = uuid::Uuid::new_v4().to_string();
             let sql_protection = session.sql_protection;
-            self.active
-                .lock()
-                .unwrap()
-                .insert(session_id.clone(), Arc::new(session));
+            self.active.lock().unwrap().insert(
+                session_id.clone(),
+                ActiveSession {
+                    session: Arc::new(session),
+                    reconnect_gate: Arc::new(tokio::sync::Mutex::new(())),
+                },
+            );
             Ok(SessionInfo {
                 session_id,
                 kind: cfg.kind,
@@ -129,6 +146,59 @@ impl Sessions {
     pub(crate) fn disconnect(&self, session_id: &str) {
         self.active.lock().unwrap().remove(session_id);
     }
+
+    pub(crate) async fn reconnect_sql(&self, id: &str) -> CmdResult<()> {
+        self.reconnect_sql_with(id, open_replacement).await
+    }
+
+    async fn reconnect_sql_with<F>(
+        &self,
+        id: &str,
+        open: impl FnOnce(ReconnectConfig) -> F,
+    ) -> CmdResult<()>
+    where
+        F: std::future::Future<Output = CmdResult<Session>>,
+    {
+        let (config, _guard) = {
+            let active = self.active.lock().unwrap();
+            let entry = active.get(id).ok_or("session closed; reconnect")?;
+            let config = entry
+                .session
+                .reconnect
+                .as_ref()
+                .ok_or("Reconnection is only available for PostgreSQL and MySQL sessions")?;
+            let guard = entry
+                .reconnect_gate
+                .clone()
+                .try_lock_owned()
+                .map_err(|_| "Connection is reconnecting")?;
+            // All IPC operations share this Arc until their database work ends.
+            // Check under the same lock that admits new operations in get().
+            if Arc::strong_count(&entry.session) != 1 {
+                return Err("Wait for database operations to finish before reconnecting".into());
+            }
+            (config.clone(), guard)
+        };
+
+        let session = tokio::time::timeout(Duration::from_secs(45), open(config))
+            .await
+            .map_err(|_| "Reconnection timed out")??;
+        // A tab may have closed while the replacement was opening.
+        let old = {
+            let mut active = self.active.lock().unwrap();
+            let entry = active.get_mut(id).ok_or("session closed; reconnect")?;
+            std::mem::replace(&mut entry.session, Arc::new(session))
+        };
+        drop(old);
+        Ok(())
+    }
+}
+
+async fn open_replacement(setup: ReconnectConfig) -> CmdResult<Session> {
+    let (session, _, _) = open_session(&setup.config, setup.secrets)
+        .await
+        .map_err(err)?;
+    Ok(session)
 }
 
 #[derive(Serialize)]
@@ -146,6 +216,12 @@ pub(crate) async fn open_session(
     cfg: &ConnectionConfig,
     secrets: Secrets,
 ) -> anyhow::Result<(Session, String, String)> {
+    // Keep the route and its credentials together. An edited saved profile
+    // must not send replacement credentials to the old session's host.
+    let reconnect = matches!(cfg.kind, Kind::Postgres | Kind::Mysql).then(|| ReconnectConfig {
+        config: cfg.clone(),
+        secrets: secrets.clone(),
+    });
     let mut tunnel = None;
     let (mut host, mut port) = (cfg.host.clone(), cfg.port);
     if host.is_empty() {
@@ -197,6 +273,7 @@ pub(crate) async fn open_session(
         Session {
             conn,
             sql_protection: cfg.sql_protection.effective(&cfg.env),
+            reconnect,
             _tunnel: tunnel,
         },
         version,
@@ -252,5 +329,144 @@ mod connection_cancel_tests {
                 .unwrap_err(),
             "connection cancelled"
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated PostgreSQL test database"]
+    async fn postgres_reconnect_recovers_a_broken_link_under_the_same_session_id() {
+        use tokio::net::{TcpListener, TcpStream};
+        use tokio::sync::{oneshot, watch};
+
+        let url = std::env::var("DBDOCK_TEST_POSTGRES_URL").unwrap();
+        let (mut cfg, password) = crate::sources::from_url(&url, None).unwrap();
+        let upstream = (cfg.host.clone(), cfg.port);
+        let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        cfg.host = "127.0.0.1".into();
+        cfg.port = proxy.local_addr().unwrap().port();
+        let secrets = Secrets {
+            password,
+            ..Default::default()
+        };
+        let (online, availability) = watch::channel(true);
+        let forwarding = tokio::spawn(async move {
+            while let Ok((mut client, _)) = proxy.accept().await {
+                let mut availability = availability.clone();
+                let upstream = upstream.clone();
+                tokio::spawn(async move {
+                    if !*availability.borrow_and_update() {
+                        return;
+                    }
+                    let Ok(mut server) = TcpStream::connect(upstream).await else {
+                        return;
+                    };
+                    tokio::select! {
+                        _ = availability.changed() => {}
+                        _ = tokio::io::copy_bidirectional(&mut client, &mut server) => {}
+                    }
+                });
+            }
+        });
+        let open = open_replacement;
+        let sessions = Sessions::default();
+        let id = "workspace";
+        let old = Arc::new(
+            open(ReconnectConfig {
+                config: cfg.clone(),
+                secrets,
+            })
+            .await
+            .unwrap(),
+        );
+        let previous = Arc::downgrade(&old);
+        sessions.active.lock().unwrap().insert(
+            id.into(),
+            ActiveSession {
+                session: old,
+                reconnect_gate: Arc::new(tokio::sync::Mutex::new(())),
+            },
+        );
+        async fn browse(session: &Session) -> anyhow::Result<Vec<crate::sql::QueryResult>> {
+            let Conn::Sql(connection) = &session.conn else {
+                unreachable!()
+            };
+            connection
+                .browser
+                .as_ref()
+                .unwrap()
+                .execute("SELECT 42".into())
+                .await
+        }
+
+        let in_flight = sessions.sql(id).unwrap();
+        browse(&in_flight).await.unwrap();
+        assert_eq!(
+            sessions.reconnect_sql_with(id, open).await.unwrap_err(),
+            "Wait for database operations to finish before reconnecting",
+        );
+        online.send_replace(false);
+        let result = tokio::time::timeout(Duration::from_millis(500), browse(&in_flight)).await;
+        assert!(
+            !matches!(result, Ok(Ok(_))),
+            "The old link should be unusable"
+        );
+        drop(in_flight);
+
+        let failure = sessions
+            .reconnect_sql_with(id, |_| async { Err("unavailable".into()) })
+            .await;
+        assert_eq!(failure.unwrap_err(), "unavailable");
+        assert!(Arc::ptr_eq(
+            &previous.upgrade().unwrap(),
+            &sessions.sql(id).unwrap()
+        ));
+
+        online.send_replace(true);
+        let (started, wait_started) = oneshot::channel();
+        let (proceed, wait_proceed) = oneshot::channel();
+        let reconnect = sessions.reconnect_sql_with(id, |config| async {
+            started.send(()).unwrap();
+            wait_proceed.await.unwrap();
+            open(config).await
+        });
+        let verify_exclusivity = async {
+            wait_started.await.unwrap();
+            assert!(
+                matches!(sessions.sql(id), Err(message) if message == "Connection is reconnecting")
+            );
+            assert_eq!(
+                sessions.reconnect_sql_with(id, open).await.unwrap_err(),
+                "Connection is reconnecting"
+            );
+            proceed.send(()).unwrap();
+        };
+        let (result, ()) = tokio::join!(reconnect, verify_exclusivity);
+        result.unwrap();
+        assert!(
+            previous.upgrade().is_none(),
+            "The old pool should be dropped"
+        );
+        let restored = sessions.sql(id).unwrap();
+        assert_eq!(
+            restored.reconnect.as_ref().unwrap().config.database,
+            cfg.database
+        );
+        assert_eq!(
+            browse(&restored).await.unwrap()[0].rows[0][0],
+            serde_json::json!(42)
+        );
+        drop(restored);
+
+        let closed = sessions
+            .reconnect_sql_with(id, |config| async {
+                sessions.disconnect(id);
+                open(config).await
+            })
+            .await;
+        assert_eq!(closed.unwrap_err(), "session closed; reconnect");
+        assert!(
+            sessions.sql(id).is_err(),
+            "Reconnection should not resurrect a closed session"
+        );
+        forwarding.abort();
     }
 }

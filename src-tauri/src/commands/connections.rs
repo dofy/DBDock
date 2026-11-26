@@ -75,3 +75,8 @@ pub(crate) async fn connect(
 pub(crate) fn disconnect(state: State<'_, AppState>, session_id: String) {
     state.sessions.disconnect(&session_id);
 }
+
+#[tauri::command]
+pub(crate) async fn reconnect_sql(state: State<'_, AppState>, session_id: String) -> CmdResult<()> {
+    state.sessions.reconnect_sql(&session_id).await
+}

@@ -253,6 +253,13 @@ pub fn needs_confirmation(sql: &str, dialect: Kind) -> bool {
     !any
 }
 
+/// Only rerun raw predicates automatically when they form one recognized read.
+pub(crate) fn is_single_read(sql: &str, dialect: Kind) -> bool {
+    tokens(sql, dialect).is_some_and(|tokens| {
+        !tokens.contains(&Token::Symbol(b';')) && ordinary_read(&tokens)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
