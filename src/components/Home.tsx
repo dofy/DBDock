@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { useFeedbackDialog } from "./FeedbackDialog";
 import { api, ENV_LABEL, ENVS, errText, type ConnectionConfig } from "../api";
 import { DbIcon } from "./DbIcon";
+import { ResultEmpty } from "./DataGrid";
 import { PromptDialog } from "./Dialogs";
 import { useToast } from "./Toast";
 import { TransferDialog } from "./TransferDialog";
@@ -446,24 +447,18 @@ export function Home({ conns, groups, reload, connecting, onConnect, onEdit, act
               </div>
             </section>
           ))}
-          {!shown.length && (
+          {!conns.length ? (
+            <ResultEmpty illustrated title={t("No connections yet")} detail={t("Create a database connection or import your saved connections.")} />
+          ) : !shown.length && (
             <div className="empty">
-              {conns.length ? (
-                <>
-                   {t("No connections match.")}{" "}
-                  {(query || envFilter !== null) && (
-                    <button
-                      className="link"
-                      onClick={() => {
-                        setQuery("");
-                        setEnvFilter(null);
-                      }}
-                    >
-                       {t("Clear filters")} </button>
-                  )}
-                </>
-              ) : (
-                t("No connections yet. Create one for MySQL, PostgreSQL, SQLite or Redis, optionally through SSH, or import them from TablePlus.")
+              {t("No connections match.")}{" "}
+              {(query || envFilter !== null) && (
+                <button className="link" onClick={() => {
+                  setQuery("");
+                  setEnvFilter(null);
+                }}>
+                  {t("Clear filters")}
+                </button>
               )}
             </div>
           )}

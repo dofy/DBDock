@@ -242,7 +242,7 @@ fieldset.ssh.off { padding-bottom: 0; }
 .grid td.sel { background: var(--sel) !important; outline: 1px solid var(--accent); outline-offset: -1px; }
 .grid-empty { padding: 24px; text-align: center; }
 .result-empty { padding: 14px 12px; }
-:is(.grid-scroll, .query-feedback, .tab-body):has(> .result-empty--illustrated) {
+:is(.grid-scroll, .query-feedback, .tab-body, .home-scroll):has(> .result-empty--illustrated) {
   display: flex; flex-direction: column; container-type: size;
 }
 .grid-scroll:has(> .result-empty--illustrated) > .grid { align-self: flex-start; flex: none; }

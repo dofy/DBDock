@@ -196,6 +196,7 @@ Frontend language and help coverage: `node --test tests/*.test.mjs` (Node 22.18+
 
 - Reconnect a dropped PostgreSQL or MySQL connection directly from the table view while keeping tabs and SQL drafts.
 - Default to 100 rows per page, accept validated custom page sizes and show the displayed range with the filtered total.
+- Show an illustration and setup guidance when the connection list is empty.
 
 ### 1.2.0 — 2026-11-24
 
