@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>為資料庫打造順手的工作空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.1</p>
+<p align="center"><strong>為資料庫打造順手的工作空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.2.1</p>
 
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · 繁體中文 · <a href="README.ja.md">日本語</a><br />
 <a href="https://dbdock.phpz.org/zh-Hant/">官網</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -38,6 +38,8 @@ DBDock 是桌面資料庫用戶端，支援 **MySQL、PostgreSQL、SQLite、Redi
 
   正式 SQL 連線可直接執行一般唯讀查詢。寫入、鎖定或影響不明的 SQL，以及資料表提交，仍需確認。可在連線設定選擇「僅瀏覽」停用這兩項操作，變更後請重新連線。
 
+  資料分頁預設每頁 100 列。在底部輸入 1–1,000 的整數並按 Enter 套用。底部顯示目前範圍與篩選後的總數（如可統計）。PostgreSQL 或 MySQL 斷線後，按「重新連線並重新整理」可在原分頁重新載入資料表，並保留已開啟的分頁和 SQL 草稿。
+
   MySQL 與 PostgreSQL 支援取消查詢，資料表瀏覽使用獨立連線，僅顯示已提交的資料。
 
   可在應用程式中建立資料表、調整欄位，執行前可預覽 SQL。資料表支援 CSV 和 JSON 匯入匯出，匯入前可預覽並對應欄位，也可匯出整張資料表。
@@ -69,6 +71,11 @@ pnpm tauri dev
 在 `src-tauri` 目錄執行 `cargo test` 可執行單元測試。真實資料庫整合測試預設忽略，僅應對一次性測試資料庫手動執行；命令和 D1 設定請見[英文 README](README.md#develop)。
 
 ## 更新記錄
+
+### 1.2.1 — 2026-11-26
+
+- PostgreSQL 和 MySQL 資料表斷線後可在原分頁重新連線並重新整理，保留分頁和 SQL 草稿。
+- 預設每頁 100 列，可輸入並驗證自訂頁面大小，顯示目前列範圍與篩選後的總數。
 
 ### 1.2.0 — 2026-11-24
 

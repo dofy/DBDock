@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>データベースのための使いやすい作業空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.1</p>
+<p align="center"><strong>データベースのための使いやすい作業空間。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.2.1</p>
 
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · 日本語<br />
 <a href="https://dbdock.phpz.org/">公式サイト</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -38,6 +38,8 @@ DBDock は **MySQL、PostgreSQL、SQLite、Redis、MongoDB、Cloudflare D1** に
 
   本番 SQL 接続でも通常の読み取りクエリはそのまま実行できます。書き込みやロックを行う SQL、影響が不明な SQL、テーブル変更のコミットは確認が必要です。接続設定で「閲覧のみ」を選ぶと両方の操作を無効にでき、再接続後に反映されます。
 
+  データは既定で 1 ページに 100 行表示します。画面下部で 1〜1,000 の整数を入力し、Enter で適用できます。表示範囲と絞り込み後の総件数を表示します。PostgreSQL または MySQL の接続が切れた場合は「再接続して更新」で同じタブを再読み込みでき、開いているタブと SQL の下書きは保持されます。
+
   MySQL と PostgreSQL はクエリの中止に対応します。テーブル表示は別接続を使用し、コミット済みのデータを表示します。
 
   テーブルの作成と列の編集は、SQL をプレビューしてから実行できます。CSV または JSON はプレビューで列を対応付けてインポートできます。テーブル全体のエクスポートにも対応します。
@@ -69,6 +71,11 @@ pnpm tauri dev
 `src-tauri` ディレクトリで `cargo test` を実行すると単体テストが走ります。実際のデータベースを使う統合テストは既定で無効です。使い捨てのテスト用データベースに対してのみ実行してください。コマンドと D1 の設定は[英語版 README](README.md#develop) を参照してください。
 
 ## 変更履歴
+
+### 1.2.1 — 2026-11-26
+
+- PostgreSQL と MySQL のテーブルを同じタブのまま再接続して更新できるようにしました。開いているタブと SQL の下書きは保持されます。
+- 既定で 1 ページに 100 行を表示し、ページサイズの入力と検証、表示範囲と絞り込み後の総件数に対応しました。
 
 ### 1.2.0 — 2026-11-24
 

@@ -2,7 +2,7 @@
 
 <h1 align="center">DBDock</h1>
 
-<p align="center"><strong>给数据库找个顺手的家。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.1.1</p>
+<p align="center"><strong>给数据库找个顺手的家。</strong><br />MySQL · PostgreSQL · SQLite · Redis · MongoDB · Cloudflare D1<br />macOS · Tauri 2 · Rust · React · v1.2.1</p>
 
 <p align="center"><a href="README.md">English</a> · 简体中文 · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a><br />
 <a href="https://dbdock.phpz.org/zh-Hans/">官网</a> · <a href="https://github.com/dofy/DBDock">GitHub</a> · <a href="https://github.com/dofy/DBDock/issues">Issues</a></p>
@@ -38,6 +38,8 @@ DBDock 是一款桌面数据库客户端，支持 **MySQL、PostgreSQL、SQLite�
 
   生产 SQL 连接可直接执行常规只读查询。写入、加锁或无法确定影响的 SQL，以及表格提交，仍需确认。可在连接设置选择「仅浏览」来禁用这两项操作，修改后重新连接。
 
+  数据页默认每页 100 行。在底部输入 1–1,000 的整数并按 Enter 应用。底部显示当前范围和筛选后的总数（如可统计）。PostgreSQL 或 MySQL 断线后，点击「重新连接并刷新」可在原标签页重载表格，并保留已打开的标签页和 SQL 草稿。
+
   MySQL 和 PostgreSQL 支持取消查询，表格浏览使用独立连接，仅显示已提交的数据。
 
   可在应用中建表、调整列，并在执行前预览 SQL。表数据支持 CSV 和 JSON 导入导出，导入前可预览并映射列，导出可保存整张表。
@@ -69,6 +71,11 @@ pnpm tauri dev
 在 `src-tauri` 目录执行 `cargo test` 运行单元测试。真实数据库集成测试默认忽略，只能针对一次性测试数据库手动运行；具体命令和 D1 配置参见[英文 README](README.md#develop)。
 
 ## 更新日志
+
+### 1.2.1 — 2026-11-26
+
+- PostgreSQL 和 MySQL 表格断线后可原地重连并刷新，保留标签页和 SQL 草稿。
+- 默认每页 100 行，支持输入并校验自定义页大小，显示当前行范围和筛选后的总数。
 
 ### 1.2.0 — 2026-11-24
 
